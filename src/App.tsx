@@ -269,6 +269,30 @@ function AnimStyles() {
   );
 }
 
+// ── Audio Alarm ───────────────────────────────────────
+
+function playAlarm() {
+  try {
+    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AudioCtx();
+    [[0, 880], [0.55, 1100], [1.1, 880], [1.65, 1320]].forEach(([t, freq]) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, ctx.currentTime + t);
+      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + t + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + t + 0.45);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.5);
+    });
+  } catch { /* 音声未対応環境では無視 */ }
+}
+
+const QUICK_EMOJIS = ["📝", "✏️", "🎯", "⭐", "🎮", "📱", "🎵", "🏃", "🍽️", "🛒", "💊", "🐾"];
+
 // ── Main ──────────────────────────────────────────────
 
 export default function KeigoTaskApp() {
@@ -300,6 +324,7 @@ export default function KeigoTaskApp() {
     completedAt: "",
   });
   const [timerSeconds, setTimerSeconds] = useState(20 * 60);
+  const [timerDuration, setTimerDuration] = useState(20); // 分単位
 
   // ── computed ──
   const weekStamps = getWeekStamps(history);
@@ -326,7 +351,10 @@ export default function KeigoTaskApp() {
     if (screen !== "timer") return;
     const id = setInterval(() => {
       setTimerSeconds((s) => {
-        if (s <= 1) { setScreen("timer_end"); return 0; }
+        if (s <= 1) {
+          setTimeout(() => { playAlarm(); setScreen("timer_end"); }, 0);
+          return 0;
+        }
         return s - 1;
       });
     }, 1000);
@@ -410,9 +438,22 @@ export default function KeigoTaskApp() {
   const goToScreen = (id: ScreenId) => {
     if (id === "timer") {
       setPrevScreen(screen);
-      setTimerSeconds(20 * 60);
+      setTimerSeconds(timerDuration * 60);
     }
     setScreen(id);
+  };
+
+  const goHome = () => {
+    const h = new Date().getHours();
+    setScreen(h >= 5 && h < 12 ? "morning" : "evening");
+  };
+
+  const addTask = (session: "morning" | "evening", title: string, emoji: string) => {
+    if (!title.trim()) return;
+    const base = session === "morning" ? morningTasks : eveningTasks;
+    const setTasks = session === "morning" ? setMorningTasks : setEveningTasks;
+    const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
+    setTasks([...base, { id: maxId + 1, title: title.trim(), emoji }]);
   };
 
   const dayLabel = getDayLabel();
@@ -453,6 +494,7 @@ export default function KeigoTaskApp() {
                 stamps={weekStamps}
                 streak={streak}
                 onReorder={setMorningTasks}
+                onAddTask={(title, emoji) => addTask("morning", title, emoji)}
                 toggle={(id) =>
                   handleToggle(morningDone, setMorningDone, morningTasks, "朝のやること", "morning", id)
                 }
@@ -469,6 +511,7 @@ export default function KeigoTaskApp() {
                 stamps={weekStamps}
                 streak={streak}
                 onReorder={setEveningTasks}
+                onAddTask={(title, emoji) => addTask("evening", title, emoji)}
                 toggle={(id) =>
                   handleToggle(eveningDone, setEveningDone, eveningTasks, "夜のやること", "evening", id)
                 }
@@ -481,9 +524,12 @@ export default function KeigoTaskApp() {
           <ShowParentScreen
             context={parentCtx}
             approved={approved}
+            timerDuration={timerDuration}
+            onSetDuration={setTimerDuration}
             onApprove={handleApprove}
             onReset={resetApproval}
             onGoTimer={() => goToScreen("timer")}
+            onHome={goHome}
           />
         )}
 
@@ -491,6 +537,7 @@ export default function KeigoTaskApp() {
           <TimerScreen
             secondsLeft={timerSeconds}
             onBack={() => setScreen(prevScreen)}
+            onHome={goHome}
           />
         )}
 
@@ -499,6 +546,7 @@ export default function KeigoTaskApp() {
             streak={streak}
             stamps={weekStamps}
             onBack={() => setScreen(prevScreen)}
+            onHome={goHome}
           />
         )}
       </div>
@@ -887,10 +935,15 @@ interface TaskScreenProps {
   tasks: Task[]; done: Set<number>; justChecked: number | null;
   floatColor: string; stamps: boolean[]; streak: number;
   onReorder: (tasks: Task[]) => void;
+  onAddTask: (title: string, emoji: string) => void;
   toggle: (id: number) => void;
 }
 
-function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, stamps, streak, onReorder, toggle }: TaskScreenProps) {
+function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, stamps, streak, onReorder, onAddTask, toggle }: TaskScreenProps) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newEmoji, setNewEmoji] = useState("📝");
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
@@ -903,6 +956,14 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
       const newIdx = tasks.findIndex((t) => t.id === over.id);
       onReorder(arrayMove(tasks, oldIdx, newIdx));
     }
+  };
+
+  const handleAdd = () => {
+    if (!newTitle.trim()) return;
+    onAddTask(newTitle, newEmoji);
+    setNewTitle("");
+    setNewEmoji("📝");
+    setIsAdding(false);
   };
 
   return (
@@ -936,6 +997,57 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
           </div>
         </SortableContext>
       </DndContext>
+
+      {/* タスク追加エリア */}
+      {isAdding ? (
+        <div style={{ padding: "10px 12px", borderRadius: 14, border: `1.5px solid ${theme.accent.primary}44`, backgroundColor: `${theme.accent.primary}08`, display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* 絵文字選択 */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {QUICK_EMOJIS.map((e) => (
+              <button key={e} onClick={() => setNewEmoji(e)} style={{
+                width: 36, height: 36, borderRadius: 8, border: newEmoji === e ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
+                backgroundColor: newEmoji === e ? `${theme.accent.primary}18` : theme.fill.secondary,
+                fontSize: 20, cursor: "pointer", padding: 0,
+              }}>{e}</button>
+            ))}
+          </div>
+          {/* タイトル入力 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 22 }}>{newEmoji}</span>
+            <input
+              autoFocus
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              placeholder="タスク名を入力..."
+              style={{
+                flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${theme.stroke.secondary}`,
+                fontSize: 15, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleAdd} style={{
+              flex: 2, padding: "10px", borderRadius: 10, border: "none",
+              backgroundColor: theme.accent.primary, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+            }}>追加する</button>
+            <button onClick={() => { setIsAdding(false); setNewTitle(""); }} style={{
+              flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${theme.stroke.secondary}`,
+              backgroundColor: "transparent", color: theme.text.tertiary, fontSize: 13, cursor: "pointer",
+            }}>キャンセル</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setIsAdding(true)} style={{
+          width: "100%", padding: "11px", borderRadius: 12,
+          border: `1.5px dashed ${theme.stroke.secondary}`, backgroundColor: "transparent",
+          color: theme.text.tertiary, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}>
+          <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスクを追加
+        </button>
+      )}
     </>
   );
 }
@@ -1075,18 +1187,40 @@ function HanamaruStamp({ message }: { message: string }) {
 // ── Show Parent Screen ────────────────────────────────
 
 function ShowParentScreen({
-  context, approved, onApprove, onReset, onGoTimer,
+  context, approved, timerDuration, onSetDuration,
+  onApprove, onReset, onGoTimer, onHome,
 }: {
   context: { label: string; taskNames: string[]; completedAt: string };
   approved: boolean;
+  timerDuration: number;
+  onSetDuration: (m: number) => void;
   onApprove: () => void;
   onReset: () => void;
   onGoTimer: () => void;
+  onHome: () => void;
 }) {
+  const [customMin, setCustomMin] = useState("");
+  const presets = [10, 15, 20, 30, 45, 60];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
+      {/* ホームボタン */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div onClick={onHome} style={{
+          display: "flex", alignItems: "center", gap: 4,
+          cursor: "pointer", color: theme.text.tertiary, fontSize: 13,
+          padding: "4px 6px", borderRadius: 6,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          ホーム
+        </div>
+        <div style={{ fontSize: 12, color: theme.text.tertiary }}>{context.completedAt} 完了</div>
+      </div>
+
       <div style={{ textAlign: "center", paddingTop: 4 }}>
-        <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 4 }}>{context.completedAt} 完了</div>
         <div style={{ fontSize: 21, fontWeight: 800, color: theme.text.primary }}>ぜんぶできたよ！</div>
         <div style={{ display: "inline-flex", marginTop: 6, padding: "3px 12px", borderRadius: 100, backgroundColor: theme.fill.secondary }}>
           <span style={{ fontSize: 12, color: theme.text.tertiary }}>{context.label}</span>
@@ -1125,15 +1259,47 @@ function ShowParentScreen({
         </div>
       )}
 
-      <div
-        onClick={onGoTimer}
-        style={{
-          padding: "12px 0", borderRadius: 12, textAlign: "center", cursor: "pointer",
-          border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary,
-          fontSize: 14, fontWeight: 600, color: theme.text.secondary,
-        }}
-      >
-        🎮 ゲームタイマーをスタート
+      {/* ゲームタイマー */}
+      <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
+        <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 8 }}>🎮 ゲームのじかん</div>
+        {/* プリセット */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {presets.map((m) => (
+            <button key={m} onClick={() => { onSetDuration(m); setCustomMin(""); }} style={{
+              padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+              backgroundColor: timerDuration === m && !customMin ? theme.accent.primary : theme.fill.secondary,
+              color: timerDuration === m && !customMin ? "#fff" : theme.text.secondary,
+              fontWeight: timerDuration === m && !customMin ? 700 : 400,
+              fontSize: 13,
+            }}>{m}分</button>
+          ))}
+        </div>
+        {/* カスタム入力 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <input
+            type="number"
+            min={1} max={180}
+            value={customMin}
+            onChange={(e) => {
+              setCustomMin(e.target.value);
+              const v = parseInt(e.target.value);
+              if (v > 0 && v <= 180) onSetDuration(v);
+            }}
+            placeholder="自由に入力（分）"
+            style={{
+              flex: 1, padding: "8px 12px", borderRadius: 8,
+              border: customMin ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
+              fontSize: 14, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
+              fontFamily: "inherit",
+            }}
+          />
+        </div>
+        <button onClick={onGoTimer} style={{
+          width: "100%", padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+          backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
+        }}>
+          {timerDuration}分スタート 🎮
+        </button>
       </div>
 
       <div style={{ marginTop: "auto", padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
@@ -1166,7 +1332,7 @@ function ShowParentScreen({
 
 // ── Timer Screen ──────────────────────────────────────
 
-function TimerScreen({ secondsLeft, onBack }: { secondsLeft: number; onBack: () => void }) {
+function TimerScreen({ secondsLeft, onBack, onHome }: { secondsLeft: number; onBack: () => void; onHome: () => void }) {
   const progress   = secondsLeft / (20 * 60);
   const minutes    = Math.floor(secondsLeft / 60);
   const secs       = secondsLeft % 60;
@@ -1177,16 +1343,15 @@ function TimerScreen({ secondsLeft, onBack }: { secondsLeft: number; onBack: () 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 22, position: "relative" }}>
-      <div onClick={onBack} style={{
-        position: "absolute", top: 0, left: 0,
-        display: "flex", alignItems: "center", gap: 4,
-        cursor: "pointer", color: theme.text.tertiary, fontSize: 13,
-        padding: "4px 6px", borderRadius: 6,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        もどる
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          もどる
+        </div>
+        <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          ホーム
+        </div>
       </div>
 
       <div style={{ fontSize: 13, color: theme.text.tertiary, letterSpacing: 1 }}>ゲームのじかん</div>
@@ -1228,22 +1393,21 @@ function TimerScreen({ secondsLeft, onBack }: { secondsLeft: number; onBack: () 
 // ── Timer End Screen ──────────────────────────────────
 
 function TimerEndScreen({
-  streak, stamps, onBack,
+  streak, stamps, onBack, onHome,
 }: {
-  streak: number; stamps: boolean[]; onBack: () => void;
+  streak: number; stamps: boolean[]; onBack: () => void; onHome: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 20, textAlign: "center", position: "relative" }}>
-      <div onClick={onBack} style={{
-        position: "absolute", top: 0, left: 0,
-        display: "flex", alignItems: "center", gap: 4,
-        cursor: "pointer", color: theme.text.tertiary, fontSize: 13,
-        padding: "4px 6px", borderRadius: 6,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        もどる
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          もどる
+        </div>
+        <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          ホーム
+        </div>
       </div>
 
       <div style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: theme.fill.secondary, border: `3px solid ${theme.stroke.primary}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
