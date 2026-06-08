@@ -66,7 +66,10 @@ export function PullToRefresh({ children, disabled, style, className }: Props) {
         setRefreshing(true);
         setPull(48);
         if ("serviceWorker" in navigator) {
-          try { await navigator.serviceWorker.getRegistration()?.update(); } catch { /* ignore */ }
+          try {
+            const reg = await navigator.serviceWorker.getRegistration();
+            if (reg) await reg.update();
+          } catch { /* ignore */ }
         }
         window.location.reload();
         return;
