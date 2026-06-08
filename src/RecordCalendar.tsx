@@ -23,14 +23,20 @@ export function isFullDay(day?: DayHistory): boolean {
   return f.morning && f.home && f.evening;
 }
 
+function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function getFullDayStreak(history: Record<string, DayHistory>): number {
   let streak = 0;
   const today = new Date();
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    if (isFullDay(history[key])) streak++;
+    if (isFullDay(history[localDateKey(d)])) streak++;
     else break;
   }
   return streak;
@@ -46,7 +52,7 @@ export function getStreak(history: Record<string, DayHistory>): number {
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const day = history[d.toISOString().slice(0, 10)];
+    const day = history[localDateKey(d)];
     if (day && (day.morning || day.evening || day.home)) streak++;
     else break;
   }
@@ -230,7 +236,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
 }
 
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey(new Date());
 }
 
 const navBtnStyle: React.CSSProperties = {

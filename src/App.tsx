@@ -146,8 +146,50 @@ function sumSessionBestTimes(
   return { totalSec, recorded, total: tasks.length };
 }
 
+function localDateKey(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** カレンダー上の「きょう」（連続記録・親承認の日付） */
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
+}
+
+/**
+ * タスク完了のリセット境界（毎日 23:59 ローカル）。
+ * 23:59 以降は翌日のタスク日として扱い、完了状態をリセットする。
+ */
+function taskDayKey(now = new Date()): string {
+  const d = new Date(now);
+  if (d.getHours() === 23 && d.getMinutes() >= 59) {
+    d.setDate(d.getDate() + 1);
+  }
+  return localDateKey(d);
+}
+
+function freshCompletionSlice(
+  morningTasks: Task[],
+  eveningTasks: Task[],
+  homeTasks: Task[],
+) {
+  return {
+    date: taskDayKey(),
+    morningDone: [] as number[],
+    eveningDone: [] as number[],
+    homeDone: [] as number[],
+    morningSkipped: [] as number[],
+    eveningSkipped: [] as number[],
+    homeSkipped: [] as number[],
+    morningApproved: false,
+    eveningApproved: false,
+    homeApproved: false,
+    morningTasks: stripTodayTasks(morningTasks),
+    eveningTasks: stripTodayTasks(eveningTasks),
+    homeTasks: stripTodayTasks(homeTasks),
+  };
 }
 
 function normalizeTasks(tasks: Task[]): Task[] {
@@ -179,42 +221,18 @@ function loadStoredState(): StoredState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data: StoredState = JSON.parse(raw);
-      if (data.date === todayKey()) {
+      if (data.date === taskDayKey()) {
         return hydrateStoredState(data);
       }
       const hydrated = hydrateStoredState(data);
       return {
         ...hydrated,
-        date: todayKey(),
-        morningDone: [],
-        eveningDone: [],
-        homeDone: [],
-        morningSkipped: [],
-        eveningSkipped: [],
-        homeSkipped: [],
-        morningApproved: false,
-        eveningApproved: false,
-        homeApproved: false,
-        morningTasks: stripTodayTasks(hydrated.morningTasks),
-        eveningTasks: stripTodayTasks(hydrated.eveningTasks),
-        homeTasks: stripTodayTasks(hydrated.homeTasks),
+        ...freshCompletionSlice(hydrated.morningTasks, hydrated.eveningTasks, hydrated.homeTasks),
       };
     }
   } catch { /* ignore */ }
   return {
-    date: todayKey(),
-    morningDone: [],
-    eveningDone: [],
-    homeDone: [],
-    morningSkipped: [],
-    eveningSkipped: [],
-    homeSkipped: [],
-    morningApproved: false,
-    eveningApproved: false,
-    homeApproved: false,
-    morningTasks: MORNING_TASKS_DEFAULT,
-    eveningTasks: EVENING_TASKS_DEFAULT,
-    homeTasks: HOME_TASKS_DEFAULT,
+    ...freshCompletionSlice(MORNING_TASKS_DEFAULT, EVENING_TASKS_DEFAULT, HOME_TASKS_DEFAULT),
     history: {},
   };
 }
@@ -446,6 +464,7 @@ export default function KeigoTaskApp() {
   const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
   const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
   const [stickerAlbum, setStickerAlbum] = useState<string[]>(stored.stickerAlbum ?? []);
+  const taskDayRef = useRef(stored.date);
   const workTimerBaseRef = useRef(0);
   const workTimerStartRef = useRef<number | null>(null);
 
@@ -488,7 +507,7 @@ export default function KeigoTaskApp() {
   // ── localStorage save ──
   useEffect(() => {
     const state: StoredState = {
-      date: todayKey(),
+      date: taskDayKey(),
       morningDone:    [...morningDone],
       eveningDone:    [...eveningDone],
       homeDone:       [...homeDone],
@@ -586,6 +605,43 @@ export default function KeigoTaskApp() {
     setWorkTimerRunning(false);
     setWorkTimerElapsed(0);
   };
+
+  // 23:59 をまたいだら完了状態をリセット（最短記録は維持）
+  useEffect(() => {
+    const applyTaskDayReset = () => {
+      const key = taskDayKey();
+      if (key === taskDayRef.current) return;
+      taskDayRef.current = key;
+      setMorningDone(new Set());
+      setEveningDone(new Set());
+      setHomeDone(new Set());
+      setMorningSkipped(new Set());
+      setEveningSkipped(new Set());
+      setHomeSkipped(new Set());
+      setMorningApproved(false);
+      setEveningApproved(false);
+      setHomeApproved(false);
+      setMorningTasks((t) => stripTodayTasks(t));
+      setEveningTasks((t) => stripTodayTasks(t));
+      setHomeTasks((t) => stripTodayTasks(t));
+      setActiveWorkTask(null);
+      resetWorkTimer();
+      setJustChecked(null);
+      setNewRecordCelebration(null);
+      setStampVisible(false);
+    };
+
+    applyTaskDayReset();
+    const id = setInterval(applyTaskDayReset, 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") applyTaskDayReset();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   const pauseWorkTimer = () => {
     if (workTimerStartRef.current) {
