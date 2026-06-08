@@ -317,6 +317,7 @@ export default function KeigoTaskApp() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [alarmSettings, setAlarmSettings] = useState<AlarmSettings>(loadAlarmSettings);
   const [alarmRinging, setAlarmRinging] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const alarmSettingsRef = useRef(alarmSettings);
   useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
@@ -649,7 +650,7 @@ export default function KeigoTaskApp() {
 
       <PullToRefresh
         className={shaking ? "phone-shake" : ""}
-        disabled={anticipating || !!celebType || showMenu}
+        disabled={anticipating || !!celebType || showMenu || pickerOpen}
         style={{
           padding: "max(env(safe-area-inset-top, 16px), 16px) 16px 24px",
           display: "flex",
@@ -708,6 +709,7 @@ export default function KeigoTaskApp() {
             onReset={resetApproval}
             onGoTimer={startAndGoTimer}
             onHome={goHome}
+            onPickerOpenChange={setPickerOpen}
           />
         )}
 
@@ -725,10 +727,8 @@ export default function KeigoTaskApp() {
             onCancel={cancelTimer}
             onBack={() => setScreen(prevScreen)}
             onHome={goHome}
+            onPickerOpenChange={setPickerOpen}
           />
-        )}
-
-        {screen === "timer_end" && (
           <TimerEndScreen
             streak={streak}
             stamps={weekStamps}
@@ -1386,7 +1386,7 @@ function HanamaruStamp({ message }: { message: string }) {
 
 function ShowParentScreen({
   context, approved, timerDuration, onSetDuration,
-  onApprove, onReset, onGoTimer, onHome,
+  onApprove, onReset, onGoTimer, onHome, onPickerOpenChange,
 }: {
   context: { label: string; taskNames: string[]; completedAt: string };
   approved: boolean;
@@ -1396,6 +1396,7 @@ function ShowParentScreen({
   onReset: () => void;
   onGoTimer: () => void;
   onHome: () => void;
+  onPickerOpenChange: (open: boolean) => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
@@ -1487,6 +1488,7 @@ function ShowParentScreen({
         needsApprovalMessage={!approved}
         showStartButton
         onStart={onGoTimer}
+        onPickerOpenChange={onPickerOpenChange}
       />
     </div>
   );
@@ -1496,7 +1498,7 @@ function ShowParentScreen({
 
 function TimerScreen({
   secondsLeft, totalSeconds, paused, timerRunning, timerDuration,
-  onSetDuration, onStart, onPause, onResume, onCancel, onBack, onHome,
+  onSetDuration, onStart, onPause, onResume, onCancel, onBack, onHome, onPickerOpenChange,
 }: {
   secondsLeft: number;
   totalSeconds: number;
@@ -1510,6 +1512,7 @@ function TimerScreen({
   onCancel: () => void;
   onBack: () => void;
   onHome: () => void;
+  onPickerOpenChange: (open: boolean) => void;
 }) {
   const displaySeconds = timerRunning ? secondsLeft : timerDuration * 60;
   const displayTotal   = timerRunning ? totalSeconds : timerDuration * 60;
@@ -1601,6 +1604,7 @@ function TimerScreen({
         compact
         showStartButton={!timerRunning}
         onStart={onStart}
+        onPickerOpenChange={onPickerOpenChange}
       />
     </div>
   );

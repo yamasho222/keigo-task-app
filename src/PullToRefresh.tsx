@@ -35,14 +35,17 @@ export function PullToRefresh({ children, disabled, style, className }: Props) {
       }
     };
 
+    const isModalTouch = (e: TouchEvent) =>
+      !!(e.target as Element).closest?.("[data-modal-overlay]");
+
     const onTouchStart = (e: TouchEvent) => {
-      if (refreshing || el.scrollTop > 0) return;
+      if (isModalTouch(e) || refreshing || el.scrollTop > 0) return;
       startY.current = e.touches[0].clientY;
       pullingRef.current = true;
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!pullingRef.current || refreshing) return;
+      if (isModalTouch(e) || !pullingRef.current || refreshing) return;
       if (el.scrollTop > 0) {
         reset();
         return;
