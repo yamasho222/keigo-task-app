@@ -1,4 +1,6 @@
-export type AlarmSoundType = "beep" | "siren" | "bell" | "chime" | "urgent";
+export type AlarmSoundType =
+  | "party" | "fart" | "boing" | "duck" | "robot" | "fanfare"
+  | "siren" | "bell" | "urgent";
 
 export interface AlarmSettings {
   durationSec: number;
@@ -14,11 +16,15 @@ export const ALARM_SOUND_OPTIONS: {
   emoji: string;
   desc: string;
 }[] = [
-  { id: "beep",   label: "ピピピ",     emoji: "📢", desc: "くり返しビープ" },
-  { id: "siren",  label: "サイレン",   emoji: "🚨", desc: "うえした交互" },
-  { id: "bell",   label: "ベル",       emoji: "🔔", desc: "リンリン" },
-  { id: "chime",  label: "チャイム",   emoji: "🎵", desc: "きらきら音" },
-  { id: "urgent", label: "もうすぐ！", emoji: "⏰", desc: "はやい連打" },
+  { id: "party",   label: "パーティ！",   emoji: "🎉", desc: "ブーブーパーッ！" },
+  { id: "fart",    label: "おなら",       emoji: "💨", desc: "デフォルメおなら" },
+  { id: "boing",   label: "ぼよん！",     emoji: "🦘", desc: "とびはねる音" },
+  { id: "duck",    label: "あひる",       emoji: "🦆", desc: "がーがー！" },
+  { id: "robot",   label: "ロボット",     emoji: "🤖", desc: "ピコピコ話す" },
+  { id: "fanfare", label: "ファンファーレ", emoji: "🏆", desc: "できた！の音" },
+  { id: "siren",   label: "サイレン",     emoji: "🚨", desc: "くらい目立つ" },
+  { id: "bell",    label: "ベル",         emoji: "🔔", desc: "リンリン" },
+  { id: "urgent",  label: "もうすぐ！",   emoji: "⏰", desc: "はやい連打" },
 ];
 
 const ALARM_SETTINGS_KEY = "keigo-alarm-settings-v1";
@@ -26,7 +32,7 @@ const ALARM_SETTINGS_KEY = "keigo-alarm-settings-v1";
 const DEFAULT_SETTINGS: AlarmSettings = {
   durationSec: 30,
   soundEnabled: true,
-  soundType: "siren",
+  soundType: "party",
 };
 
 let alarmActive = false;
@@ -124,13 +130,8 @@ async function ensureAudioRunning(): Promise<boolean> {
 }
 
 function tone(
-  ctx: AudioContext,
-  t: number,
-  freq: number,
-  wave: OscillatorType,
-  vol: number,
-  dur: number,
-  delay = 0,
+  ctx: AudioContext, t: number, freq: number, wave: OscillatorType,
+  vol: number, dur: number, delay = 0,
 ) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -140,26 +141,21 @@ function tone(
   gain.connect(ctx.destination);
   const s = t + delay;
   gain.gain.setValueAtTime(0.0001, s);
-  gain.gain.exponentialRampToValueAtTime(vol, s + 0.015);
+  gain.gain.exponentialRampToValueAtTime(vol, s + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, s + dur);
   osc.start(s);
   osc.stop(s + dur + 0.02);
 }
 
 function sweep(
-  ctx: AudioContext,
-  t: number,
-  f0: number,
-  f1: number,
-  wave: OscillatorType,
-  vol: number,
-  dur: number,
+  ctx: AudioContext, t: number, f0: number, f1: number,
+  wave: OscillatorType, vol: number, dur: number,
 ) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = wave;
-  osc.frequency.setValueAtTime(f0, t);
-  osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  osc.frequency.setValueAtTime(Math.max(f0, 1), t);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(f1, 1), t + dur);
   osc.connect(gain);
   gain.connect(ctx.destination);
   gain.gain.setValueAtTime(0.0001, t);
@@ -169,41 +165,128 @@ function sweep(
   osc.stop(t + dur + 0.02);
 }
 
+function boingSpring(ctx: AudioContext, t: number, delay = 0) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  const s = t + delay;
+  osc.frequency.setValueAtTime(180, s);
+  osc.frequency.exponentialRampToValueAtTime(920, s + 0.12);
+  osc.frequency.exponentialRampToValueAtTime(220, s + 0.42);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(0.0001, s);
+  gain.gain.exponentialRampToValueAtTime(0.85, s + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.45);
+  osc.start(s);
+  osc.stop(s + 0.48);
+}
+
+function noiseBurst(ctx: AudioContext, t: number, dur: number, vol: number, lowHz = 380, delay = 0) {
+  const s = t + delay;
+  const len = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = "lowpass";
+  filt.frequency.value = lowHz;
+  const gain = ctx.createGain();
+  src.connect(filt);
+  filt.connect(gain);
+  gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(vol, s);
+  gain.gain.exponentialRampToValueAtTime(0.0001, s + dur);
+  src.start(s);
+  src.stop(s + dur + 0.01);
+}
+
+function playFart(ctx: AudioContext, t: number) {
+  const playOne = (offset: number, vol: number) => {
+    noiseBurst(ctx, t, 0.22, vol * 0.9, 320, offset);
+    sweep(ctx, t + offset, 140, 55, "sawtooth", vol * 0.7, 0.2);
+  };
+  playOne(0, 0.9);
+  playOne(0.38, 0.65);
+}
+
+function playParty(ctx: AudioContext, t: number) {
+  const notes = [523, 659, 784, 1046, 784, 1046];
+  notes.forEach((f, i) => tone(ctx, t, f, "square", 0.75, 0.14, i * 0.1));
+  sweep(ctx, t + 0.65, 600, 1200, "sawtooth", 0.6, 0.18);
+}
+
+function playDuck(ctx: AudioContext, t: number) {
+  [0, 0.14, 0.28, 0.48, 0.62].forEach((d, i) =>
+    tone(ctx, t, i % 2 === 0 ? 380 : 420, "square", 0.7, 0.09, d),
+  );
+}
+
+function playRobot(ctx: AudioContext, t: number) {
+  [[0, 280], [0.1, 420], [0.2, 280], [0.3, 420], [0.42, 350], [0.52, 500]].forEach(([d, f]) =>
+    tone(ctx, t, f, "square", 0.72, 0.08, d),
+  );
+}
+
+function playFanfare(ctx: AudioContext, t: number) {
+  [523, 659, 784, 1046, 1318].forEach((f, i) =>
+    tone(ctx, t, f, "triangle", 0.8, 0.22, i * 0.11),
+  );
+  tone(ctx, t, 1568, "square", 0.65, 0.35, 0.62);
+}
+
 function playAlarmSound(type: AlarmSoundType) {
   const ctx = getAudioContext();
   if (!ctx || ctx.state !== "running") return;
   const t = ctx.currentTime;
 
   switch (type) {
-    case "beep":
-      [[0, 1046], [0.22, 1318], [0.5, 1046], [0.72, 1567]].forEach(([d, f]) =>
-        tone(ctx, t, f, "square", 0.7, 0.18, d),
-      );
+    case "party":
+      playParty(ctx, t);
+      break;
+    case "fart":
+      playFart(ctx, t);
+      break;
+    case "boing":
+      boingSpring(ctx, t);
+      boingSpring(ctx, t, 0.55);
+      break;
+    case "duck":
+      playDuck(ctx, t);
+      break;
+    case "robot":
+      playRobot(ctx, t);
+      break;
+    case "fanfare":
+      playFanfare(ctx, t);
       break;
     case "siren":
-      sweep(ctx, t, 520, 1400, "sawtooth", 0.75, 0.45);
-      sweep(ctx, t + 0.5, 1400, 520, "sawtooth", 0.75, 0.45);
+      sweep(ctx, t, 520, 1500, "sawtooth", 0.82, 0.45);
+      sweep(ctx, t + 0.5, 1500, 520, "sawtooth", 0.82, 0.45);
       break;
     case "bell":
-      [0, 0.18, 0.36].forEach((d) => tone(ctx, t, 880, "sine", 0.8, 0.28, d));
-      tone(ctx, t, 1320, "sine", 0.55, 0.2, 0.55);
-      break;
-    case "chime":
-      [523, 659, 784, 1046].forEach((f, i) => tone(ctx, t, f, "triangle", 0.7, 0.32, i * 0.14));
+      [0, 0.18, 0.36].forEach((d) => tone(ctx, t, 880, "sine", 0.85, 0.28, d));
+      tone(ctx, t, 1320, "sine", 0.6, 0.22, 0.55);
       break;
     case "urgent":
-      [0, 0.12, 0.24, 0.36, 0.48].forEach((d) => tone(ctx, t, 1580, "square", 0.8, 0.09, d));
+      [0, 0.1, 0.2, 0.3, 0.4, 0.5].forEach((d) => tone(ctx, t, 1680, "square", 0.85, 0.08, d));
       break;
   }
 }
 
 function soundIntervalMs(type: AlarmSoundType) {
   switch (type) {
-    case "urgent": return 620;
-    case "beep":   return 900;
-    case "bell":   return 850;
-    case "chime":  return 1100;
-    case "siren":  return 1050;
+    case "fart":    return 1300;
+    case "party":   return 950;
+    case "boing":   return 1200;
+    case "duck":    return 850;
+    case "robot":   return 780;
+    case "fanfare": return 1500;
+    case "urgent":  return 620;
+    case "bell":    return 900;
+    case "siren":   return 1050;
   }
 }
 
