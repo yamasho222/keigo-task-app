@@ -76,6 +76,23 @@ interface StoredState {
   morningTasks: Task[];
   eveningTasks: Task[];
   history: Record<string, DayHistory>;
+  bestTimes?: Record<string, number>;
+}
+
+interface ActiveWorkTask { session: "morning" | "evening"; taskId: number; }
+
+function taskTimeKey(session: "morning" | "evening", taskId: number) {
+  return `${session}-${taskId}`;
+}
+
+function fmtTaskTime(totalSec: number) {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtTaskTimeMs(ms: number) {
+  return fmtTaskTime(Math.floor(ms / 1000));
 }
 
 function todayKey() {
@@ -283,6 +300,14 @@ export default function KeigoTaskApp() {
   const [morningApproved, setMorningApproved] = useState(stored.morningApproved);
   const [eveningApproved, setEveningApproved] = useState(stored.eveningApproved);
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
+  const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
+
+  const [activeWorkTask, setActiveWorkTask] = useState<ActiveWorkTask | null>(null);
+  const [workTimerElapsed, setWorkTimerElapsed] = useState(0);
+  const [workTimerRunning, setWorkTimerRunning] = useState(false);
+  const [newRecordTaskId, setNewRecordTaskId] = useState<number | null>(null);
+  const workTimerBaseRef = useRef(0);
+  const workTimerStartRef = useRef<number | null>(null);
 
   const [justChecked,  setJustChecked]  = useState<number | null>(null);
   const [celebKey,     setCelebKey]     = useState(0);
@@ -327,9 +352,10 @@ export default function KeigoTaskApp() {
       morningTasks,
       eveningTasks,
       history,
+      bestTimes,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [morningDone, eveningDone, morningApproved, eveningApproved, morningTasks, eveningTasks, history]);
+  }, [morningDone, eveningDone, morningApproved, eveningApproved, morningTasks, eveningTasks, history, bestTimes]);
 
   useEffect(() => {
     saveAlarmSettings(alarmSettings);
@@ -381,6 +407,77 @@ export default function KeigoTaskApp() {
   const updateAlarmSettings = (next: AlarmSettings) => {
     setAlarmSettings(next);
     saveAlarmSettings(next);
+  };
+
+  // ── タスク作業タイマー（ゲームタイマーとは別・カウントアップ）──
+  useEffect(() => {
+    if (!workTimerRunning) return;
+    const id = setInterval(() => {
+      if (workTimerStartRef.current) {
+        setWorkTimerElapsed(workTimerBaseRef.current + Date.now() - workTimerStartRef.current);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [workTimerRunning]);
+
+  const resetWorkTimer = () => {
+    workTimerBaseRef.current = 0;
+    workTimerStartRef.current = null;
+    setWorkTimerRunning(false);
+    setWorkTimerElapsed(0);
+  };
+
+  const pauseWorkTimer = () => {
+    if (workTimerStartRef.current) {
+      workTimerBaseRef.current += Date.now() - workTimerStartRef.current;
+      workTimerStartRef.current = null;
+    }
+    setWorkTimerRunning(false);
+    setWorkTimerElapsed(workTimerBaseRef.current);
+  };
+
+  const startWorkTimer = () => {
+    if (workTimerRunning) return;
+    workTimerStartRef.current = Date.now();
+    setWorkTimerRunning(true);
+  };
+
+  const selectWorkTask = (session: "morning" | "evening", taskId: number, isDone: boolean) => {
+    if (isDone || celebType || anticipating) return;
+    if (activeWorkTask?.session === session && activeWorkTask.taskId === taskId) return;
+    pauseWorkTimer();
+    resetWorkTimer();
+    setActiveWorkTask({ session, taskId });
+    workTimerStartRef.current = Date.now();
+    setWorkTimerRunning(true);
+  };
+
+  const completeWorkTask = (
+    session: "morning" | "evening",
+    tasks: Task[],
+    done: Set<number>,
+    setDone: (s: Set<number>) => void,
+    label: string,
+  ) => {
+    if (!activeWorkTask || activeWorkTask.session !== session) return;
+    if (workTimerRunning) pauseWorkTimer();
+    const totalSec = Math.floor(workTimerElapsed / 1000);
+    if (totalSec < 1) return;
+
+    const { taskId } = activeWorkTask;
+    const key = taskTimeKey(session, taskId);
+    const prevBest = bestTimes[key];
+    if (prevBest === undefined || totalSec < prevBest) {
+      setBestTimes((prev) => ({ ...prev, [key]: totalSec }));
+      setNewRecordTaskId(taskId);
+      setTimeout(() => setNewRecordTaskId(null), 2500);
+    }
+
+    if (!done.has(taskId)) {
+      handleToggle(done, setDone, tasks, label, session, taskId);
+    }
+    resetWorkTimer();
+    setActiveWorkTask(null);
   };
 
   // ── background timer（画面移動しても継続・一時停止対応）──
@@ -562,6 +659,16 @@ export default function KeigoTaskApp() {
     const next = new Set(doneSet);
     next.delete(id);
     setDone(next);
+    const key = taskTimeKey(session, id);
+    setBestTimes((prev) => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+    if (activeWorkTask?.session === session && activeWorkTask.taskId === id) {
+      resetWorkTimer();
+      setActiveWorkTask(null);
+    }
   };
 
   const dayLabel = getDayLabel();
@@ -715,34 +822,48 @@ export default function KeigoTaskApp() {
             <InAppTabs screen={screen} onSwitch={goToScreen} />
             {screen === "morning" && (
               <TaskScreen
+                session="morning"
                 label="朝のやること"
                 timeLabel={`${dayLabel} 朝`}
                 tasks={morningTasks}
                 done={morningDone}
                 justChecked={justChecked}
                 floatColor={floatColor}
+                bestTimes={bestTimes}
+                activeWorkTask={activeWorkTask}
+                workTimerElapsed={workTimerElapsed}
+                workTimerRunning={workTimerRunning}
+                newRecordTaskId={newRecordTaskId}
                 onReorder={setMorningTasks}
                 onAddTask={(title, emoji, scope) => addTask("morning", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("morning", id)}
-                toggle={(id) =>
-                  handleToggle(morningDone, setMorningDone, morningTasks, "朝のやること", "morning", id)
-                }
+                onSelectTask={(id) => selectWorkTask("morning", id, morningDone.has(id))}
+                onStartTimer={startWorkTimer}
+                onPauseTimer={pauseWorkTimer}
+                onCompleteTask={() => completeWorkTask("morning", morningTasks, morningDone, setMorningDone, "朝のやること")}
               />
             )}
             {screen === "evening" && (
               <TaskScreen
+                session="evening"
                 label="夜のやること"
                 timeLabel={`${dayLabel} 夜`}
                 tasks={eveningTasks}
                 done={eveningDone}
                 justChecked={justChecked}
                 floatColor={floatColor}
+                bestTimes={bestTimes}
+                activeWorkTask={activeWorkTask}
+                workTimerElapsed={workTimerElapsed}
+                workTimerRunning={workTimerRunning}
+                newRecordTaskId={newRecordTaskId}
                 onReorder={setEveningTasks}
                 onAddTask={(title, emoji, scope) => addTask("evening", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("evening", id)}
-                toggle={(id) =>
-                  handleToggle(eveningDone, setEveningDone, eveningTasks, "夜のやること", "evening", id)
-                }
+                onSelectTask={(id) => selectWorkTask("evening", id, eveningDone.has(id))}
+                onStartTimer={startWorkTimer}
+                onPauseTimer={pauseWorkTimer}
+                onCompleteTask={() => completeWorkTask("evening", eveningTasks, eveningDone, setEveningDone, "夜のやること")}
               />
             )}
           </>
@@ -1135,16 +1256,29 @@ function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: Scree
 // ── Task Screen ───────────────────────────────────────
 
 interface TaskScreenProps {
+  session: "morning" | "evening";
   label: string; timeLabel: string;
   tasks: Task[]; done: Set<number>; justChecked: number | null;
   floatColor: string;
+  bestTimes: Record<string, number>;
+  activeWorkTask: ActiveWorkTask | null;
+  workTimerElapsed: number;
+  workTimerRunning: boolean;
+  newRecordTaskId: number | null;
   onReorder: (tasks: Task[]) => void;
   onAddTask: (title: string, emoji: string, scope: TaskScope) => void;
   onDeleteTask: (id: number) => void;
-  toggle: (id: number) => void;
+  onSelectTask: (id: number) => void;
+  onStartTimer: () => void;
+  onPauseTimer: () => void;
+  onCompleteTask: () => void;
 }
 
-function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, onReorder, onAddTask, onDeleteTask, toggle }: TaskScreenProps) {
+function TaskScreen({
+  session, label, timeLabel, tasks, done, justChecked, floatColor,
+  bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
+  onReorder, onAddTask, onDeleteTask, onSelectTask, onStartTimer, onPauseTimer, onCompleteTask,
+}: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
   const [newTitle, setNewTitle] = useState("");
@@ -1195,20 +1329,31 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, on
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {tasks.map((task) => (
-              <SortableTaskRow
-                key={task.id}
-                task={task}
-                isDone={done.has(task.id)}
-                isJustChecked={justChecked === task.id}
-                floatColor={floatColor}
-                swipeOpen={openSwipeId === task.id}
-                onSwipeOpen={() => setOpenSwipeId(task.id)}
-                onSwipeClose={() => setOpenSwipeId(null)}
-                onToggle={() => toggle(task.id)}
-                onDelete={() => { onDeleteTask(task.id); setOpenSwipeId(null); }}
-              />
-            ))}
+            {tasks.map((task) => {
+              const isActive = activeWorkTask?.session === session && activeWorkTask.taskId === task.id;
+              return (
+                <SortableTaskRow
+                  key={task.id}
+                  task={task}
+                  isDone={done.has(task.id)}
+                  isJustChecked={justChecked === task.id}
+                  isActive={isActive}
+                  isNewRecord={newRecordTaskId === task.id}
+                  floatColor={floatColor}
+                  bestTime={bestTimes[taskTimeKey(session, task.id)]}
+                  liveElapsed={isActive ? workTimerElapsed : undefined}
+                  timerRunning={isActive && workTimerRunning}
+                  swipeOpen={openSwipeId === task.id}
+                  onSwipeOpen={() => setOpenSwipeId(task.id)}
+                  onSwipeClose={() => setOpenSwipeId(null)}
+                  onSelect={() => onSelectTask(task.id)}
+                  onDelete={() => { onDeleteTask(task.id); setOpenSwipeId(null); }}
+                  onStartTimer={onStartTimer}
+                  onPauseTimer={onPauseTimer}
+                  onCompleteTask={onCompleteTask}
+                />
+              );
+            })}
           </div>
         </SortableContext>
       </DndContext>
@@ -1282,13 +1427,19 @@ const addBtnStyle: CSSProperties = {
 };
 
 interface TaskRowProps {
-  task: Task; isDone: boolean; isJustChecked: boolean;
-  floatColor: string; onToggle: () => void; onDelete: () => void;
+  task: Task; isDone: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
+  floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean;
+  onSelect: () => void; onDelete: () => void;
   swipeOpen: boolean; onSwipeOpen: () => void; onSwipeClose: () => void;
+  onStartTimer: () => void; onPauseTimer: () => void; onCompleteTask: () => void;
 }
 
 function SortableTaskRow(props: TaskRowProps) {
-  const { swipeOpen, onSwipeOpen, onSwipeClose, onToggle, onDelete, ...rowProps } = props;
+  const {
+    swipeOpen, onSwipeOpen, onSwipeClose, onSelect, onDelete,
+    onStartTimer, onPauseTimer, onCompleteTask, isActive, liveElapsed, timerRunning,
+    ...rowProps
+  } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
   const swipeRef = useRef<HTMLDivElement>(null);
   const gesture = useRef({ startX: 0, startY: 0, startOffset: 0, swiping: false, moved: false, lastOffset: 0 });
@@ -1338,7 +1489,7 @@ function SortableTaskRow(props: TaskRowProps) {
     else onSwipeClose();
   };
 
-  const handleToggle = () => {
+  const handleSelect = () => {
     if (gesture.current.moved) {
       gesture.current.moved = false;
       return;
@@ -1347,7 +1498,7 @@ function SortableTaskRow(props: TaskRowProps) {
       onSwipeClose();
       return;
     }
-    onToggle();
+    onSelect();
   };
 
   return (
@@ -1417,24 +1568,108 @@ function SortableTaskRow(props: TaskRowProps) {
             e.currentTarget.releasePointerCapture(e.pointerId);
           }}
         >
-          <TaskRow {...rowProps} onToggle={handleToggle} />
+          <TaskRow {...rowProps} isActive={isActive} onSelect={handleSelect} />
+          {isActive && (
+            <TaskTimerPanel
+              elapsedMs={liveElapsed ?? 0}
+              running={timerRunning}
+              onStart={onStartTimer}
+              onPause={onPauseTimer}
+              onComplete={onCompleteTask}
+            />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function TaskRow({ task, isDone, isJustChecked, floatColor, onToggle }: Omit<TaskRowProps, "onDelete" | "swipeOpen" | "onSwipeOpen" | "onSwipeClose"> & { onToggle: () => void }) {
+function taskTimerBtnStyle(enabled: boolean, bg: string, color: string): CSSProperties {
+  return {
+    flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
+    cursor: enabled ? "pointer" : "default",
+    backgroundColor: enabled ? bg : theme.fill.secondary,
+    color: enabled ? color : theme.text.tertiary,
+    fontSize: 12, fontWeight: 700,
+    opacity: enabled ? 1 : 0.55,
+  };
+}
+
+function TaskTimerPanel({
+  elapsedMs, running, onStart, onPause, onComplete,
+}: {
+  elapsedMs: number; running: boolean;
+  onStart: () => void; onPause: () => void; onComplete: () => void;
+}) {
+  const canComplete = elapsedMs >= 1000;
+  return (
+    <div style={{
+      padding: "10px 14px 12px", borderTop: `1px solid ${theme.stroke.tertiary}`,
+      backgroundColor: `${theme.accent.primary}0A`,
+    }}>
+      <div style={{
+        fontSize: 28, fontWeight: 900, textAlign: "center", color: theme.accent.primary,
+        fontVariantNumeric: "tabular-nums", marginBottom: 10,
+      }}>
+        {fmtTaskTimeMs(elapsedMs)}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onStart(); }}
+          disabled={running}
+          style={taskTimerBtnStyle(!running, theme.accent.primary, "#fff")}
+        >
+          スタート
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onPause(); }}
+          disabled={!running}
+          style={taskTimerBtnStyle(running, theme.category.yellow, theme.text.primary)}
+        >
+          一時停止
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onComplete(); }}
+          disabled={!canComplete}
+          style={taskTimerBtnStyle(canComplete, theme.category.green, "#fff")}
+        >
+          完了
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TaskRow({
+  task, isDone, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, onSelect,
+}: Pick<TaskRowProps, "task" | "isDone" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed"> & { onSelect: () => void }) {
+  const timeLabel = liveElapsed !== undefined
+    ? fmtTaskTimeMs(liveElapsed)
+    : bestTime !== undefined
+      ? fmtTaskTime(bestTime)
+      : null;
+
   return (
     <div
-      onClick={onToggle}
+      onClick={isDone ? undefined : onSelect}
       className={isJustChecked ? "row-glow" : ""}
       style={{
         display: "flex", alignItems: "center", gap: 12,
-        padding: "13px 14px", borderRadius: 14,
-        backgroundColor: isDone ? `${theme.category.green}16` : theme.fill.quaternary,
-        cursor: "pointer",
-        border: `1.5px solid ${isDone ? `${theme.category.green}44` : theme.stroke.tertiary}`,
+        padding: "13px 14px", borderRadius: isActive ? "14px 14px 0 0" : 14,
+        backgroundColor: isDone
+          ? `${theme.category.green}16`
+          : isActive
+            ? `${theme.accent.primary}12`
+            : theme.fill.quaternary,
+        cursor: isDone ? "default" : "pointer",
+        border: `1.5px solid ${
+          isDone ? `${theme.category.green}44`
+            : isActive ? `${theme.accent.primary}55`
+            : theme.stroke.tertiary
+        }`,
         position: "relative", overflow: "visible",
       }}
     >
@@ -1479,6 +1714,25 @@ function TaskRow({ task, isDone, isJustChecked, floatColor, onToggle }: Omit<Tas
           </span>
         )}
       </span>
+      {timeLabel && (
+        <span style={{
+          flexShrink: 0, fontSize: 12, fontWeight: 800, fontVariantNumeric: "tabular-nums",
+          color: liveElapsed !== undefined ? theme.accent.primary : theme.category.orange,
+          display: "flex", alignItems: "center", gap: 3,
+        }}>
+          {liveElapsed !== undefined ? "⏱" : "🏆"}{timeLabel}
+        </span>
+      )}
+      {isNewRecord && (
+        <span style={{
+          position: "absolute", right: 14, top: "-10px",
+          fontSize: 11, fontWeight: 900, color: theme.category.orange,
+          backgroundColor: `${theme.category.orange}22`, padding: "3px 8px", borderRadius: 8,
+          pointerEvents: "none",
+        }}>
+          さいこう！
+        </span>
+      )}
       {isJustChecked && (
         <span className="float-label" style={{
           position: "absolute", right: 14, top: "-5%",
