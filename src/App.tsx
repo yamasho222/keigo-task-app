@@ -650,6 +650,15 @@ export default function KeigoTaskApp() {
     setTasks([...base, { id: maxId + 1, title: title.trim(), emoji, scope }]);
   };
 
+  const clearBestTime = (session: "morning" | "evening", taskId: number) => {
+    const key = taskTimeKey(session, taskId);
+    setBestTimes((prev) => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+  };
+
   const deleteTask = (session: "morning" | "evening", id: number) => {
     const base = session === "morning" ? morningTasks : eveningTasks;
     const setTasks = session === "morning" ? setMorningTasks : setEveningTasks;
@@ -841,6 +850,7 @@ export default function KeigoTaskApp() {
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCompleteTask={() => completeWorkTask("morning", morningTasks, morningDone, setMorningDone, "朝のやること")}
+                onClearBestTime={(id) => clearBestTime("morning", id)}
               />
             )}
             {screen === "evening" && (
@@ -864,6 +874,7 @@ export default function KeigoTaskApp() {
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCompleteTask={() => completeWorkTask("evening", eveningTasks, eveningDone, setEveningDone, "夜のやること")}
+                onClearBestTime={(id) => clearBestTime("evening", id)}
               />
             )}
           </>
@@ -1272,18 +1283,21 @@ interface TaskScreenProps {
   onStartTimer: () => void;
   onPauseTimer: () => void;
   onCompleteTask: () => void;
+  onClearBestTime: (id: number) => void;
 }
 
 function TaskScreen({
   session, label, timeLabel, tasks, done, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onDeleteTask, onSelectTask, onStartTimer, onPauseTimer, onCompleteTask,
+  onClearBestTime,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
   const [newTitle, setNewTitle] = useState("");
   const [newEmoji, setNewEmoji] = useState("📝");
   const [openSwipeId, setOpenSwipeId] = useState<number | null>(null);
+  const [confirmDeleteTimeId, setConfirmDeleteTimeId] = useState<number | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1351,6 +1365,15 @@ function TaskScreen({
                   onStartTimer={onStartTimer}
                   onPauseTimer={onPauseTimer}
                   onCompleteTask={onCompleteTask}
+                  confirmDeleteTime={confirmDeleteTimeId === task.id}
+                  onTimeBadgeTap={() => setConfirmDeleteTimeId(
+                    confirmDeleteTimeId === task.id ? null : task.id,
+                  )}
+                  onConfirmDeleteTime={() => {
+                    onClearBestTime(task.id);
+                    setConfirmDeleteTimeId(null);
+                  }}
+                  onCancelDeleteTime={() => setConfirmDeleteTimeId(null)}
                 />
               );
             })}
@@ -1432,12 +1455,15 @@ interface TaskRowProps {
   onSelect: () => void; onDelete: () => void;
   swipeOpen: boolean; onSwipeOpen: () => void; onSwipeClose: () => void;
   onStartTimer: () => void; onPauseTimer: () => void; onCompleteTask: () => void;
+  confirmDeleteTime: boolean;
+  onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }
 
 function SortableTaskRow(props: TaskRowProps) {
   const {
     swipeOpen, onSwipeOpen, onSwipeClose, onSelect, onDelete,
     onStartTimer, onPauseTimer, onCompleteTask, isActive, liveElapsed, timerRunning,
+    confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
     ...rowProps
   } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
@@ -1568,7 +1594,15 @@ function SortableTaskRow(props: TaskRowProps) {
             e.currentTarget.releasePointerCapture(e.pointerId);
           }}
         >
-          <TaskRow {...rowProps} isActive={isActive} onSelect={handleSelect} />
+          <TaskRow
+            {...rowProps}
+            isActive={isActive}
+            onSelect={handleSelect}
+            confirmDeleteTime={confirmDeleteTime}
+            onTimeBadgeTap={onTimeBadgeTap}
+            onConfirmDeleteTime={onConfirmDeleteTime}
+            onCancelDeleteTime={onCancelDeleteTime}
+          />
           {isActive && (
             <TaskTimerPanel
               elapsedMs={liveElapsed ?? 0}
@@ -1645,13 +1679,11 @@ function TaskTimerPanel({
 
 function TaskRow({
   task, isDone, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, onSelect,
-}: Pick<TaskRowProps, "task" | "isDone" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed"> & { onSelect: () => void }) {
-  const timeLabel = liveElapsed !== undefined
-    ? fmtTaskTimeMs(liveElapsed)
-    : bestTime !== undefined
-      ? fmtTaskTime(bestTime)
-      : null;
-
+  confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
+}: Pick<TaskRowProps, "task" | "isDone" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "confirmDeleteTime"> & {
+  onSelect: () => void;
+  onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
+}) {
   return (
     <div
       onClick={isDone ? undefined : onSelect}
@@ -1714,14 +1746,57 @@ function TaskRow({
           </span>
         )}
       </span>
-      {timeLabel && (
+      {liveElapsed !== undefined && (
         <span style={{
           flexShrink: 0, fontSize: 12, fontWeight: 800, fontVariantNumeric: "tabular-nums",
-          color: liveElapsed !== undefined ? theme.accent.primary : theme.category.orange,
-          display: "flex", alignItems: "center", gap: 3,
+          color: theme.accent.primary, display: "flex", alignItems: "center", gap: 3,
         }}>
-          {liveElapsed !== undefined ? "⏱" : "🏆"}{timeLabel}
+          ⏱{fmtTaskTimeMs(liveElapsed)}
         </span>
+      )}
+      {liveElapsed === undefined && bestTime !== undefined && (
+        <div
+          style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={onTimeBadgeTap}
+            style={{
+              border: "none", background: "none", cursor: "pointer", padding: "4px 6px",
+              borderRadius: 8, fontSize: 12, fontWeight: 800, fontVariantNumeric: "tabular-nums",
+              color: theme.category.orange, display: "flex", alignItems: "center", gap: 3,
+              backgroundColor: confirmDeleteTime ? `${theme.category.orange}18` : "transparent",
+            }}
+          >
+            🏆{fmtTaskTime(bestTime)}
+          </button>
+          {confirmDeleteTime && (
+            <>
+              <button
+                type="button"
+                onClick={onConfirmDeleteTime}
+                style={{
+                  border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: 8,
+                  fontSize: 11, fontWeight: 700, backgroundColor: theme.category.pink, color: "#fff",
+                }}
+              >
+                けす
+              </button>
+              <button
+                type="button"
+                onClick={onCancelDeleteTime}
+                aria-label="キャンセル"
+                style={{
+                  border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 8,
+                  fontSize: 14, color: theme.text.tertiary, background: "transparent",
+                }}
+              >
+                ✕
+              </button>
+            </>
+          )}
+        </div>
       )}
       {isNewRecord && (
         <span style={{
