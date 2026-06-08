@@ -448,8 +448,12 @@ export default function KeigoTaskApp() {
     pauseWorkTimer();
     resetWorkTimer();
     setActiveWorkTask({ session, taskId });
-    workTimerStartRef.current = Date.now();
-    setWorkTimerRunning(true);
+  };
+
+  const cancelWorkTask = () => {
+    pauseWorkTimer();
+    resetWorkTimer();
+    setActiveWorkTask(null);
   };
 
   const completeWorkTask = (
@@ -849,6 +853,7 @@ export default function KeigoTaskApp() {
                 onSelectTask={(id) => selectWorkTask("morning", id, morningDone.has(id))}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
+                onCancelTask={cancelWorkTask}
                 onCompleteTask={() => completeWorkTask("morning", morningTasks, morningDone, setMorningDone, "朝のやること")}
                 onClearBestTime={(id) => clearBestTime("morning", id)}
               />
@@ -873,6 +878,7 @@ export default function KeigoTaskApp() {
                 onSelectTask={(id) => selectWorkTask("evening", id, eveningDone.has(id))}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
+                onCancelTask={cancelWorkTask}
                 onCompleteTask={() => completeWorkTask("evening", eveningTasks, eveningDone, setEveningDone, "夜のやること")}
                 onClearBestTime={(id) => clearBestTime("evening", id)}
               />
@@ -1282,6 +1288,7 @@ interface TaskScreenProps {
   onSelectTask: (id: number) => void;
   onStartTimer: () => void;
   onPauseTimer: () => void;
+  onCancelTask: () => void;
   onCompleteTask: () => void;
   onClearBestTime: (id: number) => void;
 }
@@ -1289,7 +1296,7 @@ interface TaskScreenProps {
 function TaskScreen({
   session, label, timeLabel, tasks, done, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
-  onReorder, onAddTask, onDeleteTask, onSelectTask, onStartTimer, onPauseTimer, onCompleteTask,
+  onReorder, onAddTask, onDeleteTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -1364,6 +1371,7 @@ function TaskScreen({
                   onDelete={() => { onDeleteTask(task.id); setOpenSwipeId(null); }}
                   onStartTimer={onStartTimer}
                   onPauseTimer={onPauseTimer}
+                  onCancelTask={onCancelTask}
                   onCompleteTask={onCompleteTask}
                   confirmDeleteTime={confirmDeleteTimeId === task.id}
                   onTimeBadgeTap={() => setConfirmDeleteTimeId(
@@ -1454,7 +1462,7 @@ interface TaskRowProps {
   floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean;
   onSelect: () => void; onDelete: () => void;
   swipeOpen: boolean; onSwipeOpen: () => void; onSwipeClose: () => void;
-  onStartTimer: () => void; onPauseTimer: () => void; onCompleteTask: () => void;
+  onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
   confirmDeleteTime: boolean;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }
@@ -1462,7 +1470,7 @@ interface TaskRowProps {
 function SortableTaskRow(props: TaskRowProps) {
   const {
     swipeOpen, onSwipeOpen, onSwipeClose, onSelect, onDelete,
-    onStartTimer, onPauseTimer, onCompleteTask, isActive, liveElapsed, timerRunning,
+    onStartTimer, onPauseTimer, onCancelTask, onCompleteTask, isActive, liveElapsed, timerRunning,
     confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
     ...rowProps
   } = props;
@@ -1609,6 +1617,7 @@ function SortableTaskRow(props: TaskRowProps) {
               running={timerRunning}
               onStart={onStartTimer}
               onPause={onPauseTimer}
+              onCancel={onCancelTask}
               onComplete={onCompleteTask}
             />
           )}
@@ -1630,12 +1639,13 @@ function taskTimerBtnStyle(enabled: boolean, bg: string, color: string): CSSProp
 }
 
 function TaskTimerPanel({
-  elapsedMs, running, onStart, onPause, onComplete,
+  elapsedMs, running, onStart, onPause, onCancel, onComplete,
 }: {
   elapsedMs: number; running: boolean;
-  onStart: () => void; onPause: () => void; onComplete: () => void;
+  onStart: () => void; onPause: () => void; onCancel: () => void; onComplete: () => void;
 }) {
   const canComplete = elapsedMs >= 1000;
+  const canStart = !running;
   return (
     <div style={{
       padding: "10px 14px 12px", borderTop: `1px solid ${theme.stroke.tertiary}`,
@@ -1651,8 +1661,8 @@ function TaskTimerPanel({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onStart(); }}
-          disabled={running}
-          style={taskTimerBtnStyle(!running, theme.accent.primary, "#fff")}
+          disabled={!canStart}
+          style={taskTimerBtnStyle(canStart, theme.accent.primary, "#fff")}
         >
           スタート
         </button>
@@ -1673,6 +1683,18 @@ function TaskTimerPanel({
           完了
         </button>
       </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onCancel(); }}
+        style={{
+          width: "100%", marginTop: 8, padding: "9px 0", borderRadius: 10,
+          border: `1px solid ${theme.stroke.secondary}`, cursor: "pointer",
+          backgroundColor: "transparent", color: theme.text.tertiary,
+          fontSize: 12, fontWeight: 600,
+        }}
+      >
+        やめる
+      </button>
     </div>
   );
 }
