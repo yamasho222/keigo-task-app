@@ -1159,11 +1159,16 @@ export default function KeigoTaskApp() {
 
       {/* ── ハンバーガーボタン */}
       <button
+        type="button"
+        aria-label="メニューを開く"
         onClick={() => setShowMenu(true)}
         style={{
-          position: "fixed", top: "max(env(safe-area-inset-top, 12px), 12px)", right: 16,
-          zIndex: 80, width: 40, height: 40, borderRadius: 10,
+          position: "fixed",
+          right: 16,
+          bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+          zIndex: 80, width: 48, height: 48, borderRadius: 14,
           backgroundColor: theme.fill.secondary, border: `1px solid ${theme.stroke.secondary}`,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
           cursor: "pointer", display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center", gap: 5,
         }}
