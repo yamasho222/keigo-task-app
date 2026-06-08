@@ -9,6 +9,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { theme } from "./theme";
+import { PullToRefresh } from "./PullToRefresh";
+import { TimerDurationPanel } from "./TimerControls";
 
 // ── Types & Data ──────────────────────────────────────
 
@@ -325,8 +327,11 @@ export default function KeigoTaskApp() {
     completedAt: "",
   });
   const [timerDuration, setTimerDuration] = useState(30); // 分単位
-  const timerEndRef = useRef<number | null>(null);        // 終了時刻（ms）
+  const timerEndRef = useRef<number | null>(null);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
+  const [timerSessionTotal, setTimerSessionTotal] = useState(30 * 60);
+  const [timerPaused, setTimerPaused] = useState(false);
+  const [timerRunning, setTimerRunning] = useState(false);
 
   // ── computed ──
   const weekStamps = getWeekStamps(history);
@@ -348,14 +353,16 @@ export default function KeigoTaskApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [morningDone, eveningDone, morningApproved, eveningApproved, morningTasks, eveningTasks, history]);
 
-  // ── background timer（画面移動しても継続）──
+  // ── background timer（画面移動しても継続・一時停止対応）──
   useEffect(() => {
     const id = setInterval(() => {
-      if (!timerEndRef.current) return;
+      if (!timerEndRef.current || timerPaused) return;
       const rem = Math.ceil((timerEndRef.current - Date.now()) / 1000);
       if (rem <= 0) {
         timerEndRef.current = null;
         setTimerSecondsLeft(0);
+        setTimerPaused(false);
+        setTimerRunning(false);
         playAlarm();
         setScreen((s) => (s === "timer" ? "timer_end" : s));
       } else {
@@ -363,7 +370,46 @@ export default function KeigoTaskApp() {
       }
     }, 500);
     return () => clearInterval(id);
-  }, []);
+  }, [timerPaused]);
+
+  const startTimer = (minutes: number) => {
+    const secs = minutes * 60;
+    timerEndRef.current = Date.now() + secs * 1000;
+    setTimerSecondsLeft(secs);
+    setTimerSessionTotal(secs);
+    setTimerDuration(minutes);
+    setTimerPaused(false);
+    setTimerRunning(true);
+  };
+
+  const pauseTimer = () => {
+    if (!timerEndRef.current) return;
+    const rem = Math.max(0, Math.ceil((timerEndRef.current - Date.now()) / 1000));
+    timerEndRef.current = null;
+    setTimerSecondsLeft(rem);
+    setTimerPaused(true);
+  };
+
+  const resumeTimer = () => {
+    if (!timerPaused || timerSecondsLeft <= 0) return;
+    timerEndRef.current = Date.now() + timerSecondsLeft * 1000;
+    setTimerPaused(false);
+  };
+
+  const cancelTimer = () => {
+    timerEndRef.current = null;
+    setTimerSecondsLeft(0);
+    setTimerPaused(false);
+    setTimerRunning(false);
+    setScreen("show_parent");
+  };
+
+  const applyTimerDuration = (minutes: number) => {
+    setTimerDuration(minutes);
+    if (timerRunning) {
+      startTimer(minutes);
+    }
+  };
 
   // ── celebration ──
   const fireCelebration = (
@@ -442,8 +488,7 @@ export default function KeigoTaskApp() {
   const goToScreen = (id: ScreenId) => {
     if (id === "timer") {
       setPrevScreen(screen);
-      timerEndRef.current = Date.now() + timerDuration * 60 * 1000;
-      setTimerSecondsLeft(timerDuration * 60);
+      if (!timerRunning) startTimer(timerDuration);
     }
     setScreen(id);
   };
@@ -525,10 +570,14 @@ export default function KeigoTaskApp() {
               { icon: "✅", label: "親チェック画面", action: () => { setScreen("show_parent"); setShowMenu(false); } },
               { icon: "⏱", label: "タイマー",
                 action: () => {
-                  if (approved) { goToScreen("timer"); } else { setScreen("show_parent"); }
+                  if (approved) {
+                    if (timerRunning) setScreen("timer");
+                    else goToScreen("timer");
+                  } else {
+                    setScreen("show_parent");
+                  }
                   setShowMenu(false);
                 },
-                disabled: false,
               },
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
@@ -545,11 +594,10 @@ export default function KeigoTaskApp() {
         </div>
       )}
 
-      <div
+      <PullToRefresh
         className={shaking ? "phone-shake" : ""}
+        disabled={anticipating || !!celebType || showMenu}
         style={{
-          minHeight: "100dvh",
-          overflowY: "auto",
           padding: "max(env(safe-area-inset-top, 16px), 16px) 16px 24px",
           display: "flex",
           flexDirection: "column",
@@ -613,7 +661,13 @@ export default function KeigoTaskApp() {
         {screen === "timer" && (
           <TimerScreen
             secondsLeft={timerSecondsLeft}
-            totalSeconds={timerDuration * 60}
+            totalSeconds={timerSessionTotal}
+            paused={timerPaused}
+            timerDuration={timerDuration}
+            onSetDuration={applyTimerDuration}
+            onPause={pauseTimer}
+            onResume={resumeTimer}
+            onCancel={cancelTimer}
             onBack={() => setScreen(prevScreen)}
             onHome={goHome}
           />
@@ -627,7 +681,7 @@ export default function KeigoTaskApp() {
             onHome={goHome}
           />
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }
@@ -1277,9 +1331,6 @@ function ShowParentScreen({
   onGoTimer: () => void;
   onHome: () => void;
 }) {
-  const [customMin, setCustomMin] = useState("");
-  const presets = [10, 15, 20, 30, 45, 60];
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
       {/* ホームボタン */}
@@ -1363,76 +1414,46 @@ function ShowParentScreen({
         </div>
       </div>
 
-      {/* ── ゲームタイマー（下に配置・未承認なら無効） */}
-      <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary, opacity: approved ? 1 : 0.45 }}>
-        <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 8 }}>🎮 ゲームのじかん</div>
-        {!approved && (
-          <div style={{ fontSize: 12, color: theme.category.orange, marginBottom: 8, textAlign: "center" }}>
-            先に親のはんこをもらってね！
-          </div>
-        )}
-        {/* プリセット */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {presets.map((m) => (
-            <button key={m} onClick={() => { if (approved) { onSetDuration(m); setCustomMin(""); } }} style={{
-              padding: "5px 10px", borderRadius: 8, border: "none",
-              cursor: approved ? "pointer" : "default",
-              backgroundColor: timerDuration === m && !customMin ? theme.accent.primary : theme.fill.secondary,
-              color: timerDuration === m && !customMin ? "#fff" : theme.text.secondary,
-              fontWeight: timerDuration === m && !customMin ? 700 : 400,
-              fontSize: 13,
-            }}>{m}分</button>
-          ))}
-        </div>
-        {/* カスタム入力 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <input
-            type="number"
-            min={1} max={180}
-            value={customMin}
-            disabled={!approved}
-            onChange={(e) => {
-              setCustomMin(e.target.value);
-              const v = parseInt(e.target.value);
-              if (v > 0 && v <= 180) onSetDuration(v);
-            }}
-            placeholder="自由に入力（分）"
-            style={{
-              flex: 1, padding: "8px 12px", borderRadius: 8,
-              border: customMin ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
-              fontSize: 14, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
-              fontFamily: "inherit",
-            }}
-          />
-        </div>
-        <button onClick={approved ? onGoTimer : undefined} style={{
-          width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
-          cursor: approved ? "pointer" : "not-allowed",
-          backgroundColor: approved ? theme.accent.primary : theme.fill.secondary,
-          color: approved ? "#fff" : theme.text.tertiary,
-          fontSize: 15, fontWeight: 700,
-        }}>
-          {timerDuration}分スタート 🎮
-        </button>
-      </div>
+      <TimerDurationPanel
+        duration={timerDuration}
+        onSetDuration={onSetDuration}
+        disabled={!approved}
+        needsApprovalMessage={!approved}
+        showStartButton
+        onStart={onGoTimer}
+      />
     </div>
   );
 }
 
 // ── Timer Screen ──────────────────────────────────────
 
-function TimerScreen({ secondsLeft, totalSeconds, onBack, onHome }: { secondsLeft: number; totalSeconds: number; onBack: () => void; onHome: () => void }) {
+function TimerScreen({
+  secondsLeft, totalSeconds, paused, timerDuration,
+  onSetDuration, onPause, onResume, onCancel, onBack, onHome,
+}: {
+  secondsLeft: number;
+  totalSeconds: number;
+  paused: boolean;
+  timerDuration: number;
+  onSetDuration: (m: number) => void;
+  onPause: () => void;
+  onResume: () => void;
+  onCancel: () => void;
+  onBack: () => void;
+  onHome: () => void;
+}) {
   const progress   = totalSeconds > 0 ? secondsLeft / totalSeconds : 0;
   const minutes    = Math.floor(secondsLeft / 60);
   const secs       = secondsLeft % 60;
-  const isWarning  = secondsLeft <= 60;
-  const color      = isWarning ? theme.category.orange : theme.accent.primary;
+  const isWarning  = !paused && secondsLeft <= 60;
+  const color      = paused ? theme.text.tertiary : isWarning ? theme.category.orange : theme.accent.primary;
   const totalDots  = 20;
   const activeDots = Math.ceil(progress * totalDots);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 22, position: "relative" }}>
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           もどる
@@ -1443,38 +1464,70 @@ function TimerScreen({ secondsLeft, totalSeconds, onBack, onHome }: { secondsLef
         </div>
       </div>
 
-      <div style={{ fontSize: 13, color: theme.text.tertiary, letterSpacing: 1 }}>ゲームのじかん</div>
-
-      <div style={{ fontSize: 66, fontWeight: 900, color, fontVariantNumeric: "tabular-nums", letterSpacing: -3, lineHeight: 1 }}>
-        {String(minutes).padStart(2, "0")}:{String(secs).padStart(2, "0")}
-      </div>
-
-      <div>
-        <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap", maxWidth: 260 }}>
-          {[...Array(totalDots)].map((_, i) => (
-            <div key={i} style={{
-              width: 10, height: 10, borderRadius: 5,
-              backgroundColor: i < activeDots ? color : theme.fill.secondary,
-              border: i < activeDots ? "none" : `1px solid ${theme.stroke.tertiary}`,
-            }} />
-          ))}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+        <div style={{ fontSize: 13, color: theme.text.tertiary, letterSpacing: 1 }}>
+          ゲームのじかん{paused ? "（とまってる）" : ""}
         </div>
-        <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.text.tertiary }}>のこり {minutes}分</div>
-      </div>
 
-      {isWarning && (
-        <div style={{
-          padding: "12px 24px", borderRadius: 12,
-          backgroundColor: `${theme.category.orange}20`, border: `2px solid ${theme.category.orange}55`,
-          fontSize: 15, color: theme.category.orange, fontWeight: 700, textAlign: "center",
-        }}>
-          もうすぐおわるよ！
+        <div style={{ fontSize: 66, fontWeight: 900, color, fontVariantNumeric: "tabular-nums", letterSpacing: -3, lineHeight: 1 }}>
+          {String(minutes).padStart(2, "0")}:{String(secs).padStart(2, "0")}
         </div>
-      )}
 
-      <div style={{ fontSize: 12, color: theme.text.tertiary, textAlign: "center" }}>
-        タイマーがおわったら<br />やめようね
+        <div>
+          <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap", maxWidth: 260 }}>
+            {[...Array(totalDots)].map((_, i) => (
+              <div key={i} style={{
+                width: 10, height: 10, borderRadius: 5,
+                backgroundColor: i < activeDots ? color : theme.fill.secondary,
+                border: i < activeDots ? "none" : `1px solid ${theme.stroke.tertiary}`,
+              }} />
+            ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.text.tertiary }}>
+            {paused ? "一時停止中" : `のこり ${minutes}分`}
+          </div>
+        </div>
+
+        {isWarning && (
+          <div style={{
+            padding: "12px 24px", borderRadius: 12,
+            backgroundColor: `${theme.category.orange}20`, border: `2px solid ${theme.category.orange}55`,
+            fontSize: 15, color: theme.category.orange, fontWeight: 700, textAlign: "center",
+          }}>
+            もうすぐおわるよ！
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, width: "100%" }}>
+          <button
+            type="button"
+            onClick={paused ? onResume : onPause}
+            style={{
+              flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+              backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
+            }}
+          >
+            {paused ? "再開 ▶" : "一時停止 ⏸"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+              backgroundColor: theme.fill.secondary, color: theme.text.secondary, fontSize: 15, fontWeight: 700,
+            }}
+          >
+            取り消す
+          </button>
+        </div>
       </div>
+
+      <TimerDurationPanel
+        duration={timerDuration}
+        onSetDuration={onSetDuration}
+        compact
+        runningHint
+      />
     </div>
   );
 }
