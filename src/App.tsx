@@ -31,7 +31,48 @@ type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type TaskScope = "regular" | "today";
 type SwipeMode = "delete" | "skip";
 
-interface Task { id: number; title: string; emoji: string; scope?: TaskScope; }
+interface Task { id: number; title: string; emoji: string; scope?: TaskScope; weekdays?: number[]; }
+
+const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
+const WEEKDAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAYS_WEEKDAY = [1, 2, 3, 4, 5];
+const WEEKDAYS_WEEKEND = [0, 6];
+
+function isTaskVisibleToday(task: Task, now = new Date()): boolean {
+  if (task.scope === "today") return true;
+  if (!task.weekdays?.length) return true;
+  return task.weekdays.includes(now.getDay());
+}
+
+function visibleTasks(tasks: Task[], now = new Date()): Task[] {
+  return tasks.filter((t) => isTaskVisibleToday(t, now));
+}
+
+function normalizeWeekdaysForSave(weekdays: number[]): number[] | undefined {
+  const unique = [...new Set(weekdays)].sort((a, b) => a - b);
+  if (unique.length === 0 || unique.length === 7) return undefined;
+  return unique;
+}
+
+function weekdayBadgeLabel(weekdays?: number[]): string | null {
+  if (!weekdays?.length || weekdays.length === 7) return null;
+  const sorted = [...weekdays].sort((a, b) => a - b);
+  if (sorted.join() === WEEKDAYS_WEEKDAY.join()) return "平日";
+  if (sorted.join() === WEEKDAYS_WEEKEND.join()) return "土日";
+  return WEEKDAY_DISPLAY_ORDER
+    .filter((d) => weekdays.includes(d))
+    .map((d) => WEEKDAY_LABELS[d])
+    .join("");
+}
+
+function reorderVisibleInAll(allTasks: Task[], reorderedVisible: Task[]): Task[] {
+  let vi = 0;
+  return allTasks.map((t) => {
+    if (!isTaskVisibleToday(t)) return t;
+    return reorderedVisible[vi++];
+  });
+}
 
 const MORNING_TASKS_DEFAULT: Task[] = [
   { id: 1, title: "朝ごはん",               emoji: "🍚" },
@@ -111,12 +152,9 @@ function isTaskResolved(done: Set<number>, skipped: Set<number>, id: number) {
   return done.has(id) || skipped.has(id);
 }
 
-function resolvedCount(done: Set<number>, skipped: Set<number>) {
-  return done.size + skipped.size;
-}
-
 function isAllResolved(tasks: Task[], done: Set<number>, skipped: Set<number>) {
-  return tasks.length > 0 && resolvedCount(done, skipped) === tasks.length;
+  const visible = visibleTasks(tasks);
+  return visible.length > 0 && visible.every((t) => isTaskResolved(done, skipped, t.id));
 }
 
 function fmtTaskTime(totalSec: number) {
@@ -720,8 +758,9 @@ export default function KeigoTaskApp() {
     skipped: Set<number>,
     label: string,
   ) => {
+    const visible = visibleTasks(tasks);
     if (isAllResolved(tasks, done, skipped)) {
-      const names = tasks.map((t) => {
+      const names = visible.map((t) => {
         if (skipped.has(t.id)) return `${t.title}（保留）`;
         return t.title;
       });
@@ -935,19 +974,32 @@ export default function KeigoTaskApp() {
     setScreen(getSessionScreen());
   };
 
-  const addTask = (session: SessionId, title: string, emoji: string, scope: TaskScope) => {
+  const addTask = (
+    session: SessionId, title: string, emoji: string, scope: TaskScope, weekdays?: number[],
+  ) => {
     if (!title.trim()) return;
     const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
     const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
     const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
-    setTasks([...base, { id: maxId + 1, title: title.trim(), emoji, scope }]);
+    const task: Task = { id: maxId + 1, title: title.trim(), emoji, scope };
+    if (scope === "regular") task.weekdays = normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS);
+    setTasks([...base, task]);
   };
 
-  const updateTask = (session: SessionId, id: number, title: string, emoji: string) => {
+  const updateTask = (
+    session: SessionId, id: number, title: string, emoji: string, weekdays?: number[],
+  ) => {
     if (!title.trim()) return;
     const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
     const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
-    setTasks(base.map((t) => (t.id === id ? { ...t, title: title.trim(), emoji } : t)));
+    setTasks(base.map((t) => {
+      if (t.id !== id) return t;
+      const updated: Task = { ...t, title: title.trim(), emoji };
+      if (t.scope !== "today") {
+        updated.weekdays = normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS);
+      }
+      return updated;
+    }));
   };
 
   const clearBestTime = (session: SessionId, taskId: number) => {
@@ -1208,8 +1260,8 @@ export default function KeigoTaskApp() {
                 workTimerRunning={workTimerRunning}
                 newRecordTaskId={newRecordTaskId}
                 onReorder={setMorningTasks}
-                onAddTask={(title, emoji, scope) => addTask("morning", title, emoji, scope)}
-                onEditTask={(id, title, emoji) => updateTask("morning", id, title, emoji)}
+                onAddTask={(title, emoji, scope, weekdays) => addTask("morning", title, emoji, scope, weekdays)}
+                onEditTask={(id, title, emoji, weekdays) => updateTask("morning", id, title, emoji, weekdays)}
                 onDeleteTask={(id) => deleteTask("morning", id)}
                 onSkipTask={(id) => skipTask("morning", id, morningTasks, morningDone, morningSkipped, setMorningDone, setMorningSkipped, "朝のやること")}
                 onSelectTask={(id) => selectWorkTask("morning", id, morningDone, morningSkipped, setMorningDone)}
@@ -1236,8 +1288,8 @@ export default function KeigoTaskApp() {
                 workTimerRunning={workTimerRunning}
                 newRecordTaskId={newRecordTaskId}
                 onReorder={setHomeTasks}
-                onAddTask={(title, emoji, scope) => addTask("home", title, emoji, scope)}
-                onEditTask={(id, title, emoji) => updateTask("home", id, title, emoji)}
+                onAddTask={(title, emoji, scope, weekdays) => addTask("home", title, emoji, scope, weekdays)}
+                onEditTask={(id, title, emoji, weekdays) => updateTask("home", id, title, emoji, weekdays)}
                 onDeleteTask={(id) => deleteTask("home", id)}
                 onSkipTask={(id) => skipTask("home", id, homeTasks, homeDone, homeSkipped, setHomeDone, setHomeSkipped, "帰宅後のやること")}
                 onSelectTask={(id) => selectWorkTask("home", id, homeDone, homeSkipped, setHomeDone)}
@@ -1264,8 +1316,8 @@ export default function KeigoTaskApp() {
                 workTimerRunning={workTimerRunning}
                 newRecordTaskId={newRecordTaskId}
                 onReorder={setEveningTasks}
-                onAddTask={(title, emoji, scope) => addTask("evening", title, emoji, scope)}
-                onEditTask={(id, title, emoji) => updateTask("evening", id, title, emoji)}
+                onAddTask={(title, emoji, scope, weekdays) => addTask("evening", title, emoji, scope, weekdays)}
+                onEditTask={(id, title, emoji, weekdays) => updateTask("evening", id, title, emoji, weekdays)}
                 onDeleteTask={(id) => deleteTask("evening", id)}
                 onSkipTask={(id) => skipTask("evening", id, eveningTasks, eveningDone, eveningSkipped, setEveningDone, setEveningSkipped, "夜のやること")}
                 onSelectTask={(id) => selectWorkTask("evening", id, eveningDone, eveningSkipped, setEveningDone)}
@@ -1568,8 +1620,8 @@ function StepProgress({
   tasks: Task[]; done: Set<number>; skipped: Set<number>; justChecked: number | null;
 }) {
   const total       = tasks.length;
-  const doneCount   = resolvedCount(done, skipped);
-  const allDone     = doneCount === total;
+  const doneCount   = tasks.filter((t) => isTaskResolved(done, skipped, t.id)).length;
+  const allDone     = total > 0 && doneCount === total;
   const activeIdx   = tasks.findIndex((t) => !isTaskResolved(done, skipped, t.id));
   const circleSize = total <= 5 ? 36 : total <= 7 ? 28 : 22;
   const iconSize   = circleSize * 0.44;
@@ -1704,23 +1756,90 @@ function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: Scree
 
 // ── Task Edit / Action Sheet ──────────────────────────
 
+function WeekdayPicker({
+  selected, onChange,
+}: {
+  selected: number[];
+  onChange: (days: number[]) => void;
+}) {
+  const todayDow = new Date().getDay();
+  const presetBtn = (label: string, days: number[]) => (
+    <button
+      key={label}
+      type="button"
+      onClick={() => onChange(days)}
+      style={{
+        padding: "5px 10px", borderRadius: 8, border: `1px solid ${theme.stroke.secondary}`,
+        backgroundColor: theme.fill.secondary, fontSize: 11, fontWeight: 700,
+        color: theme.text.secondary, cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>くりかえすようび</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {presetBtn("毎日", ALL_WEEKDAYS)}
+        {presetBtn("平日", WEEKDAYS_WEEKDAY)}
+        {presetBtn("土日", WEEKDAYS_WEEKEND)}
+      </div>
+      <div style={{ display: "flex", gap: 5, justifyContent: "space-between" }}>
+        {WEEKDAY_DISPLAY_ORDER.map((dow) => {
+          const on = selected.includes(dow);
+          const isToday = dow === todayDow;
+          return (
+            <button
+              key={dow}
+              type="button"
+              onClick={() => onChange(on ? selected.filter((d) => d !== dow) : [...selected, dow])}
+              style={{
+                flex: 1, padding: "8px 0", borderRadius: 8, border: "none",
+                fontSize: 13, fontWeight: 800, cursor: "pointer",
+                backgroundColor: on ? theme.accent.primary : theme.fill.secondary,
+                color: on ? "#fff" : theme.text.secondary,
+                outline: isToday ? `2px solid ${theme.category.yellow}` : "none",
+                outlineOffset: 1,
+              }}
+            >
+              {WEEKDAY_LABELS[dow]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TaskEditForm({
   header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, autoFocus = true,
+  showWeekdays = false, initialWeekdays,
 }: {
   header?: string;
   initialTitle: string;
   initialEmoji: string;
   saveLabel: string;
-  onSave: (title: string, emoji: string) => void;
+  onSave: (title: string, emoji: string, weekdays?: number[]) => void;
   onCancel: () => void;
   autoFocus?: boolean;
+  showWeekdays?: boolean;
+  initialWeekdays?: number[];
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [emoji, setEmoji] = useState(initialEmoji);
+  const [weekdays, setWeekdays] = useState<number[]>(initialWeekdays ?? ALL_WEEKDAYS);
+  const [weekdayError, setWeekdayError] = useState(false);
 
   const handleSave = () => {
     if (!title.trim()) return;
-    onSave(title, emoji);
+    if (showWeekdays && weekdays.length === 0) {
+      setWeekdayError(true);
+      return;
+    }
+    setWeekdayError(false);
+    onSave(title, emoji, showWeekdays ? weekdays : undefined);
   };
 
   return (
@@ -1758,6 +1877,16 @@ function TaskEditForm({
           }}
         />
       </div>
+      {showWeekdays && (
+        <>
+          <WeekdayPicker selected={weekdays} onChange={(d) => { setWeekdays(d); setWeekdayError(false); }} />
+          {weekdayError && (
+            <div style={{ fontSize: 12, color: theme.category.pink, fontWeight: 700 }}>
+              ようびを1つえらんでね
+            </div>
+          )}
+        </>
+      )}
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" onClick={handleSave} style={{
           flex: 2, padding: "10px", borderRadius: 10, border: "none",
@@ -1837,8 +1966,8 @@ interface TaskScreenProps {
   workTimerRunning: boolean;
   newRecordTaskId: number | null;
   onReorder: (tasks: Task[]) => void;
-  onAddTask: (title: string, emoji: string, scope: TaskScope) => void;
-  onEditTask: (id: number, title: string, emoji: string) => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[]) => void;
+  onEditTask: (id: number, title: string, emoji: string, weekdays?: number[]) => void;
   onDeleteTask: (id: number) => void;
   onSkipTask: (id: number) => void;
   onSelectTask: (id: number) => void;
@@ -1870,17 +1999,20 @@ function TaskScreen({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
 
+  const shownTasks = visibleTasks(tasks);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIdx = tasks.findIndex((t) => t.id === active.id);
-      const newIdx = tasks.findIndex((t) => t.id === over.id);
-      onReorder(arrayMove(tasks, oldIdx, newIdx));
+      const oldIdx = shownTasks.findIndex((t) => t.id === active.id);
+      const newIdx = shownTasks.findIndex((t) => t.id === over.id);
+      if (oldIdx < 0 || newIdx < 0) return;
+      onReorder(reorderVisibleInAll(tasks, arrayMove(shownTasks, oldIdx, newIdx)));
     }
   };
 
-  const handleAdd = (title: string, emoji: string) => {
-    onAddTask(title, emoji, addMode);
+  const handleAdd = (title: string, emoji: string, weekdays?: number[]) => {
+    onAddTask(title, emoji, addMode, weekdays);
     setIsAdding(false);
   };
 
@@ -1905,14 +2037,14 @@ function TaskScreen({
         </div>
       </div>
 
-      <StepProgress tasks={tasks} done={done} skipped={skipped} justChecked={justChecked} />
-      <BestTimeSummary session={session} tasks={tasks} bestTimes={bestTimes} />
+      <StepProgress tasks={shownTasks} done={done} skipped={skipped} justChecked={justChecked} />
+      <BestTimeSummary session={session} tasks={shownTasks} bestTimes={bestTimes} />
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={shownTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {tasks.map((task) => {
+            {shownTasks.map((task) => {
               const isActive = activeWorkTask?.session === session && activeWorkTask.taskId === task.id;
               const isSkipped = skipped.has(task.id);
               const swipeMode = openSwipe?.id === task.id ? openSwipe.mode : null;
@@ -1964,6 +2096,7 @@ function TaskScreen({
           initialTitle=""
           initialEmoji="📝"
           saveLabel="追加する"
+          showWeekdays={addMode === "regular"}
           onSave={handleAdd}
           onCancel={() => setIsAdding(false)}
         />
@@ -2005,9 +2138,11 @@ function TaskScreen({
               header="名前を変える"
               initialTitle={editingTask.title}
               initialEmoji={editingTask.emoji}
+              initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
+              showWeekdays={editingTask.scope !== "today"}
               saveLabel="保存する"
-              onSave={(title, emoji) => {
-                onEditTask(editingTask.id, title, emoji);
+              onSave={(title, emoji, weekdays) => {
+                onEditTask(editingTask.id, title, emoji, weekdays);
                 setEditingTaskId(null);
               }}
               onCancel={() => setEditingTaskId(null)}
@@ -2400,6 +2535,14 @@ function TaskRow({
             backgroundColor: `${theme.accent.primary}18`, padding: "2px 6px", borderRadius: 6,
           }}>
             きょう
+          </span>
+        )}
+        {task.scope !== "today" && weekdayBadgeLabel(task.weekdays) && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 700, color: theme.category.purple,
+            backgroundColor: `${theme.category.purple}18`, padding: "2px 6px", borderRadius: 6,
+          }}>
+            {weekdayBadgeLabel(task.weekdays)}
           </span>
         )}
       </span>
