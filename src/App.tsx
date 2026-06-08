@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -323,8 +323,9 @@ export default function KeigoTaskApp() {
     taskNames: MORNING_TASKS_DEFAULT.map((t) => t.title),
     completedAt: "",
   });
-  const [timerSeconds, setTimerSeconds] = useState(20 * 60);
   const [timerDuration, setTimerDuration] = useState(20); // 分単位
+  const timerEndRef = useRef<number | null>(null);        // 終了時刻（ms）
+  const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
 
   // ── computed ──
   const weekStamps = getWeekStamps(history);
@@ -346,20 +347,22 @@ export default function KeigoTaskApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [morningDone, eveningDone, morningApproved, eveningApproved, morningTasks, eveningTasks, history]);
 
-  // ── timer countdown ──
+  // ── background timer（画面移動しても継続）──
   useEffect(() => {
-    if (screen !== "timer") return;
     const id = setInterval(() => {
-      setTimerSeconds((s) => {
-        if (s <= 1) {
-          setTimeout(() => { playAlarm(); setScreen("timer_end"); }, 0);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+      if (!timerEndRef.current) return;
+      const rem = Math.ceil((timerEndRef.current - Date.now()) / 1000);
+      if (rem <= 0) {
+        timerEndRef.current = null;
+        setTimerSecondsLeft(0);
+        playAlarm();
+        setScreen((s) => (s === "timer" ? "timer_end" : s));
+      } else {
+        setTimerSecondsLeft(rem);
+      }
+    }, 500);
     return () => clearInterval(id);
-  }, [screen]);
+  }, []);
 
   // ── celebration ──
   const fireCelebration = (
@@ -438,7 +441,8 @@ export default function KeigoTaskApp() {
   const goToScreen = (id: ScreenId) => {
     if (id === "timer") {
       setPrevScreen(screen);
-      setTimerSeconds(timerDuration * 60);
+      timerEndRef.current = Date.now() + timerDuration * 60 * 1000;
+      setTimerSecondsLeft(timerDuration * 60);
     }
     setScreen(id);
   };
@@ -535,7 +539,8 @@ export default function KeigoTaskApp() {
 
         {screen === "timer" && (
           <TimerScreen
-            secondsLeft={timerSeconds}
+            secondsLeft={timerSecondsLeft}
+            totalSeconds={timerDuration * 60}
             onBack={() => setScreen(prevScreen)}
             onHome={goHome}
           />
@@ -1259,50 +1264,8 @@ function ShowParentScreen({
         </div>
       )}
 
-      {/* ゲームタイマー */}
+      {/* ── 親のチェック（上に配置） */}
       <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
-        <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 8 }}>🎮 ゲームのじかん</div>
-        {/* プリセット */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {presets.map((m) => (
-            <button key={m} onClick={() => { onSetDuration(m); setCustomMin(""); }} style={{
-              padding: "5px 10px", borderRadius: 8, border: "none", cursor: "pointer",
-              backgroundColor: timerDuration === m && !customMin ? theme.accent.primary : theme.fill.secondary,
-              color: timerDuration === m && !customMin ? "#fff" : theme.text.secondary,
-              fontWeight: timerDuration === m && !customMin ? 700 : 400,
-              fontSize: 13,
-            }}>{m}分</button>
-          ))}
-        </div>
-        {/* カスタム入力 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <input
-            type="number"
-            min={1} max={180}
-            value={customMin}
-            onChange={(e) => {
-              setCustomMin(e.target.value);
-              const v = parseInt(e.target.value);
-              if (v > 0 && v <= 180) onSetDuration(v);
-            }}
-            placeholder="自由に入力（分）"
-            style={{
-              flex: 1, padding: "8px 12px", borderRadius: 8,
-              border: customMin ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
-              fontSize: 14, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
-              fontFamily: "inherit",
-            }}
-          />
-        </div>
-        <button onClick={onGoTimer} style={{
-          width: "100%", padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
-          backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
-        }}>
-          {timerDuration}分スタート 🎮
-        </button>
-      </div>
-
-      <div style={{ marginTop: "auto", padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
         <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, textAlign: "center" }}>ここは親がかくにんするところ</div>
         <div style={{ display: "flex", gap: 8 }}>
           <div onClick={onApprove} style={{
@@ -1326,14 +1289,67 @@ function ShowParentScreen({
           )}
         </div>
       </div>
+
+      {/* ── ゲームタイマー（下に配置・未承認なら無効） */}
+      <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary, opacity: approved ? 1 : 0.45 }}>
+        <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 8 }}>🎮 ゲームのじかん</div>
+        {!approved && (
+          <div style={{ fontSize: 12, color: theme.category.orange, marginBottom: 8, textAlign: "center" }}>
+            先に親のはんこをもらってね！
+          </div>
+        )}
+        {/* プリセット */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {presets.map((m) => (
+            <button key={m} onClick={() => { if (approved) { onSetDuration(m); setCustomMin(""); } }} style={{
+              padding: "5px 10px", borderRadius: 8, border: "none",
+              cursor: approved ? "pointer" : "default",
+              backgroundColor: timerDuration === m && !customMin ? theme.accent.primary : theme.fill.secondary,
+              color: timerDuration === m && !customMin ? "#fff" : theme.text.secondary,
+              fontWeight: timerDuration === m && !customMin ? 700 : 400,
+              fontSize: 13,
+            }}>{m}分</button>
+          ))}
+        </div>
+        {/* カスタム入力 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <input
+            type="number"
+            min={1} max={180}
+            value={customMin}
+            disabled={!approved}
+            onChange={(e) => {
+              setCustomMin(e.target.value);
+              const v = parseInt(e.target.value);
+              if (v > 0 && v <= 180) onSetDuration(v);
+            }}
+            placeholder="自由に入力（分）"
+            style={{
+              flex: 1, padding: "8px 12px", borderRadius: 8,
+              border: customMin ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
+              fontSize: 14, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
+              fontFamily: "inherit",
+            }}
+          />
+        </div>
+        <button onClick={approved ? onGoTimer : undefined} style={{
+          width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
+          cursor: approved ? "pointer" : "not-allowed",
+          backgroundColor: approved ? theme.accent.primary : theme.fill.secondary,
+          color: approved ? "#fff" : theme.text.tertiary,
+          fontSize: 15, fontWeight: 700,
+        }}>
+          {timerDuration}分スタート 🎮
+        </button>
+      </div>
     </div>
   );
 }
 
 // ── Timer Screen ──────────────────────────────────────
 
-function TimerScreen({ secondsLeft, onBack, onHome }: { secondsLeft: number; onBack: () => void; onHome: () => void }) {
-  const progress   = secondsLeft / (20 * 60);
+function TimerScreen({ secondsLeft, totalSeconds, onBack, onHome }: { secondsLeft: number; totalSeconds: number; onBack: () => void; onHome: () => void }) {
+  const progress   = totalSeconds > 0 ? secondsLeft / totalSeconds : 0;
   const minutes    = Math.floor(secondsLeft / 60);
   const secs       = secondsLeft % 60;
   const isWarning  = secondsLeft <= 60;
