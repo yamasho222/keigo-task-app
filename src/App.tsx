@@ -11,10 +11,15 @@ import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { theme } from "./theme";
 import { PullToRefresh } from "./PullToRefresh";
 import { TimerDurationPanel } from "./TimerControls";
+import { AlarmSettingsPanel } from "./AlarmSettingsPanel";
+import {
+  loadAlarmSettings, saveAlarmSettings, startAlarm, stopAlarm,
+  type AlarmSettings,
+} from "./alarm";
 
 // ── Types & Data ──────────────────────────────────────
 
-type ScreenId  = "morning" | "evening" | "show_parent" | "timer" | "timer_end";
+type ScreenId  = "morning" | "evening" | "show_parent" | "timer" | "timer_end" | "alarm_settings";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 
 interface Task { id: number; title: string; emoji: string; }
@@ -271,31 +276,9 @@ function AnimStyles() {
   );
 }
 
-// ── Audio Alarm ───────────────────────────────────────
-
-function playAlarm() {
-  try {
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx();
-    [[0, 880], [0.55, 1100], [1.1, 880], [1.65, 1320]].forEach(([t, freq]) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, ctx.currentTime + t);
-      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + t + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + t + 0.45);
-      osc.start(ctx.currentTime + t);
-      osc.stop(ctx.currentTime + t + 0.5);
-    });
-  } catch { /* 音声未対応環境では無視 */ }
-}
+// ── Main ──────────────────────────────────────────────
 
 const QUICK_EMOJIS = ["📝", "✏️", "🎯", "⭐", "🎮", "📱", "🎵", "🏃", "🍽️", "🛒", "💊", "🐾"];
-
-// ── Main ──────────────────────────────────────────────
 
 export default function KeigoTaskApp() {
   const stored = loadStoredState();
@@ -332,8 +315,11 @@ export default function KeigoTaskApp() {
   const [timerSessionTotal, setTimerSessionTotal] = useState(30 * 60);
   const [timerPaused, setTimerPaused] = useState(false);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [alarmSettings, setAlarmSettings] = useState<AlarmSettings>(loadAlarmSettings);
+  const [alarmRinging, setAlarmRinging] = useState(false);
+  const alarmSettingsRef = useRef(alarmSettings);
+  useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
-  // ── computed ──
   const weekStamps = getWeekStamps(history);
   const streak     = getStreak(history);
   const approved   = parentSession === "morning" ? morningApproved : eveningApproved;
@@ -353,6 +339,33 @@ export default function KeigoTaskApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [morningDone, eveningDone, morningApproved, eveningApproved, morningTasks, eveningTasks, history]);
 
+  useEffect(() => {
+    saveAlarmSettings(alarmSettings);
+  }, [alarmSettings]);
+
+  useEffect(() => () => stopAlarm(), []);
+
+  const stopAlarmNow = () => {
+    stopAlarm();
+    setAlarmRinging(false);
+  };
+
+  const triggerTimerEndAlarm = () => {
+    startAlarm(alarmSettingsRef.current, () => setAlarmRinging(false));
+    setAlarmRinging(true);
+  };
+
+  const testAlarm = () => {
+    stopAlarmNow();
+    startAlarm({ ...alarmSettings, durationSec: 3 }, () => setAlarmRinging(false));
+    setAlarmRinging(true);
+  };
+
+  const updateAlarmSettings = (next: AlarmSettings) => {
+    setAlarmSettings(next);
+    saveAlarmSettings(next);
+  };
+
   // ── background timer（画面移動しても継続・一時停止対応）──
   useEffect(() => {
     const id = setInterval(() => {
@@ -363,7 +376,7 @@ export default function KeigoTaskApp() {
         setTimerSecondsLeft(0);
         setTimerPaused(false);
         setTimerRunning(false);
-        playAlarm();
+        triggerTimerEndAlarm();
         setScreen((s) => (s === "timer" ? "timer_end" : s));
       } else {
         setTimerSecondsLeft(rem);
@@ -595,6 +608,7 @@ export default function KeigoTaskApp() {
                   setShowMenu(false);
                 },
               },
+              { icon: "🔔", label: "アラーム設定", action: () => { setScreen("alarm_settings"); setShowMenu(false); } },
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
                 display: "flex", alignItems: "center", gap: 14,
@@ -607,6 +621,29 @@ export default function KeigoTaskApp() {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {alarmRinging && (
+        <div style={{
+          position: "fixed", left: 16, right: 16, bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+          zIndex: 150, padding: 14, borderRadius: 14,
+          backgroundColor: theme.category.orange,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+          display: "flex", flexDirection: "column", gap: 10, alignItems: "center",
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>🔔 タイマーが終わったよ！</div>
+          <button
+            type="button"
+            onClick={stopAlarmNow}
+            style={{
+              width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
+              cursor: "pointer", backgroundColor: "#fff", color: theme.category.orange,
+              fontSize: 16, fontWeight: 800,
+            }}
+          >
+            アラームをとめる
+          </button>
         </div>
       )}
 
@@ -695,8 +732,19 @@ export default function KeigoTaskApp() {
           <TimerEndScreen
             streak={streak}
             stamps={weekStamps}
+            alarmRinging={alarmRinging}
+            onStopAlarm={stopAlarmNow}
             onBack={() => setScreen(prevScreen)}
             onHome={goHome}
+          />
+        )}
+
+        {screen === "alarm_settings" && (
+          <AlarmSettingsScreen
+            settings={alarmSettings}
+            onChange={updateAlarmSettings}
+            onTest={testAlarm}
+            onBack={goHome}
           />
         )}
       </PullToRefresh>
@@ -1561,9 +1609,10 @@ function TimerScreen({
 // ── Timer End Screen ──────────────────────────────────
 
 function TimerEndScreen({
-  streak, stamps, onBack, onHome,
+  streak, stamps, alarmRinging, onStopAlarm, onBack, onHome,
 }: {
-  streak: number; stamps: boolean[]; onBack: () => void; onHome: () => void;
+  streak: number; stamps: boolean[]; alarmRinging: boolean;
+  onStopAlarm: () => void; onBack: () => void; onHome: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 20, textAlign: "center", position: "relative" }}>
@@ -1590,6 +1639,20 @@ function TimerEndScreen({
         <div style={{ fontSize: 14, color: theme.text.secondary }}>きょうもよくがんばった</div>
       </div>
 
+      {alarmRinging && (
+        <button
+          type="button"
+          onClick={onStopAlarm}
+          style={{
+            width: "100%", maxWidth: 280, padding: "14px 0", borderRadius: 12, border: "none",
+            cursor: "pointer", backgroundColor: theme.category.orange, color: "#fff",
+            fontSize: 16, fontWeight: 800,
+          }}
+        >
+          🔕 アラームをとめる
+        </button>
+      )}
+
       <div style={{ width: "80%", height: 1, backgroundColor: theme.stroke.tertiary }} />
 
       {streak >= 2 && (
@@ -1602,6 +1665,31 @@ function TimerEndScreen({
       )}
 
       <WeekStamps stamps={stamps} streak={streak} />
+    </div>
+  );
+}
+
+function AlarmSettingsScreen({
+  settings, onChange, onTest, onBack,
+}: {
+  settings: AlarmSettings;
+  onChange: (next: AlarmSettings) => void;
+  onTest: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          もどる
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>アラーム設定</div>
+      </div>
+      <div style={{ fontSize: 13, color: theme.text.secondary, lineHeight: 1.6 }}>
+        タイマー終了時に鳴る音と振動の設定です。親が設定してね。
+      </div>
+      <AlarmSettingsPanel settings={settings} onChange={onChange} onTest={onTest} />
     </div>
   );
 }
