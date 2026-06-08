@@ -398,16 +398,17 @@ export default function KeigoTaskApp() {
 
   const cancelTimer = () => {
     timerEndRef.current = null;
-    setTimerSecondsLeft(0);
     setTimerPaused(false);
     setTimerRunning(false);
-    setScreen("show_parent");
+    setTimerSecondsLeft(timerDuration * 60);
+    setTimerSessionTotal(timerDuration * 60);
   };
 
-  const applyTimerDuration = (minutes: number) => {
+  const setTimerDurationOnly = (minutes: number) => {
     setTimerDuration(minutes);
-    if (timerRunning) {
-      startTimer(minutes);
+    if (!timerRunning) {
+      setTimerSecondsLeft(minutes * 60);
+      setTimerSessionTotal(minutes * 60);
     }
   };
 
@@ -485,10 +486,25 @@ export default function KeigoTaskApp() {
     }
   };
 
+  const goToTimer = () => {
+    setPrevScreen(screen);
+    if (!timerRunning) {
+      setTimerSecondsLeft(timerDuration * 60);
+      setTimerSessionTotal(timerDuration * 60);
+    }
+    setScreen("timer");
+  };
+
+  const startAndGoTimer = () => {
+    setPrevScreen(screen);
+    startTimer(timerDuration);
+    setScreen("timer");
+  };
+
   const goToScreen = (id: ScreenId) => {
     if (id === "timer") {
-      setPrevScreen(screen);
-      if (!timerRunning) startTimer(timerDuration);
+      goToTimer();
+      return;
     }
     setScreen(id);
   };
@@ -572,7 +588,7 @@ export default function KeigoTaskApp() {
                 action: () => {
                   if (approved) {
                     if (timerRunning) setScreen("timer");
-                    else goToScreen("timer");
+                    else goToTimer();
                   } else {
                     setScreen("show_parent");
                   }
@@ -653,7 +669,7 @@ export default function KeigoTaskApp() {
             onSetDuration={setTimerDuration}
             onApprove={handleApprove}
             onReset={resetApproval}
-            onGoTimer={() => goToScreen("timer")}
+            onGoTimer={startAndGoTimer}
             onHome={goHome}
           />
         )}
@@ -663,8 +679,10 @@ export default function KeigoTaskApp() {
             secondsLeft={timerSecondsLeft}
             totalSeconds={timerSessionTotal}
             paused={timerPaused}
+            timerRunning={timerRunning}
             timerDuration={timerDuration}
-            onSetDuration={applyTimerDuration}
+            onSetDuration={setTimerDurationOnly}
+            onStart={() => startTimer(timerDuration)}
             onPause={pauseTimer}
             onResume={resumeTimer}
             onCancel={cancelTimer}
@@ -1429,25 +1447,29 @@ function ShowParentScreen({
 // ── Timer Screen ──────────────────────────────────────
 
 function TimerScreen({
-  secondsLeft, totalSeconds, paused, timerDuration,
-  onSetDuration, onPause, onResume, onCancel, onBack, onHome,
+  secondsLeft, totalSeconds, paused, timerRunning, timerDuration,
+  onSetDuration, onStart, onPause, onResume, onCancel, onBack, onHome,
 }: {
   secondsLeft: number;
   totalSeconds: number;
   paused: boolean;
+  timerRunning: boolean;
   timerDuration: number;
   onSetDuration: (m: number) => void;
+  onStart: () => void;
   onPause: () => void;
   onResume: () => void;
   onCancel: () => void;
   onBack: () => void;
   onHome: () => void;
 }) {
-  const progress   = totalSeconds > 0 ? secondsLeft / totalSeconds : 0;
-  const minutes    = Math.floor(secondsLeft / 60);
-  const secs       = secondsLeft % 60;
-  const isWarning  = !paused && secondsLeft <= 60;
-  const color      = paused ? theme.text.tertiary : isWarning ? theme.category.orange : theme.accent.primary;
+  const displaySeconds = timerRunning ? secondsLeft : timerDuration * 60;
+  const displayTotal   = timerRunning ? totalSeconds : timerDuration * 60;
+  const progress   = displayTotal > 0 ? displaySeconds / displayTotal : 0;
+  const minutes    = Math.floor(displaySeconds / 60);
+  const secs       = displaySeconds % 60;
+  const isWarning  = timerRunning && !paused && secondsLeft <= 60;
+  const color      = !timerRunning ? theme.text.tertiary : paused ? theme.text.tertiary : isWarning ? theme.category.orange : theme.accent.primary;
   const totalDots  = 20;
   const activeDots = Math.ceil(progress * totalDots);
 
@@ -1466,7 +1488,8 @@ function TimerScreen({
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
         <div style={{ fontSize: 13, color: theme.text.tertiary, letterSpacing: 1 }}>
-          ゲームのじかん{paused ? "（とまってる）" : ""}
+          ゲームのじかん
+          {timerRunning && paused ? "（とまってる）" : !timerRunning ? "（まだスタートしてない）" : ""}
         </div>
 
         <div style={{ fontSize: 66, fontWeight: 900, color, fontVariantNumeric: "tabular-nums", letterSpacing: -3, lineHeight: 1 }}>
@@ -1484,7 +1507,7 @@ function TimerScreen({
             ))}
           </div>
           <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.text.tertiary }}>
-            {paused ? "一時停止中" : `のこり ${minutes}分`}
+            {!timerRunning ? "スタートボタンをおしてね" : paused ? "一時停止中" : `のこり ${minutes}分`}
           </div>
         </div>
 
@@ -1498,35 +1521,38 @@ function TimerScreen({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, width: "100%" }}>
-          <button
-            type="button"
-            onClick={paused ? onResume : onPause}
-            style={{
-              flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
-              backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
-            }}
-          >
-            {paused ? "再開 ▶" : "一時停止 ⏸"}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
-              backgroundColor: theme.fill.secondary, color: theme.text.secondary, fontSize: 15, fontWeight: 700,
-            }}
-          >
-            取り消す
-          </button>
-        </div>
+        {timerRunning && (
+          <div style={{ display: "flex", gap: 10, width: "100%" }}>
+            <button
+              type="button"
+              onClick={paused ? onResume : onPause}
+              style={{
+                flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
+              }}
+            >
+              {paused ? "再開 ▶" : "一時停止 ⏸"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{
+                flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                backgroundColor: theme.fill.secondary, color: theme.text.secondary, fontSize: 15, fontWeight: 700,
+              }}
+            >
+              取り消す
+            </button>
+          </div>
+        )}
       </div>
 
       <TimerDurationPanel
         duration={timerDuration}
         onSetDuration={onSetDuration}
         compact
-        runningHint
+        showStartButton={!timerRunning}
+        onStart={onStart}
       />
     </div>
   );
