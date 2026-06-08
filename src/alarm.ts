@@ -21,10 +21,12 @@ const DEFAULT_SETTINGS: AlarmSettings = {
 const VIBRATE_PATTERN = [400, 120, 400, 120, 600];
 
 let alarmActive = false;
+let soundBlocked = false;
 let stopTimeout: ReturnType<typeof setTimeout> | null = null;
 let beepInterval: ReturnType<typeof setInterval> | null = null;
 let vibrateInterval: ReturnType<typeof setInterval> | null = null;
 let audioCtx: AudioContext | null = null;
+let onSoundBlockedChange: ((blocked: boolean) => void) | null = null;
 
 export function loadAlarmSettings(): AlarmSettings {
   try {
@@ -45,6 +47,23 @@ export function saveAlarmSettings(settings: AlarmSettings) {
   localStorage.setItem(ALARM_SETTINGS_KEY, JSON.stringify(settings));
 }
 
+export function isAlarmActive() {
+  return alarmActive;
+}
+
+export function isSoundBlocked() {
+  return soundBlocked;
+}
+
+export function setSoundBlockedListener(cb: ((blocked: boolean) => void) | null) {
+  onSoundBlockedChange = cb;
+}
+
+function setSoundBlocked(blocked: boolean) {
+  soundBlocked = blocked;
+  onSoundBlockedChange?.(blocked);
+}
+
 function clampDuration(sec: number) {
   return Math.min(180, Math.max(5, Math.round(sec)));
 }
@@ -54,13 +73,47 @@ function getAudioContext() {
     ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   if (!Ctx) return null;
   if (!audioCtx || audioCtx.state === "closed") audioCtx = new Ctx();
-  if (audioCtx.state === "suspended") void audioCtx.resume();
   return audioCtx;
+}
+
+/** ユーザータップ後に呼ぶと iOS でも音が鳴るようになる */
+export async function unlockAudio(): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  try {
+    await ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.02);
+    const ok = ctx.state === "running";
+    if (ok) setSoundBlocked(false);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureAudioRunning(): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  try {
+    if (ctx.state === "suspended") await ctx.resume();
+    const ok = ctx.state === "running";
+    setSoundBlocked(!ok);
+    return ok;
+  } catch {
+    setSoundBlocked(true);
+    return false;
+  }
 }
 
 function playAttentionBeep() {
   const ctx = getAudioContext();
-  if (!ctx) return;
+  if (!ctx || ctx.state !== "running") return;
   const t = ctx.currentTime;
   [[0, 1046], [0.22, 1318], [0.5, 1046], [0.72, 1567]].forEach(([offset, freq]) => {
     const osc = ctx.createOscillator();
@@ -85,22 +138,38 @@ function startVibrationLoop() {
   }, 1640);
 }
 
-function startSoundLoop() {
+async function startSoundLoop() {
+  const ok = await ensureAudioRunning();
+  if (!ok) return;
   playAttentionBeep();
   beepInterval = setInterval(() => {
-    if (alarmActive) playAttentionBeep();
+    if (!alarmActive) return;
+    void (async () => {
+      if (await ensureAudioRunning()) playAttentionBeep();
+    })();
   }, 900);
 }
 
-export function isAlarmActive() {
-  return alarmActive;
+/** アラーム中にタップされたとき、音が止まっていたら再開を試みる */
+export async function retryAlarmSound() {
+  if (!alarmActive) return false;
+  const ok = await unlockAudio();
+  if (!ok) return false;
+  if (!beepInterval) {
+    playAttentionBeep();
+    beepInterval = setInterval(() => {
+      if (!alarmActive) return;
+      if (audioCtx?.state === "running") playAttentionBeep();
+    }, 900);
+  }
+  return true;
 }
 
 export function startAlarm(settings: AlarmSettings, onStop?: () => void) {
   stopAlarm();
   alarmActive = true;
 
-  if (settings.soundEnabled) startSoundLoop();
+  if (settings.soundEnabled) void startSoundLoop();
   if (settings.vibrationEnabled) startVibrationLoop();
 
   stopTimeout = setTimeout(() => {
@@ -111,12 +180,9 @@ export function startAlarm(settings: AlarmSettings, onStop?: () => void) {
 
 export function stopAlarm() {
   alarmActive = false;
+  setSoundBlocked(false);
   if (stopTimeout) { clearTimeout(stopTimeout); stopTimeout = null; }
   if (beepInterval) { clearInterval(beepInterval); beepInterval = null; }
   if (vibrateInterval) { clearInterval(vibrateInterval); vibrateInterval = null; }
   navigator.vibrate?.(0);
-  if (audioCtx && audioCtx.state !== "closed") {
-    void audioCtx.close();
-    audioCtx = null;
-  }
 }

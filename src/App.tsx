@@ -14,6 +14,7 @@ import { TimerDurationPanel } from "./TimerControls";
 import { AlarmSettingsPanel } from "./AlarmSettingsPanel";
 import {
   loadAlarmSettings, saveAlarmSettings, startAlarm, stopAlarm,
+  unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
 
@@ -317,6 +318,7 @@ export default function KeigoTaskApp() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [alarmSettings, setAlarmSettings] = useState<AlarmSettings>(loadAlarmSettings);
   const [alarmRinging, setAlarmRinging] = useState(false);
+  const [alarmSoundBlocked, setAlarmSoundBlocked] = useState(false);
   const alarmSettingsRef = useRef(alarmSettings);
   useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
@@ -345,18 +347,43 @@ export default function KeigoTaskApp() {
 
   useEffect(() => () => stopAlarm(), []);
 
+  useEffect(() => {
+    setSoundBlockedListener(setAlarmSoundBlocked);
+    return () => setSoundBlockedListener(null);
+  }, []);
+
+  // iOS 対策: 操作のたびに Audio を解禁しておく
+  useEffect(() => {
+    const unlock = () => { void unlockAudio(); };
+    document.addEventListener("touchstart", unlock, { passive: true });
+    document.addEventListener("click", unlock);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void unlockAudio();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("touchstart", unlock);
+      document.removeEventListener("click", unlock);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   const stopAlarmNow = () => {
     stopAlarm();
     setAlarmRinging(false);
   };
 
   const triggerTimerEndAlarm = () => {
-    startAlarm(alarmSettingsRef.current, () => setAlarmRinging(false));
-    setAlarmRinging(true);
+    void (async () => {
+      await unlockAudio();
+      startAlarm(alarmSettingsRef.current, () => setAlarmRinging(false));
+      setAlarmRinging(true);
+    })();
   };
 
-  const testAlarm = () => {
+  const testAlarm = async () => {
     stopAlarmNow();
+    await unlockAudio();
     startAlarm({ ...alarmSettings, durationSec: 3 }, () => setAlarmRinging(false));
     setAlarmRinging(true);
   };
@@ -386,6 +413,7 @@ export default function KeigoTaskApp() {
   }, [timerPaused]);
 
   const startTimer = (minutes: number) => {
+    void unlockAudio();
     const secs = minutes * 60;
     timerEndRef.current = Date.now() + secs * 1000;
     setTimerSecondsLeft(secs);
@@ -624,6 +652,25 @@ export default function KeigoTaskApp() {
         </div>
       )}
 
+      {alarmRinging && alarmSoundBlocked && (
+        <div
+          onClick={() => void retryAlarmSound()}
+          style={{
+            position: "fixed", inset: 0, zIndex: 145,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            backgroundColor: "rgba(0,0,0,0.35)", padding: 24,
+          }}
+        >
+          <div style={{
+            padding: "20px 24px", borderRadius: 16, backgroundColor: theme.bg.editor,
+            textAlign: "center", fontSize: 16, fontWeight: 700, color: theme.text.primary,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+          }}>
+            👆 タップして<br />アラームの音を鳴らす
+          </div>
+        </div>
+      )}
+
       {alarmRinging && (
         <div style={{
           position: "fixed", left: 16, right: 16, bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
@@ -633,6 +680,9 @@ export default function KeigoTaskApp() {
           display: "flex", flexDirection: "column", gap: 10, alignItems: "center",
         }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>🔔 タイマーが終わったよ！</div>
+          {alarmSoundBlocked && (
+            <div style={{ fontSize: 12, color: "#fff", opacity: 0.9 }}>音が鳴らないときは画面をタップ</div>
+          )}
           <button
             type="button"
             onClick={stopAlarmNow}
