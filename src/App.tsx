@@ -197,8 +197,8 @@ function loadStoredState(): StoredState {
 
 function getSessionScreen(): SessionId {
   const h = new Date().getHours();
-  if (h >= 5 && h < 12) return "morning";
-  if (h >= 12 && h < 18) return "home";
+  if (h < 12) return "morning";
+  if (h < 19) return "home";
   return "evening";
 }
 
@@ -522,8 +522,49 @@ export default function KeigoTaskApp() {
     setWorkTimerRunning(true);
   };
 
-  const selectWorkTask = (session: SessionId, taskId: number, resolved: boolean) => {
-    if (resolved || celebType || anticipating) return;
+  const resetSessionApproval = (session: SessionId) => {
+    const today = todayKey();
+    const prev = history[today] ?? { morning: false, evening: false, home: false };
+    if (session === "morning") {
+      setMorningApproved(false);
+      setHistory({ ...history, [today]: { ...prev, morning: false } });
+    } else if (session === "evening") {
+      setEveningApproved(false);
+      setHistory({ ...history, [today]: { ...prev, evening: false } });
+    } else {
+      setHomeApproved(false);
+      setHistory({ ...history, [today]: { ...prev, home: false } });
+    }
+    setStampVisible(false);
+  };
+
+  const redoTask = (
+    session: SessionId,
+    taskId: number,
+    done: Set<number>,
+    setDone: (s: Set<number>) => void,
+  ) => {
+    if (celebType || anticipating) return;
+    const next = new Set(done);
+    next.delete(taskId);
+    setDone(next);
+    resetSessionApproval(session);
+    cancelWorkTask();
+    setActiveWorkTask({ session, taskId });
+  };
+
+  const selectWorkTask = (
+    session: SessionId,
+    taskId: number,
+    done: Set<number>,
+    skipped: Set<number>,
+    setDone: (s: Set<number>) => void,
+  ) => {
+    if (skipped.has(taskId) || celebType || anticipating) return;
+    if (done.has(taskId)) {
+      redoTask(session, taskId, done, setDone);
+      return;
+    }
     if (activeWorkTask?.session === session && activeWorkTask.taskId === taskId) return;
     pauseWorkTimer();
     resetWorkTimer();
@@ -975,7 +1016,7 @@ export default function KeigoTaskApp() {
                 onAddTask={(title, emoji, scope) => addTask("morning", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("morning", id)}
                 onSkipTask={(id) => skipTask("morning", id, morningTasks, morningDone, morningSkipped, setMorningDone, setMorningSkipped, "朝のやること")}
-                onSelectTask={(id) => selectWorkTask("morning", id, isTaskResolved(morningDone, morningSkipped, id))}
+                onSelectTask={(id) => selectWorkTask("morning", id, morningDone, morningSkipped, setMorningDone)}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
@@ -1002,7 +1043,7 @@ export default function KeigoTaskApp() {
                 onAddTask={(title, emoji, scope) => addTask("home", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("home", id)}
                 onSkipTask={(id) => skipTask("home", id, homeTasks, homeDone, homeSkipped, setHomeDone, setHomeSkipped, "帰宅後のやること")}
-                onSelectTask={(id) => selectWorkTask("home", id, isTaskResolved(homeDone, homeSkipped, id))}
+                onSelectTask={(id) => selectWorkTask("home", id, homeDone, homeSkipped, setHomeDone)}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
@@ -1029,7 +1070,7 @@ export default function KeigoTaskApp() {
                 onAddTask={(title, emoji, scope) => addTask("evening", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("evening", id)}
                 onSkipTask={(id) => skipTask("evening", id, eveningTasks, eveningDone, eveningSkipped, setEveningDone, setEveningSkipped, "夜のやること")}
-                onSelectTask={(id) => selectWorkTask("evening", id, isTaskResolved(eveningDone, eveningSkipped, id))}
+                onSelectTask={(id) => selectWorkTask("evening", id, eveningDone, eveningSkipped, setEveningDone)}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
@@ -1899,10 +1940,11 @@ function TaskRow({
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }) {
   const resolved = isDone || isSkipped;
+  const canTap = !isSkipped;
 
   return (
     <div
-      onClick={resolved ? undefined : onSelect}
+      onClick={canTap ? onSelect : undefined}
       className={isJustChecked ? "row-glow" : ""}
       style={{
         display: "flex", alignItems: "center", gap: 12,
@@ -1914,7 +1956,7 @@ function TaskRow({
             : isActive
               ? `${theme.accent.primary}12`
               : theme.fill.quaternary,
-        cursor: resolved ? "default" : "pointer",
+        cursor: canTap ? "pointer" : "default",
         border: `1.5px solid ${
           isDone ? `${theme.category.green}44`
             : isSkipped ? `${theme.category.orange}55`
@@ -1977,6 +2019,14 @@ function TaskRow({
           </span>
         )}
       </span>
+      {isDone && !isActive && liveElapsed === undefined && (
+        <span style={{
+          flexShrink: 0, fontSize: 10, fontWeight: 700, color: theme.text.tertiary,
+          padding: "3px 7px", borderRadius: 6, border: `1px solid ${theme.stroke.secondary}`,
+        }}>
+          もう一度
+        </span>
+      )}
       {liveElapsed !== undefined && (
         <span style={{
           flexShrink: 0, fontSize: 12, fontWeight: 800, fontVariantNumeric: "tabular-nums",
