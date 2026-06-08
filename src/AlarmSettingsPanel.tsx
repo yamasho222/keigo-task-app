@@ -1,8 +1,11 @@
 import { theme } from "./theme";
 import {
   ALARM_DURATION_PRESETS,
+  ALARM_SOUND_OPTIONS,
   isVibrationSupported,
+  previewAlarmSound,
   type AlarmSettings,
+  type AlarmSoundType,
 } from "./alarm";
 
 function formatDuration(sec: number) {
@@ -25,6 +28,11 @@ export function AlarmSettingsPanel({
   const set = (patch: Partial<AlarmSettings>) => onChange({ ...settings, ...patch });
   const vibrateSupported = isVibrationSupported();
 
+  const pickSound = (type: AlarmSoundType) => {
+    set({ soundType: type });
+    if (settings.soundEnabled) void previewAlarmSound(type);
+  };
+
   return (
     <div style={{
       padding: compact ? 12 : 14,
@@ -33,6 +41,38 @@ export function AlarmSettingsPanel({
       backgroundColor: theme.fill.quaternary,
     }}>
       <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 10 }}>🔔 アラーム設定</div>
+
+      <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8 }}>アラームの音</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        {ALARM_SOUND_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => pickSound(opt.id)}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px", borderRadius: 10, border: "none",
+              cursor: "pointer", textAlign: "left",
+              backgroundColor: settings.soundType === opt.id ? `${theme.accent.primary}22` : theme.fill.secondary,
+              outline: settings.soundType === opt.id ? `2px solid ${theme.accent.primary}` : "none",
+            }}
+          >
+            <span style={{ fontSize: 22 }}>{opt.emoji}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{
+                fontSize: 14, fontWeight: settings.soundType === opt.id ? 700 : 600,
+                color: settings.soundType === opt.id ? theme.accent.primary : theme.text.primary,
+              }}>
+                {opt.label}
+              </div>
+              <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>{opt.desc}</div>
+            </div>
+            {settings.soundType === opt.id && (
+              <span style={{ fontSize: 11, color: theme.accent.primary, fontWeight: 700 }}>選択中</span>
+            )}
+          </button>
+        ))}
+      </div>
 
       <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8 }}>鳴り続ける時間</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
@@ -56,7 +96,7 @@ export function AlarmSettingsPanel({
 
       <ToggleRow
         label="音を鳴らす"
-        hint="はっきり聞こえるビープ音"
+        hint="選んだ音でアラーム"
         checked={settings.soundEnabled}
         onChange={(soundEnabled) => set({ soundEnabled })}
       />
