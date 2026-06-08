@@ -17,7 +17,11 @@ import {
   unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
-import { RecordScreen, getStreak } from "./RecordCalendar";
+import { RecordScreen, getStreak, isFullDay, getFullDayStreak } from "./RecordCalendar";
+import {
+  NewRecordOverlay, DailyTreatOverlay, WeeklyRewardOverlay,
+  type NewRecordCelebration,
+} from "./Rewards";
 
 // ── Types & Data ──────────────────────────────────────
 
@@ -92,6 +96,9 @@ interface StoredState {
   homeTasks: Task[];
   history: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
+  dailyTreatClaimed?: Record<string, boolean>;
+  lastWeeklyRewardStreak?: number;
+  stickerAlbum?: string[];
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -343,6 +350,44 @@ function AnimStyles() {
         78% { transform: scale(0.92); }
         100%{ transform: scale(1); }
       }
+      @keyframes recordFlash {
+        0%  { opacity: 0; }
+        15% { opacity: 1; }
+        100%{ opacity: 0.35; }
+      }
+      @keyframes recordTextPop {
+        0%  { transform: scale(0.2); opacity: 0; }
+        50% { transform: scale(1.2); opacity: 1; }
+        70% { transform: scale(0.95); }
+        100%{ transform: scale(1); opacity: 1; }
+      }
+      @keyframes recordTextPopDelay {
+        0%  { transform: translateY(30px) scale(0.8); opacity: 0; }
+        100%{ transform: translateY(0) scale(1); opacity: 1; }
+      }
+      @keyframes recordBadgePop {
+        0%  { transform: scale(0) rotate(-12deg); opacity: 0; }
+        45% { transform: scale(1.35) rotate(4deg); opacity: 1; }
+        65% { transform: scale(0.9); }
+        100%{ transform: scale(1) rotate(0deg); opacity: 1; }
+      }
+      @keyframes chestShake {
+        0%,100%{ transform: rotate(0deg); }
+        20%    { transform: rotate(-8deg) scale(1.05); }
+        40%    { transform: rotate(8deg) scale(1.08); }
+        60%    { transform: rotate(-5deg); }
+        80%    { transform: rotate(5deg); }
+      }
+      @keyframes chestOpen {
+        0%  { transform: scale(1); }
+        40% { transform: scale(1.5); }
+        100%{ transform: scale(1.2); }
+      }
+      @keyframes treatReveal {
+        0%  { transform: scale(0.3); opacity: 0; }
+        60% { transform: scale(1.15); opacity: 1; }
+        100%{ transform: scale(1); opacity: 1; }
+      }
       .check-pop   { animation: checkPop   0.42s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .ring-out    { animation: ringOut    0.5s  ease-out forwards; }
       .row-glow    { animation: rowGlow    0.5s  ease-out; }
@@ -356,6 +401,13 @@ function AnimStyles() {
       .approved-in { animation: approvedSlide 0.4s cubic-bezier(0.34,1.4,0.64,1) 0.5s both; }
       .stamp-day   { animation: weekStampPop 0.38s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .sparkle-in  { animation: sparkleConverge 0.65s ease-in both; }
+      .record-flash       { animation: recordFlash 0.8s ease-out forwards; }
+      .record-text-pop    { animation: recordTextPop 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .record-text-pop-delay { animation: recordTextPopDelay 0.5s cubic-bezier(0.34,1.4,0.64,1) 0.25s both; }
+      .record-badge-pop   { animation: recordBadgePop 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .chest-shake   { animation: chestShake 0.8s ease-in-out infinite; }
+      .chest-open    { animation: chestOpen 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .treat-reveal  { animation: treatReveal 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; }
     `}</style>
   );
 }
@@ -387,6 +439,13 @@ export default function KeigoTaskApp() {
   const [workTimerElapsed, setWorkTimerElapsed] = useState(0);
   const [workTimerRunning, setWorkTimerRunning] = useState(false);
   const [newRecordTaskId, setNewRecordTaskId] = useState<number | null>(null);
+  const [newRecordCelebration, setNewRecordCelebration] = useState<NewRecordCelebration | null>(null);
+  const [newRecordCelebKey, setNewRecordCelebKey] = useState(0);
+  const [dailyTreatOpen, setDailyTreatOpen] = useState(false);
+  const [weeklyRewardOpen, setWeeklyRewardOpen] = useState(false);
+  const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
+  const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
+  const [stickerAlbum, setStickerAlbum] = useState<string[]>(stored.stickerAlbum ?? []);
   const workTimerBaseRef = useRef(0);
   const workTimerStartRef = useRef<number | null>(null);
 
@@ -444,6 +503,9 @@ export default function KeigoTaskApp() {
       homeTasks,
       history,
       bestTimes,
+      dailyTreatClaimed,
+      lastWeeklyRewardStreak,
+      stickerAlbum,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [
@@ -452,6 +514,7 @@ export default function KeigoTaskApp() {
     morningApproved, eveningApproved, homeApproved,
     morningTasks, eveningTasks, homeTasks,
     history, bestTimes,
+    dailyTreatClaimed, lastWeeklyRewardStreak, stickerAlbum,
   ]);
 
   useEffect(() => {
@@ -630,7 +693,15 @@ export default function KeigoTaskApp() {
     if (prevBest === undefined || totalSec < prevBest) {
       setBestTimes((prev) => ({ ...prev, [key]: totalSec }));
       setNewRecordTaskId(taskId);
-      setTimeout(() => setNewRecordTaskId(null), 2500);
+      setTimeout(() => setNewRecordTaskId(null), 4500);
+      const task = tasks.find((t) => t.id === taskId);
+      if (task) {
+        setNewRecordCelebKey((k) => k + 1);
+        setNewRecordCelebration({ emoji: task.emoji, title: task.title, timeSec: totalSec });
+        setShaking(true);
+        setTimeout(() => setShaking(false), 520);
+        navigator.vibrate?.(30);
+      }
     }
 
     if (!done.has(taskId) && !skipped.has(taskId)) {
@@ -733,21 +804,45 @@ export default function KeigoTaskApp() {
     setTimeout(() => setShaking(false), 450);
   };
 
+  const collectSticker = (rewardId: string) => {
+    setStickerAlbum((prev) => (prev.includes(rewardId) ? prev : [...prev, rewardId]));
+  };
+
   const handleApprove = () => {
     if (approved) return;
     const today = todayKey();
     const prev = history[today] ?? { morning: false, evening: false, home: false };
+    let updatedDay = { ...prev };
     if (parentSession === "morning") {
       setMorningApproved(true);
-      setHistory({ ...history, [today]: { ...prev, morning: true } });
+      updatedDay = { ...updatedDay, morning: true };
     } else if (parentSession === "evening") {
       setEveningApproved(true);
-      setHistory({ ...history, [today]: { ...prev, evening: true } });
+      updatedDay = { ...updatedDay, evening: true };
     } else {
       setHomeApproved(true);
-      setHistory({ ...history, [today]: { ...prev, home: true } });
+      updatedDay = { ...updatedDay, home: true };
     }
+    const newHistory = { ...history, [today]: updatedDay };
+    setHistory(newHistory);
     triggerStamp();
+
+    if (isFullDay(updatedDay)) {
+      const fds = getFullDayStreak(newHistory);
+      const weeklyMilestone = fds >= 7 && fds % 7 === 0 && fds > lastWeeklyRewardStreak;
+      const needsDaily = !dailyTreatClaimed[today];
+      setTimeout(() => {
+        if (weeklyMilestone) {
+          setWeeklyRewardOpen(true);
+          setLastWeeklyRewardStreak(fds);
+        } else if (needsDaily) {
+          setDailyTreatOpen(true);
+        }
+        if (needsDaily) {
+          setDailyTreatClaimed((c) => ({ ...c, [today]: true }));
+        }
+      }, 950);
+    }
   };
 
   const resetApproval = () => {
@@ -879,6 +974,26 @@ export default function KeigoTaskApp() {
 
       {anticipating && <AnticipationOverlay />}
       {celebType && <CelebrationOverlay key={celebKey} type={celebType} celebKey={celebKey} />}
+      {newRecordCelebration && (
+        <NewRecordOverlay
+          key={newRecordCelebKey}
+          data={newRecordCelebration}
+          celebKey={newRecordCelebKey}
+          onDone={() => setNewRecordCelebration(null)}
+        />
+      )}
+      {dailyTreatOpen && (
+        <DailyTreatOverlay
+          onClose={() => setDailyTreatOpen(false)}
+          onCollect={collectSticker}
+        />
+      )}
+      {weeklyRewardOpen && (
+        <WeeklyRewardOverlay
+          onClose={() => setWeeklyRewardOpen(false)}
+          onCollect={collectSticker}
+        />
+      )}
       {stampVisible && screen === "show_parent" && (
         <HanamaruStamp key={stampKey} message={stampMessage} />
       )}
@@ -1149,7 +1264,7 @@ export default function KeigoTaskApp() {
         )}
 
         {screen === "record" && (
-          <RecordScreen history={history} streak={streak} onBack={goHome} />
+          <RecordScreen history={history} streak={streak} stickerAlbum={stickerAlbum} onBack={goHome} />
         )}
 
         {screen === "alarm_settings" && (
@@ -2293,13 +2408,15 @@ function TaskRow({
         </div>
       )}
       {isNewRecord && (
-        <span style={{
-          position: "absolute", right: 14, top: "-10px",
-          fontSize: 11, fontWeight: 900, color: theme.category.orange,
-          backgroundColor: `${theme.category.orange}22`, padding: "3px 8px", borderRadius: 8,
+        <span className="record-badge-pop" style={{
+          position: "absolute", right: 14, top: "-12px",
+          fontSize: 13, fontWeight: 900, color: "#fff",
+          backgroundColor: theme.category.orange, padding: "4px 10px", borderRadius: 10,
           pointerEvents: "none",
+          boxShadow: `0 4px 16px ${theme.category.orange}88`,
+          border: `2px solid ${theme.category.yellow}`,
         }}>
-          さいこう！
+          🏆 新記録！
         </span>
       )}
       {isJustChecked && (
