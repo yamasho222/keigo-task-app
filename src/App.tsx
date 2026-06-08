@@ -317,13 +317,14 @@ export default function KeigoTaskApp() {
   const [anticipating, setAnticipating] = useState(false);
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>("morning");
+  const [showMenu,     setShowMenu]     = useState(false);
   const [parentSession, setParentSession] = useState<"morning" | "evening">("morning");
   const [parentCtx, setParentCtx] = useState<{ label: string; taskNames: string[]; completedAt: string }>({
     label: "朝のやること",
     taskNames: MORNING_TASKS_DEFAULT.map((t) => t.title),
     completedAt: "",
   });
-  const [timerDuration, setTimerDuration] = useState(20); // 分単位
+  const [timerDuration, setTimerDuration] = useState(30); // 分単位
   const timerEndRef = useRef<number | null>(null);        // 終了時刻（ms）
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
 
@@ -470,6 +471,78 @@ export default function KeigoTaskApp() {
       {celebType && <CelebrationOverlay key={celebKey} type={celebType} celebKey={celebKey} />}
       {stampVisible && screen === "show_parent" && (
         <HanamaruStamp key={stampKey} message={stampMessage} />
+      )}
+
+      {/* ── ハンバーガーボタン */}
+      <button
+        onClick={() => setShowMenu(true)}
+        style={{
+          position: "fixed", top: "max(env(safe-area-inset-top, 12px), 12px)", right: 16,
+          zIndex: 80, width: 40, height: 40, borderRadius: 10,
+          backgroundColor: theme.fill.secondary, border: `1px solid ${theme.stroke.secondary}`,
+          cursor: "pointer", display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 5,
+        }}
+      >
+        {[0,1,2].map((i) => (
+          <span key={i} style={{ display: "block", width: 18, height: 2, borderRadius: 2, backgroundColor: theme.text.secondary }} />
+        ))}
+      </button>
+
+      {/* ── ハンバーガーメニュー オーバーレイ */}
+      {showMenu && (
+        <div
+          onClick={() => setShowMenu(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 90,
+            backgroundColor: "rgba(0,0,0,0.45)",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute", top: 0, right: 0, bottom: 0,
+              width: "72%", maxWidth: 280,
+              backgroundColor: theme.bg.editor,
+              boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
+              display: "flex", flexDirection: "column",
+              paddingTop: "max(env(safe-area-inset-top, 20px), 20px)",
+              paddingBottom: 24, gap: 0,
+            }}
+          >
+            {/* メニューヘッダー */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px 20px" }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: theme.text.primary }}>メニュー</span>
+              <button onClick={() => setShowMenu(false)} style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: theme.text.tertiary, fontSize: 22, lineHeight: 1, padding: 4,
+              }}>✕</button>
+            </div>
+            {/* メニュー項目 */}
+            {[
+              { icon: "🌅", label: "朝のタスク",    action: () => { setScreen("morning"); setShowMenu(false); } },
+              { icon: "🌙", label: "夜のタスク",    action: () => { setScreen("evening"); setShowMenu(false); } },
+              { icon: "✅", label: "親チェック画面", action: () => { setScreen("show_parent"); setShowMenu(false); } },
+              { icon: "⏱", label: "タイマー",
+                action: () => {
+                  if (approved) { goToScreen("timer"); } else { setScreen("show_parent"); }
+                  setShowMenu(false);
+                },
+                disabled: false,
+              },
+            ].map(({ icon, label, action }) => (
+              <button key={label} onClick={action} style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: "16px 20px", background: "none", border: "none",
+                cursor: "pointer", textAlign: "left", width: "100%",
+                borderBottom: `1px solid ${theme.stroke.secondary}`,
+              }}>
+                <span style={{ fontSize: 22 }}>{icon}</span>
+                <span style={{ fontSize: 15, color: theme.text.primary, fontWeight: 600 }}>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       <div
