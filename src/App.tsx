@@ -9,7 +9,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { theme } from "./theme";
-import { PullToRefresh } from "./PullToRefresh";
+import { AppScroll } from "./AppScroll";
+import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { TimerDurationPanel } from "./TimerControls";
 import { AlarmSettingsPanel } from "./AlarmSettingsPanel";
 import {
@@ -539,6 +540,7 @@ export default function KeigoTaskApp() {
   const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
   const [stickerAlbum, setStickerAlbum] = useState<string[]>(stored.stickerAlbum ?? []);
   const taskDayRef = useRef(stored.date);
+  const screenRef = useRef<ScreenId>(getInitialScreen());
   const workTimerBaseRef = useRef(0);
   const workTimerStartRef = useRef<number | null>(null);
 
@@ -551,7 +553,7 @@ export default function KeigoTaskApp() {
   const [shaking,      setShaking]      = useState(false);
   const [anticipating, setAnticipating] = useState(false);
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
-  const [prevScreen,   setPrevScreen]   = useState<ScreenId>("morning");
+  const [prevScreen,   setPrevScreen]   = useState<ScreenId>(getInitialScreen());
   const [showMenu,     setShowMenu]     = useState(false);
   const [taskListSession, setTaskListSession] = useState<SessionId>(getSessionScreen());
   const [parentSession, setParentSession] = useState<SessionId>("morning");
@@ -573,6 +575,7 @@ export default function KeigoTaskApp() {
   useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
   const streak = getStreak(history);
+  useEffect(() => { screenRef.current = screen; }, [screen]);
   const approved = parentSession === "morning"
     ? morningApproved
     : parentSession === "evening"
@@ -923,6 +926,8 @@ export default function KeigoTaskApp() {
     setCelebType(picked);
     setTimeout(() => {
       setCelebType(null);
+      const s = screenRef.current;
+      if (s === "morning" || s === "home" || s === "evening") setPrevScreen(s);
       setScreen("show_parent");
     }, 3500);
   };
@@ -1007,7 +1012,16 @@ export default function KeigoTaskApp() {
     setScreen(id);
   };
 
+  const navigateToScreen = (next: ScreenId) => {
+    setPrevScreen(screen);
+    setScreen(next);
+  };
+
   const goHome = () => {
+    if (prevScreen === "morning" || prevScreen === "home" || prevScreen === "evening") {
+      setScreen(prevScreen);
+      return;
+    }
     setScreen(getSessionScreen());
   };
 
@@ -1162,6 +1176,7 @@ export default function KeigoTaskApp() {
       {/* ── ハンバーガーメニュー オーバーレイ */}
       {showMenu && (
         <div
+          data-modal-overlay
           onClick={() => setShowMenu(false)}
           style={{
             position: "fixed", inset: 0, zIndex: 90,
@@ -1193,21 +1208,21 @@ export default function KeigoTaskApp() {
               { icon: "🌅", label: "朝のタスク",    action: () => { setScreen("morning"); setShowMenu(false); } },
               { icon: "🏠", label: "帰宅後のタスク", action: () => { setScreen("home"); setShowMenu(false); } },
               { icon: "🌙", label: "夜のタスク",    action: () => { setScreen("evening"); setShowMenu(false); } },
-              { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(getSessionScreen()); setScreen("task_list"); setShowMenu(false); } },
-              { icon: "✅", label: "親チェック画面", action: () => { setScreen("show_parent"); setShowMenu(false); } },
+              { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(getSessionScreen()); navigateToScreen("task_list"); setShowMenu(false); } },
+              { icon: "✅", label: "親チェック画面", action: () => { navigateToScreen("show_parent"); setShowMenu(false); } },
               { icon: "⏱", label: "タイマー",
                 action: () => {
                   if (approved) {
-                    if (timerRunning) setScreen("timer");
+                    if (timerRunning) navigateToScreen("timer");
                     else goToTimer();
                   } else {
-                    setScreen("show_parent");
+                    navigateToScreen("show_parent");
                   }
                   setShowMenu(false);
                 },
               },
-              { icon: "🔔", label: "アラーム設定", action: () => { setScreen("alarm_settings"); setShowMenu(false); } },
-              { icon: "📅", label: "連続記録", action: () => { setScreen("record"); setShowMenu(false); } },
+              { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
+              { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
                 display: "flex", alignItems: "center", gap: 14,
@@ -1225,6 +1240,7 @@ export default function KeigoTaskApp() {
 
       {alarmRinging && alarmSoundBlocked && (
         <div
+          data-modal-overlay
           onClick={() => void retryAlarmSound()}
           style={{
             position: "fixed", inset: 0, zIndex: 145,
@@ -1268,9 +1284,8 @@ export default function KeigoTaskApp() {
         </div>
       )}
 
-      <PullToRefresh
+      <AppScroll
         className={shaking ? "phone-shake" : ""}
-        disabled={anticipating || !!celebType || showMenu}
         style={{
           padding: "max(env(safe-area-inset-top, 16px), 16px) 16px 24px",
           display: "flex",
@@ -1434,7 +1449,7 @@ export default function KeigoTaskApp() {
             onBack={goHome}
           />
         )}
-      </PullToRefresh>
+      </AppScroll>
     </div>
   );
 }
@@ -1780,20 +1795,7 @@ function BestTimeSummary({
 // ── InApp Tabs ────────────────────────────────────────
 
 function BackLink({ onBack }: { onBack: () => void }) {
-  return (
-    <div
-      onClick={onBack}
-      style={{
-        display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
-        color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6,
-      }}
-    >
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      もどる
-    </div>
-  );
+  return <ScrollSafeBackButton onBack={onBack} />;
 }
 
 function SessionTabs({ session, onSwitch }: { session: SessionId; onSwitch: (s: SessionId) => void }) {
@@ -2020,6 +2022,7 @@ function TaskListScreen({
 
       {editingTask && (
         <div
+          data-modal-overlay
           onClick={() => setEditingTaskId(null)}
           style={{
             position: "fixed", inset: 0, zIndex: 110,
@@ -2249,6 +2252,7 @@ function TaskActionSheet({
 }) {
   return (
     <div
+      data-modal-overlay
       onClick={onClose}
       style={{
         position: "fixed", inset: 0, zIndex: 100,
@@ -2463,6 +2467,7 @@ function TaskScreen({
 
       {editingTask && (
         <div
+          data-modal-overlay
           onClick={() => setEditingTaskId(null)}
           style={{
             position: "fixed", inset: 0, zIndex: 110,
@@ -2508,6 +2513,31 @@ function TaskScreen({
 const SWIPE_DELETE_WIDTH = 72;
 const SWIPE_SKIP_WIDTH = 80;
 const LONG_PRESS_MS = 500;
+const GESTURE_SLOP = 10;
+
+type GesturePhase = "idle" | "pending" | "swiping";
+
+interface GestureState {
+  phase: GesturePhase;
+  startX: number;
+  startY: number;
+  startOffset: number;
+  moved: boolean;
+  lastOffset: number;
+  pointerId: number;
+}
+
+function emptyGesture(): GestureState {
+  return {
+    phase: "idle",
+    startX: 0,
+    startY: 0,
+    startOffset: 0,
+    moved: false,
+    lastOffset: 0,
+    pointerId: -1,
+  };
+}
 
 const addBtnStyle: CSSProperties = {
   width: "100%", padding: "11px", borderRadius: 12,
@@ -2541,7 +2571,9 @@ function SortableTaskRow(props: TaskRowProps) {
   } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
   const swipeRef = useRef<HTMLDivElement>(null);
-  const gesture = useRef({ startX: 0, startY: 0, startOffset: 0, swiping: false, moved: false, lastOffset: 0 });
+  const gestureSurfaceRef = useRef<HTMLDivElement>(null);
+  const gesture = useRef<GestureState>(emptyGesture());
+  const suppressClickRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -2560,40 +2592,82 @@ function SortableTaskRow(props: TaskRowProps) {
 
   useEffect(() => () => clearLongPressTimer(), []);
 
+  const resetGesture = () => {
+    clearLongPressTimer();
+    gesture.current = emptyGesture();
+    setDragging(false);
+  };
+
+  const releaseCapture = () => {
+    const el = gestureSurfaceRef.current;
+    const { pointerId, phase } = gesture.current;
+    if (el && phase === "swiping" && pointerId >= 0) {
+      try {
+        if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+      } catch { /* ignore */ }
+    }
+  };
+
   useEffect(() => {
     const el = swipeRef.current;
     if (!el) return;
     const blockScroll = (e: TouchEvent) => {
-      if (gesture.current.swiping) e.preventDefault();
+      if (gesture.current.phase === "swiping") e.preventDefault();
     };
     el.addEventListener("touchmove", blockScroll, { passive: false });
     return () => el.removeEventListener("touchmove", blockScroll);
   }, []);
 
-  const beginGesture = (clientX: number, clientY: number) => {
+  const beginGesture = (clientX: number, clientY: number, pointerId: number) => {
     clearLongPressTimer();
     const startOffset = swipeSnapOffset(swipeMode);
-    gesture.current = { startX: clientX, startY: clientY, startOffset, swiping: false, moved: false, lastOffset: startOffset };
-    setDragging(true);
-    setOffsetX(startOffset);
+    gesture.current = {
+      phase: "pending",
+      startX: clientX,
+      startY: clientY,
+      startOffset,
+      moved: false,
+      lastOffset: startOffset,
+      pointerId,
+    };
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = null;
+      if (gesture.current.phase !== "pending") return;
       gesture.current.moved = true;
       navigator.vibrate?.(10);
+      resetGesture();
       onLongPress();
     }, LONG_PRESS_MS);
   };
 
-  const moveGesture = (clientX: number, clientY: number) => {
+  const moveGesture = (clientX: number, clientY: number, target: HTMLElement) => {
     const g = gesture.current;
+    if (g.phase === "idle") return;
+
     const dx = clientX - g.startX;
     const dy = clientY - g.startY;
-    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLongPressTimer();
-    if (!g.swiping && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
-      g.swiping = true;
+
+    if (g.phase === "pending") {
+      if (Math.abs(dx) > GESTURE_SLOP || Math.abs(dy) > GESTURE_SLOP) {
+        clearLongPressTimer();
+      }
+      if (Math.abs(dy) > GESTURE_SLOP && Math.abs(dy) >= Math.abs(dx)) {
+        resetGesture();
+        return;
+      }
+      if (Math.abs(dx) > GESTURE_SLOP && Math.abs(dx) > Math.abs(dy)) {
+        g.phase = "swiping";
+        try {
+          target.setPointerCapture(g.pointerId);
+        } catch { /* ignore */ }
+        setDragging(true);
+        setOffsetX(g.startOffset);
+      }
     }
-    if (!g.swiping) return;
-    if (Math.abs(dx) > 8) g.moved = true;
+
+    if (g.phase !== "swiping") return;
+
+    if (Math.abs(dx) > GESTURE_SLOP) g.moved = true;
     g.lastOffset = clampOffset(g.startOffset + dx);
     setOffsetX(g.lastOffset);
   };
@@ -2601,14 +2675,21 @@ function SortableTaskRow(props: TaskRowProps) {
   const endGesture = () => {
     clearLongPressTimer();
     const g = gesture.current;
-    setDragging(false);
-    if (!g.swiping) return;
-    if (g.lastOffset > SWIPE_SKIP_WIDTH / 2) onSwipeOpen("skip");
-    else if (g.lastOffset < -SWIPE_DELETE_WIDTH / 2) onSwipeOpen("delete");
-    else onSwipeClose();
+    if (g.phase === "swiping") {
+      if (g.moved) suppressClickRef.current = true;
+      if (g.lastOffset > SWIPE_SKIP_WIDTH / 2) onSwipeOpen("skip");
+      else if (g.lastOffset < -SWIPE_DELETE_WIDTH / 2) onSwipeOpen("delete");
+      else onSwipeClose();
+    }
+    releaseCapture();
+    resetGesture();
   };
 
   const handleSelect = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     if (gesture.current.moved) {
       gesture.current.moved = false;
       return;
@@ -2676,31 +2757,23 @@ function SortableTaskRow(props: TaskRowProps) {
           🗑️
         </button>
         <div
+          ref={gestureSurfaceRef}
           style={{
             transform: `translateX(${displayX}px)`,
             transition: dragging ? "none" : "transform 0.22s ease-out",
             backgroundColor: theme.bg.editor,
             position: "relative", zIndex: 1,
+            touchAction: "pan-y",
           }}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
-            e.currentTarget.setPointerCapture(e.pointerId);
-            beginGesture(e.clientX, e.clientY);
+            beginGesture(e.clientX, e.clientY, e.pointerId);
           }}
           onPointerMove={(e) => {
-            if (!dragging) return;
-            moveGesture(e.clientX, e.clientY);
+            moveGesture(e.clientX, e.clientY, e.currentTarget);
           }}
-          onPointerUp={(e) => {
-            if (!dragging) return;
-            endGesture();
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }}
-          onPointerCancel={(e) => {
-            if (!dragging) return;
-            endGesture();
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }}
+          onPointerUp={() => endGesture()}
+          onPointerCancel={() => endGesture()}
         >
           <TaskRow
             {...rowProps}
@@ -3156,10 +3229,7 @@ function TimerScreen({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          もどる
-        </div>
+        <ScrollSafeBackButton onBack={onBack} />
         <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           ホーム
@@ -3249,10 +3319,7 @@ function TimerEndScreen({
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 20, textAlign: "center", position: "relative" }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          もどる
-        </div>
+        <ScrollSafeBackButton onBack={onBack} />
         <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           ホーム
@@ -3310,10 +3377,7 @@ function AlarmSettingsScreen({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          もどる
-        </div>
+        <ScrollSafeBackButton onBack={onBack} />
         <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>アラーム設定</div>
       </div>
       <div style={{ fontSize: 13, color: theme.text.secondary, lineHeight: 1.6 }}>

@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 import { REWARD_LOOKUP } from "./Rewards";
+import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 
 export interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
 
@@ -142,10 +143,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          もどる
-        </div>
+        <ScrollSafeBackButton onBack={onBack} />
         <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>連続記録</div>
       </div>
 

@@ -121,6 +121,7 @@ export function NewRecordOverlay({
 
   return (
     <div
+      data-modal-overlay
       onClick={onDone}
       style={{
         position: "fixed", inset: 0, zIndex: 55, pointerEvents: "auto",
@@ -202,7 +203,9 @@ function TreatOverlay({
   };
 
   return (
-    <div style={{
+    <div
+      data-modal-overlay
+      style={{
       position: "fixed", inset: 0, zIndex: 65,
       backgroundColor: "rgba(0,0,0,0.55)",
       display: "flex", alignItems: "center", justifyContent: "center",
