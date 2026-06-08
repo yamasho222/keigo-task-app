@@ -3,7 +3,6 @@ export type AlarmSoundType = "beep" | "siren" | "bell" | "chime" | "urgent";
 export interface AlarmSettings {
   durationSec: number;
   soundEnabled: boolean;
-  vibrationEnabled: boolean;
   soundType: AlarmSoundType;
 }
 
@@ -22,27 +21,19 @@ export const ALARM_SOUND_OPTIONS: {
   { id: "urgent", label: "もうすぐ！", emoji: "⏰", desc: "はやい連打" },
 ];
 
-export function isVibrationSupported() {
-  return typeof navigator !== "undefined" && "vibrate" in navigator;
-}
-
 const ALARM_SETTINGS_KEY = "keigo-alarm-settings-v1";
 
 const DEFAULT_SETTINGS: AlarmSettings = {
   durationSec: 30,
   soundEnabled: true,
-  vibrationEnabled: true,
   soundType: "siren",
 };
-
-const VIBRATE_PATTERN = [400, 120, 400, 120, 600];
 
 let alarmActive = false;
 let soundBlocked = false;
 let activeSoundType: AlarmSoundType = DEFAULT_SETTINGS.soundType;
 let stopTimeout: ReturnType<typeof setTimeout> | null = null;
 let beepInterval: ReturnType<typeof setInterval> | null = null;
-let vibrateInterval: ReturnType<typeof setInterval> | null = null;
 let audioCtx: AudioContext | null = null;
 let onSoundBlockedChange: ((blocked: boolean) => void) | null = null;
 
@@ -54,11 +45,10 @@ export function loadAlarmSettings(): AlarmSettings {
   try {
     const raw = localStorage.getItem(ALARM_SETTINGS_KEY);
     if (raw) {
-      const data = JSON.parse(raw) as Partial<AlarmSettings>;
+      const data = JSON.parse(raw) as Partial<AlarmSettings> & { vibrationEnabled?: boolean };
       return {
         durationSec: clampDuration(data.durationSec ?? DEFAULT_SETTINGS.durationSec),
         soundEnabled: data.soundEnabled ?? true,
-        vibrationEnabled: data.vibrationEnabled ?? true,
         soundType: isValidSoundType(data.soundType) ? data.soundType : DEFAULT_SETTINGS.soundType,
       };
     }
@@ -192,7 +182,7 @@ function playAlarmSound(type: AlarmSoundType) {
       break;
     case "siren":
       sweep(ctx, t, 520, 1400, "sawtooth", 0.75, 0.45);
-      sweep(ctx, t, 1400, 520, "sawtooth", 0.75, 0.45, 0.5);
+      sweep(ctx, t + 0.5, 1400, 520, "sawtooth", 0.75, 0.45);
       break;
     case "bell":
       [0, 0.18, 0.36].forEach((d) => tone(ctx, t, 880, "sine", 0.8, 0.28, d));
@@ -232,15 +222,6 @@ function startSoundLoop(type: AlarmSoundType) {
   })();
 }
 
-function startVibrationLoop() {
-  if (!isVibrationSupported()) return;
-  navigator.vibrate(VIBRATE_PATTERN);
-  vibrateInterval = setInterval(() => {
-    if (alarmActive) navigator.vibrate(VIBRATE_PATTERN);
-  }, 1640);
-}
-
-/** 選択中の音を1回だけ試聴 */
 export async function previewAlarmSound(type: AlarmSoundType) {
   const ok = await unlockAudio();
   if (!ok) return false;
@@ -268,7 +249,6 @@ export function startAlarm(settings: AlarmSettings, onStop?: () => void) {
   activeSoundType = settings.soundType;
 
   if (settings.soundEnabled) startSoundLoop(settings.soundType);
-  if (settings.vibrationEnabled) startVibrationLoop();
 
   stopTimeout = setTimeout(() => {
     stopAlarm();
@@ -281,6 +261,4 @@ export function stopAlarm() {
   setSoundBlocked(false);
   if (stopTimeout) { clearTimeout(stopTimeout); stopTimeout = null; }
   if (beepInterval) { clearInterval(beepInterval); beepInterval = null; }
-  if (vibrateInterval) { clearInterval(vibrateInterval); vibrateInterval = null; }
-  navigator.vibrate?.(0);
 }

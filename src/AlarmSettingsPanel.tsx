@@ -2,7 +2,6 @@ import { theme } from "./theme";
 import {
   ALARM_DURATION_PRESETS,
   ALARM_SOUND_OPTIONS,
-  isVibrationSupported,
   previewAlarmSound,
   type AlarmSettings,
   type AlarmSoundType,
@@ -26,7 +25,6 @@ export function AlarmSettingsPanel({
   compact?: boolean;
 }) {
   const set = (patch: Partial<AlarmSettings>) => onChange({ ...settings, ...patch });
-  const vibrateSupported = isVibrationSupported();
 
   const pickSound = (type: AlarmSoundType) => {
     set({ soundType: type });
@@ -99,13 +97,6 @@ export function AlarmSettingsPanel({
         hint="選んだ音でアラーム"
         checked={settings.soundEnabled}
         onChange={(soundEnabled) => set({ soundEnabled })}
-      />
-      <ToggleRow
-        label="振動させる"
-        hint={vibrateSupported ? "スマホがブルブル震える" : "この端末では振動非対応"}
-        checked={settings.vibrationEnabled}
-        onChange={(vibrationEnabled) => set({ vibrationEnabled })}
-        disabled={!vibrateSupported}
       />
 
       {onTest && (
