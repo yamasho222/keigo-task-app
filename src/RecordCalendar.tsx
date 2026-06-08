@@ -3,14 +3,27 @@ import { theme } from "./theme";
 
 export interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
 
-export type DayStatus = "none" | "morning" | "evening" | "both";
+interface SessionFlags {
+  morning: boolean;
+  home: boolean;
+  evening: boolean;
+}
 
-export function getDayStatus(day?: DayHistory): DayStatus {
-  if (!day) return "none";
-  if (day.morning && day.evening) return "both";
-  if (day.morning) return "morning";
-  if (day.evening) return "evening";
-  return "none";
+function getSessionFlags(day?: DayHistory): SessionFlags {
+  return {
+    morning: !!day?.morning,
+    home: !!day?.home,
+    evening: !!day?.evening,
+  };
+}
+
+function isFullDay(day?: DayHistory): boolean {
+  const f = getSessionFlags(day);
+  return f.morning && f.home && f.evening;
+}
+
+function completedCount(flags: SessionFlags): number {
+  return [flags.morning, flags.home, flags.evening].filter(Boolean).length;
 }
 
 export function getStreak(history: Record<string, DayHistory>): number {
@@ -32,7 +45,8 @@ function dateKey(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function cellStyle(status: DayStatus, isToday: boolean): CSSProperties {
+function cellStyle(flags: SessionFlags, isToday: boolean): CSSProperties {
+  const count = completedCount(flags);
   const base: CSSProperties = {
     aspectRatio: "1",
     borderRadius: 8,
@@ -40,33 +54,30 @@ function cellStyle(status: DayStatus, isToday: boolean): CSSProperties {
     fontSize: 13, fontWeight: 700,
     border: isToday ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.tertiary}`,
   };
-  switch (status) {
-    case "both":
-      return { ...base, backgroundColor: theme.category.green, color: "#fff" };
-    case "morning":
-      return {
-        ...base,
-        background: `linear-gradient(180deg, ${theme.category.yellow} 50%, ${theme.fill.secondary} 50%)`,
-        color: theme.text.primary,
-      };
-    case "evening":
-      return {
-        ...base,
-        background: `linear-gradient(180deg, ${theme.fill.secondary} 50%, ${theme.category.purple}88 50%)`,
-        color: theme.text.primary,
-      };
-    default:
-      return { ...base, backgroundColor: theme.fill.secondary, color: theme.text.tertiary };
+  if (count === 0) {
+    return { ...base, backgroundColor: theme.fill.secondary, color: theme.text.tertiary };
   }
+  if (count === 3) {
+    return { ...base, backgroundColor: theme.category.green, color: "#fff" };
+  }
+  const m = flags.morning ? theme.category.yellow : theme.fill.secondary;
+  const h = flags.home ? theme.category.orange : theme.fill.secondary;
+  const e = flags.evening ? `${theme.category.purple}88` : theme.fill.secondary;
+  return {
+    ...base,
+    background: `linear-gradient(180deg, ${m} 0%, ${m} 33%, ${h} 33%, ${h} 66%, ${e} 66%, ${e} 100%)`,
+    color: theme.text.primary,
+  };
 }
 
-function cellIcon(status: DayStatus) {
-  switch (status) {
-    case "both": return "⭐";
-    case "morning": return "🌅";
-    case "evening": return "🌙";
-    default: return "";
-  }
+function cellIcon(flags: SessionFlags, day: number) {
+  const count = completedCount(flags);
+  if (count === 3) return "⭐";
+  if (count === 2) return "✨";
+  if (flags.morning) return "🌅";
+  if (flags.home) return "🏠";
+  if (flags.evening) return "🌙";
+  return <span style={{ fontSize: 11 }}>{day}</span>;
 }
 
 interface Props {
@@ -100,9 +111,9 @@ export function RecordScreen({ history, streak, onBack }: Props) {
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const monthBoth = Array.from({ length: lastDate }, (_, i) => {
+  const monthFull = Array.from({ length: lastDate }, (_, i) => {
     const key = dateKey(year, month, i + 1);
-    return getDayStatus(history[key]) === "both";
+    return isFullDay(history[key]);
   }).filter(Boolean).length;
 
   return (
@@ -112,7 +123,7 @@ export function RecordScreen({ history, streak, onBack }: Props) {
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           もどる
         </div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>れんぞくきろく</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>連続記録</div>
       </div>
 
       <div style={{
@@ -144,24 +155,25 @@ export function RecordScreen({ history, streak, onBack }: Props) {
         {cells.map((day, i) => {
           if (!day) return <div key={`e-${i}`} />;
           const key = dateKey(year, month, day);
-          const status = getDayStatus(history[key]);
+          const flags = getSessionFlags(history[key]);
           const isToday = key === todayStr;
           return (
-            <div key={key} style={cellStyle(status, isToday)}>
-              {cellIcon(status) || <span style={{ fontSize: 11 }}>{day}</span>}
+            <div key={key} style={cellStyle(flags, isToday)}>
+              {cellIcon(flags, day)}
             </div>
           );
         })}
       </div>
 
       <div style={{ fontSize: 12, color: theme.text.secondary, textAlign: "center" }}>
-        この月 ぜんぶできた日: <strong>{monthBoth}</strong>日
+        この月 3つともできた日: <strong>{monthFull}</strong>日
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", fontSize: 11, color: theme.text.tertiary }}>
-        <span>🌅 朝だけ</span>
-        <span>🌙 夜だけ</span>
-        <span>⭐ 両方</span>
+        <span>🌅 朝</span>
+        <span>🏠 帰宅後</span>
+        <span>🌙 夜</span>
+        <span>⭐ 3つとも</span>
       </div>
     </div>
   );

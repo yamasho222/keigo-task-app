@@ -946,7 +946,7 @@ export default function KeigoTaskApp() {
                 },
               },
               { icon: "🔔", label: "アラーム設定", action: () => { setScreen("alarm_settings"); setShowMenu(false); } },
-              { icon: "📅", label: "れんぞくきろく", action: () => { setScreen("record"); setShowMenu(false); } },
+              { icon: "📅", label: "連続記録", action: () => { setScreen("record"); setShowMenu(false); } },
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
                 display: "flex", alignItems: "center", gap: 14,
