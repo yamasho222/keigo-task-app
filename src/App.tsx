@@ -1832,6 +1832,13 @@ function TaskEditForm({
   const [weekdays, setWeekdays] = useState<number[]>(initialWeekdays ?? ALL_WEEKDAYS);
   const [weekdayError, setWeekdayError] = useState(false);
 
+  useEffect(() => {
+    setTitle(initialTitle);
+    setEmoji(initialEmoji);
+    setWeekdays(initialWeekdays ?? ALL_WEEKDAYS);
+    setWeekdayError(false);
+  }, [initialTitle, initialEmoji, initialWeekdays]);
+
   const handleSave = () => {
     if (!title.trim()) return;
     if (showWeekdays && weekdays.length === 0) {
@@ -1938,7 +1945,7 @@ function TaskActionSheet({
           backgroundColor: theme.accent.primary, color: "#fff",
           fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 8,
         }}>
-          ✏️ 名前を変える
+          ✏️ タスクを編集
         </button>
         <button type="button" onClick={onClose} style={{
           width: "100%", padding: "14px", borderRadius: 12,
@@ -2128,19 +2135,29 @@ function TaskScreen({
           style={{
             position: "fixed", inset: 0, zIndex: 110,
             backgroundColor: "rgba(0,0,0,0.45)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 16,
+            display: "flex", alignItems: "flex-end", justifyContent: "center",
           }}
         >
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400 }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 480,
+              maxHeight: "92dvh", overflowY: "auto",
+              backgroundColor: theme.bg.editor,
+              borderRadius: "20px 20px 0 0",
+              padding: "16px 16px max(env(safe-area-inset-bottom, 16px), 16px)",
+              boxShadow: "0 -4px 24px rgba(0,0,0,0.15)",
+            }}
+          >
             <TaskEditForm
-              key={editingTask.id}
-              header="名前を変える"
+              key={`edit-${editingTask.id}`}
+              header="タスクを編集"
               initialTitle={editingTask.title}
               initialEmoji={editingTask.emoji}
               initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
-              showWeekdays={editingTask.scope !== "today"}
+              showWeekdays={(editingTask.scope ?? "regular") !== "today"}
               saveLabel="保存する"
+              autoFocus={false}
               onSave={(title, emoji, weekdays) => {
                 onEditTask(editingTask.id, title, emoji, weekdays);
                 setEditingTaskId(null);
