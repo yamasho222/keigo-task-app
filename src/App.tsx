@@ -17,13 +17,15 @@ import {
   unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
+import { RecordScreen, getStreak } from "./RecordCalendar";
 
 // ── Types & Data ──────────────────────────────────────
 
-type ScreenId  = "morning" | "evening" | "show_parent" | "timer" | "timer_end" | "alarm_settings";
+type ScreenId  = "morning" | "evening" | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
+type TaskScope = "regular" | "today";
 
-interface Task { id: number; title: string; emoji: string; }
+interface Task { id: number; title: string; emoji: string; scope?: TaskScope; }
 
 const MORNING_TASKS_DEFAULT: Task[] = [
   { id: 1, title: "朝ごはん",               emoji: "🍚" },
@@ -44,7 +46,6 @@ const EVENING_TASKS_DEFAULT: Task[] = [
   { id: 5, title: "パジャマを着る", emoji: "😴" },
 ];
 
-const WEEK_DAYS   = ["月", "火", "水", "木", "金", "土", "日"];
 const CELEB_TYPES: CelebType[] = ["confetti", "burst", "stripes", "bars", "diagonal"];
 const CELEB_NAMES: Record<CelebType, string> = {
   confetti: "かみふぶき！", burst: "ドカン！",
@@ -81,12 +82,26 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function normalizeTasks(tasks: Task[]): Task[] {
+  return tasks.map((t) => ({ ...t, scope: t.scope ?? "regular" }));
+}
+
+function stripTodayTasks(tasks: Task[]): Task[] {
+  return normalizeTasks(tasks).filter((t) => t.scope !== "today");
+}
+
 function loadStoredState(): StoredState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data: StoredState = JSON.parse(raw);
-      if (data.date === todayKey()) return data;
+      if (data.date === todayKey()) {
+        return {
+          ...data,
+          morningTasks: normalizeTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
+          eveningTasks: normalizeTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
+        };
+      }
       return {
         ...data,
         date: todayKey(),
@@ -94,6 +109,8 @@ function loadStoredState(): StoredState {
         eveningDone: [],
         morningApproved: false,
         eveningApproved: false,
+        morningTasks: stripTodayTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
+        eveningTasks: stripTodayTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
       };
     }
   } catch { /* ignore */ }
@@ -107,32 +124,6 @@ function loadStoredState(): StoredState {
     eveningTasks: EVENING_TASKS_DEFAULT,
     history: {},
   };
-}
-
-function getWeekStamps(history: Record<string, DayHistory>): boolean[] {
-  const today = new Date();
-  const mondayOffset = (today.getDay() + 6) % 7;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - mondayOffset);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const day = history[d.toISOString().slice(0, 10)];
-    return day ? (day.morning || day.evening) : false;
-  });
-}
-
-function getStreak(history: Record<string, DayHistory>): number {
-  let streak = 0;
-  const today = new Date();
-  for (let i = 0; i < 365; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const day = history[d.toISOString().slice(0, 10)];
-    if (day && (day.morning || day.evening)) streak++;
-    else break;
-  }
-  return streak;
 }
 
 function getInitialScreen(): ScreenId {
@@ -322,8 +313,7 @@ export default function KeigoTaskApp() {
   const alarmSettingsRef = useRef(alarmSettings);
   useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
-  const weekStamps = getWeekStamps(history);
-  const streak     = getStreak(history);
+  const streak = getStreak(history);
   const approved   = parentSession === "morning" ? morningApproved : eveningApproved;
 
   // ── localStorage save ──
@@ -555,12 +545,23 @@ export default function KeigoTaskApp() {
     setScreen(h >= 5 && h < 12 ? "morning" : "evening");
   };
 
-  const addTask = (session: "morning" | "evening", title: string, emoji: string) => {
+  const addTask = (session: "morning" | "evening", title: string, emoji: string, scope: TaskScope) => {
     if (!title.trim()) return;
     const base = session === "morning" ? morningTasks : eveningTasks;
     const setTasks = session === "morning" ? setMorningTasks : setEveningTasks;
     const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
-    setTasks([...base, { id: maxId + 1, title: title.trim(), emoji }]);
+    setTasks([...base, { id: maxId + 1, title: title.trim(), emoji, scope }]);
+  };
+
+  const deleteTask = (session: "morning" | "evening", id: number) => {
+    const base = session === "morning" ? morningTasks : eveningTasks;
+    const setTasks = session === "morning" ? setMorningTasks : setEveningTasks;
+    const setDone = session === "morning" ? setMorningDone : setEveningDone;
+    const doneSet = session === "morning" ? morningDone : eveningDone;
+    setTasks(base.filter((t) => t.id !== id));
+    const next = new Set(doneSet);
+    next.delete(id);
+    setDone(next);
   };
 
   const dayLabel = getDayLabel();
@@ -637,6 +638,7 @@ export default function KeigoTaskApp() {
                 },
               },
               { icon: "🔔", label: "アラーム設定", action: () => { setScreen("alarm_settings"); setShowMenu(false); } },
+              { icon: "📅", label: "れんぞくきろく", action: () => { setScreen("record"); setShowMenu(false); } },
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
                 display: "flex", alignItems: "center", gap: 14,
@@ -719,10 +721,9 @@ export default function KeigoTaskApp() {
                 done={morningDone}
                 justChecked={justChecked}
                 floatColor={floatColor}
-                stamps={weekStamps}
-                streak={streak}
                 onReorder={setMorningTasks}
-                onAddTask={(title, emoji) => addTask("morning", title, emoji)}
+                onAddTask={(title, emoji, scope) => addTask("morning", title, emoji, scope)}
+                onDeleteTask={(id) => deleteTask("morning", id)}
                 toggle={(id) =>
                   handleToggle(morningDone, setMorningDone, morningTasks, "朝のやること", "morning", id)
                 }
@@ -736,10 +737,9 @@ export default function KeigoTaskApp() {
                 done={eveningDone}
                 justChecked={justChecked}
                 floatColor={floatColor}
-                stamps={weekStamps}
-                streak={streak}
                 onReorder={setEveningTasks}
-                onAddTask={(title, emoji) => addTask("evening", title, emoji)}
+                onAddTask={(title, emoji, scope) => addTask("evening", title, emoji, scope)}
+                onDeleteTask={(id) => deleteTask("evening", id)}
                 toggle={(id) =>
                   handleToggle(eveningDone, setEveningDone, eveningTasks, "夜のやること", "evening", id)
                 }
@@ -781,12 +781,15 @@ export default function KeigoTaskApp() {
         {screen === "timer_end" && (
           <TimerEndScreen
             streak={streak}
-            stamps={weekStamps}
             alarmRinging={alarmRinging}
             onStopAlarm={stopAlarmNow}
             onBack={() => setScreen(prevScreen)}
             onHome={goHome}
           />
+        )}
+
+        {screen === "record" && (
+          <RecordScreen history={history} streak={streak} onBack={goHome} />
         )}
 
         {screen === "alarm_settings" && (
@@ -836,53 +839,6 @@ function AnticipationOverlay() {
           "--sx": `${p.sx}px`, "--sy": `${p.sy}px`,
         } as CSSProperties} />
       ))}
-    </div>
-  );
-}
-
-// ── Week Stamps ───────────────────────────────────────
-
-interface WeekStampsProps { stamps: boolean[]; streak: number; }
-
-function WeekStamps({ stamps, streak }: WeekStampsProps) {
-  const dayColors = [
-    theme.category.blue, theme.category.green, theme.category.yellow,
-    theme.category.orange, theme.category.pink, theme.category.purple,
-    theme.category.blue,
-  ];
-  const doneCount = stamps.filter(Boolean).length;
-  return (
-    <div style={{ padding: "10px 0 4px" }}>
-      <div style={{ display: "flex", gap: 4, justifyContent: "center", marginBottom: 8 }}>
-        {stamps.map((done, i) => (
-          <div key={i} className={done ? "stamp-day" : ""} style={{
-            width: 36, height: 36, borderRadius: 18, flexShrink: 0,
-            backgroundColor: done ? dayColors[i] : theme.fill.secondary,
-            border: `2px solid ${done ? dayColors[i] : theme.stroke.secondary}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            {done ? (
-              <svg width="16" height="13" viewBox="0 0 16 13" fill="none">
-                <path d="M1.5 6.5L5.5 10.5L14.5 1.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <span style={{ fontSize: 10, color: theme.text.tertiary, fontWeight: 700 }}>
-                {WEEK_DAYS[i]}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        <span style={{ fontSize: 11, color: theme.text.secondary }}>
-          今週 <span style={{ fontWeight: 700, color: theme.text.primary }}>{doneCount}/7</span> 日達成！
-        </span>
-        {streak >= 2 && (
-          <span style={{ fontSize: 11, fontWeight: 800, color: theme.category.orange }}>
-            🔥 {streak}日連続
-          </span>
-        )}
-      </div>
     </div>
   );
 }
@@ -1181,14 +1137,16 @@ function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: Scree
 interface TaskScreenProps {
   label: string; timeLabel: string;
   tasks: Task[]; done: Set<number>; justChecked: number | null;
-  floatColor: string; stamps: boolean[]; streak: number;
+  floatColor: string;
   onReorder: (tasks: Task[]) => void;
-  onAddTask: (title: string, emoji: string) => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope) => void;
+  onDeleteTask: (id: number) => void;
   toggle: (id: number) => void;
 }
 
-function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, stamps, streak, onReorder, onAddTask, toggle }: TaskScreenProps) {
+function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, onReorder, onAddTask, onDeleteTask, toggle }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
+  const [addMode, setAddMode] = useState<TaskScope>("today");
   const [newTitle, setNewTitle] = useState("");
   const [newEmoji, setNewEmoji] = useState("📝");
 
@@ -1208,10 +1166,15 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
 
   const handleAdd = () => {
     if (!newTitle.trim()) return;
-    onAddTask(newTitle, newEmoji);
+    onAddTask(newTitle, newEmoji, addMode);
     setNewTitle("");
     setNewEmoji("📝");
     setIsAdding(false);
+  };
+
+  const startAdding = (mode: TaskScope) => {
+    setAddMode(mode);
+    setIsAdding(true);
   };
 
   return (
@@ -1225,7 +1188,6 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
         </div>
       </div>
 
-      <WeekStamps stamps={stamps} streak={streak} />
       <StepProgress tasks={tasks} done={done} justChecked={justChecked} />
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
 
@@ -1240,6 +1202,7 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
                 isJustChecked={justChecked === task.id}
                 floatColor={floatColor}
                 onToggle={() => toggle(task.id)}
+                onDelete={() => onDeleteTask(task.id)}
               />
             ))}
           </div>
@@ -1249,6 +1212,9 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
       {/* タスク追加エリア */}
       {isAdding ? (
         <div style={{ padding: "10px 12px", borderRadius: 14, border: `1.5px solid ${theme.accent.primary}44`, backgroundColor: `${theme.accent.primary}08`, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>
+            {addMode === "today" ? "きょうだけのタスク" : "レギュラータスク"}
+          </div>
           {/* 絵文字選択 */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {QUICK_EMOJIS.map((e) => (
@@ -1287,14 +1253,14 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
           </div>
         </div>
       ) : (
-        <button onClick={() => setIsAdding(true)} style={{
-          width: "100%", padding: "11px", borderRadius: 12,
-          border: `1.5px dashed ${theme.stroke.secondary}`, backgroundColor: "transparent",
-          color: theme.text.tertiary, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-        }}>
-          <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスクを追加
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={() => startAdding("today")} style={addBtnStyle}>
+            <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
+          </button>
+          <button onClick={() => startAdding("regular")} style={{ ...addBtnStyle, borderColor: `${theme.accent.primary}55`, color: theme.text.secondary }}>
+            <span style={{ fontSize: 18 }}>＋</span> レギュラータスク
+          </button>
+        </div>
       )}
     </>
   );
@@ -1302,9 +1268,16 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, st
 
 // ── Sortable Task Row ─────────────────────────────────
 
+const addBtnStyle: CSSProperties = {
+  width: "100%", padding: "11px", borderRadius: 12,
+  border: `1.5px dashed ${theme.stroke.secondary}`, backgroundColor: "transparent",
+  color: theme.text.tertiary, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+};
+
 interface TaskRowProps {
   task: Task; isDone: boolean; isJustChecked: boolean;
-  floatColor: string; onToggle: () => void;
+  floatColor: string; onToggle: () => void; onDelete: () => void;
 }
 
 function SortableTaskRow(props: TaskRowProps) {
@@ -1334,6 +1307,18 @@ function SortableTaskRow(props: TaskRowProps) {
       <div style={{ flex: 1 }}>
         <TaskRow {...props} />
       </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); props.onDelete(); }}
+        aria-label="タスクを削除"
+        style={{
+          flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: "none",
+          backgroundColor: "transparent", color: theme.text.tertiary, cursor: "pointer",
+          fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        ✕
+      </button>
     </div>
   );
 }
@@ -1384,6 +1369,14 @@ function TaskRow({ task, isDone, isJustChecked, floatColor, onToggle }: TaskRowP
         textDecoration: isDone ? "line-through" : "none",
       }}>
         {task.title}
+        {task.scope === "today" && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 700, color: theme.accent.primary,
+            backgroundColor: `${theme.accent.primary}18`, padding: "2px 6px", borderRadius: 6,
+          }}>
+            きょう
+          </span>
+        )}
       </span>
       {isJustChecked && (
         <span className="float-label" style={{
@@ -1659,9 +1652,9 @@ function TimerScreen({
 // ── Timer End Screen ──────────────────────────────────
 
 function TimerEndScreen({
-  streak, stamps, alarmRinging, onStopAlarm, onBack, onHome,
+  streak, alarmRinging, onStopAlarm, onBack, onHome,
 }: {
-  streak: number; stamps: boolean[]; alarmRinging: boolean;
+  streak: number; alarmRinging: boolean;
   onStopAlarm: () => void; onBack: () => void; onHome: () => void;
 }) {
   return (
@@ -1713,8 +1706,6 @@ function TimerEndScreen({
           🔥 {streak}日連続！あした{streak + 1}日めをめざそう
         </div>
       )}
-
-      <WeekStamps stamps={stamps} streak={streak} />
     </div>
   );
 }
