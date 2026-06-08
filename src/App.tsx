@@ -122,6 +122,23 @@ function fmtTaskTimeMs(ms: number) {
   return fmtTaskTime(Math.floor(ms / 1000));
 }
 
+function sumSessionBestTimes(
+  session: SessionId,
+  tasks: Task[],
+  bestTimes: Record<string, number>,
+) {
+  let totalSec = 0;
+  let recorded = 0;
+  for (const t of tasks) {
+    const sec = bestTimes[taskTimeKey(session, t.id)];
+    if (sec !== undefined) {
+      totalSec += sec;
+      recorded++;
+    }
+  }
+  return { totalSec, recorded, total: tasks.length };
+}
+
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -1446,6 +1463,50 @@ function StepProgress({
   );
 }
 
+function BestTimeSummary({
+  session, tasks, bestTimes,
+}: {
+  session: SessionId;
+  tasks: Task[];
+  bestTimes: Record<string, number>;
+}) {
+  const { totalSec, recorded, total } = sumSessionBestTimes(session, tasks, bestTimes);
+  if (recorded === 0) return null;
+
+  const allRecorded = recorded === total;
+
+  return (
+    <div style={{
+      marginTop: 4, padding: "10px 14px", borderRadius: 12,
+      backgroundColor: `${theme.category.orange}12`,
+      border: `1.5px solid ${theme.category.orange}33`,
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+    }}>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.secondary, marginBottom: 2 }}>
+          さいこう記録の合計
+        </div>
+        <div style={{ fontSize: 12, color: theme.text.tertiary }}>
+          {allRecorded
+            ? "ぜんぶのタスクのさいこうを足したよ"
+            : `${total}件中${recorded}件の記録を足したよ`}
+        </div>
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{
+          fontSize: 22, fontWeight: 900, color: theme.category.orange,
+          fontVariantNumeric: "tabular-nums", lineHeight: 1,
+        }}>
+          🏆 {fmtTaskTime(totalSec)}
+        </div>
+        <div style={{ fontSize: 10, color: theme.text.tertiary, marginTop: 3 }}>
+          これが最短の目安
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── InApp Tabs ────────────────────────────────────────
 
 function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: ScreenId) => void }) {
@@ -1550,6 +1611,7 @@ function TaskScreen({
       </div>
 
       <StepProgress tasks={tasks} done={done} skipped={skipped} justChecked={justChecked} />
+      <BestTimeSummary session={session} tasks={tasks} bestTimes={bestTimes} />
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
