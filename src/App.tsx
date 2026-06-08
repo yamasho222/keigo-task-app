@@ -1149,6 +1149,7 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, on
   const [addMode, setAddMode] = useState<TaskScope>("today");
   const [newTitle, setNewTitle] = useState("");
   const [newEmoji, setNewEmoji] = useState("📝");
+  const [openSwipeId, setOpenSwipeId] = useState<number | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1201,8 +1202,11 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, on
                 isDone={done.has(task.id)}
                 isJustChecked={justChecked === task.id}
                 floatColor={floatColor}
+                swipeOpen={openSwipeId === task.id}
+                onSwipeOpen={() => setOpenSwipeId(task.id)}
+                onSwipeClose={() => setOpenSwipeId(null)}
                 onToggle={() => toggle(task.id)}
-                onDelete={() => onDeleteTask(task.id)}
+                onDelete={() => { onDeleteTask(task.id); setOpenSwipeId(null); }}
               />
             ))}
           </div>
@@ -1268,6 +1272,8 @@ function TaskScreen({ label, timeLabel, tasks, done, justChecked, floatColor, on
 
 // ── Sortable Task Row ─────────────────────────────────
 
+const SWIPE_DELETE_WIDTH = 72;
+
 const addBtnStyle: CSSProperties = {
   width: "100%", padding: "11px", borderRadius: 12,
   border: `1.5px dashed ${theme.stroke.secondary}`, backgroundColor: "transparent",
@@ -1278,52 +1284,147 @@ const addBtnStyle: CSSProperties = {
 interface TaskRowProps {
   task: Task; isDone: boolean; isJustChecked: boolean;
   floatColor: string; onToggle: () => void; onDelete: () => void;
+  swipeOpen: boolean; onSwipeOpen: () => void; onSwipeClose: () => void;
 }
 
 function SortableTaskRow(props: TaskRowProps) {
+  const { swipeOpen, onSwipeOpen, onSwipeClose, onToggle, onDelete, ...rowProps } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
+  const swipeRef = useRef<HTMLDivElement>(null);
+  const gesture = useRef({ startX: 0, startY: 0, startOffset: 0, swiping: false, moved: false, lastOffset: 0 });
+  const [offsetX, setOffsetX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const snapOffset = swipeOpen ? -SWIPE_DELETE_WIDTH : 0;
+  const displayX = dragging ? offsetX : snapOffset;
+
+  const clampOffset = (v: number) => Math.min(0, Math.max(-SWIPE_DELETE_WIDTH, v));
+
+  useEffect(() => {
+    const el = swipeRef.current;
+    if (!el) return;
+    const blockScroll = (e: TouchEvent) => {
+      if (gesture.current.swiping) e.preventDefault();
+    };
+    el.addEventListener("touchmove", blockScroll, { passive: false });
+    return () => el.removeEventListener("touchmove", blockScroll);
+  }, []);
+
+  const beginGesture = (clientX: number, clientY: number) => {
+    const startOffset = swipeOpen ? -SWIPE_DELETE_WIDTH : 0;
+    gesture.current = { startX: clientX, startY: clientY, startOffset, swiping: false, moved: false, lastOffset: startOffset };
+    setDragging(true);
+    setOffsetX(startOffset);
+  };
+
+  const moveGesture = (clientX: number, clientY: number) => {
+    const g = gesture.current;
+    const dx = clientX - g.startX;
+    const dy = clientY - g.startY;
+    if (!g.swiping && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+      g.swiping = true;
+    }
+    if (!g.swiping) return;
+    if (Math.abs(dx) > 8) g.moved = true;
+    g.lastOffset = clampOffset(g.startOffset + dx);
+    setOffsetX(g.lastOffset);
+  };
+
+  const endGesture = () => {
+    const g = gesture.current;
+    setDragging(false);
+    if (!g.swiping) return;
+    if (g.lastOffset < -SWIPE_DELETE_WIDTH / 2) onSwipeOpen();
+    else onSwipeClose();
+  };
+
+  const handleToggle = () => {
+    if (gesture.current.moved) {
+      gesture.current.moved = false;
+      return;
+    }
+    if (swipeOpen) {
+      onSwipeClose();
+      return;
+    }
+    onToggle();
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={{
-        display: "flex", alignItems: "center", gap: 6,
+        display: "flex", alignItems: "stretch", gap: 6,
         transform: DndCSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
-        zIndex: isDragging ? 50 : "auto",
+        zIndex: isDragging ? 50 : swipeOpen ? 2 : "auto",
       }}
     >
       <div
         {...attributes}
         {...listeners}
         style={{
-          flexShrink: 0, width: 22, display: "flex", justifyContent: "center",
+          flexShrink: 0, width: 22, display: "flex", justifyContent: "center", alignItems: "center",
           cursor: "grab", color: theme.text.tertiary, fontSize: 18,
-          userSelect: "none", touchAction: "none", paddingTop: 2,
+          userSelect: "none", touchAction: "none",
         }}
       >
         ⠿
       </div>
-      <div style={{ flex: 1 }}>
-        <TaskRow {...props} />
-      </div>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); props.onDelete(); }}
-        aria-label="タスクを削除"
-        style={{
-          flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: "none",
-          backgroundColor: "transparent", color: theme.text.tertiary, cursor: "pointer",
-          fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
-        }}
+      <div
+        ref={swipeRef}
+        style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 14, touchAction: "pan-y" }}
       >
-        ✕
-      </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          aria-label="タスクを削除"
+          style={{
+            position: "absolute", right: 0, top: 0, bottom: 0, width: SWIPE_DELETE_WIDTH,
+            border: "none", cursor: "pointer",
+            backgroundColor: theme.category.pink,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 22, padding: 0,
+          }}
+        >
+          🗑️
+        </button>
+        <div
+          style={{
+            transform: `translateX(${displayX}px)`,
+            transition: dragging ? "none" : "transform 0.22s ease-out",
+            backgroundColor: theme.bg.editor,
+            position: "relative", zIndex: 1,
+          }}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            beginGesture(e.clientX, e.clientY);
+          }}
+          onPointerMove={(e) => {
+            if (!dragging) return;
+            moveGesture(e.clientX, e.clientY);
+          }}
+          onPointerUp={(e) => {
+            if (!dragging) return;
+            endGesture();
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
+          onPointerCancel={(e) => {
+            if (!dragging) return;
+            endGesture();
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
+        >
+          <TaskRow {...rowProps} onToggle={handleToggle} />
+        </div>
+      </div>
     </div>
   );
 }
 
-function TaskRow({ task, isDone, isJustChecked, floatColor, onToggle }: TaskRowProps) {
+function TaskRow({ task, isDone, isJustChecked, floatColor, onToggle }: Omit<TaskRowProps, "onDelete" | "swipeOpen" | "onSwipeOpen" | "onSwipeClose"> & { onToggle: () => void }) {
   return (
     <div
       onClick={onToggle}
