@@ -792,6 +792,13 @@ export default function KeigoTaskApp() {
     setTasks([...base, { id: maxId + 1, title: title.trim(), emoji, scope }]);
   };
 
+  const updateTask = (session: SessionId, id: number, title: string, emoji: string) => {
+    if (!title.trim()) return;
+    const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
+    const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
+    setTasks(base.map((t) => (t.id === id ? { ...t, title: title.trim(), emoji } : t)));
+  };
+
   const clearBestTime = (session: SessionId, taskId: number) => {
     const key = taskTimeKey(session, taskId);
     setBestTimes((prev) => {
@@ -1031,6 +1038,7 @@ export default function KeigoTaskApp() {
                 newRecordTaskId={newRecordTaskId}
                 onReorder={setMorningTasks}
                 onAddTask={(title, emoji, scope) => addTask("morning", title, emoji, scope)}
+                onEditTask={(id, title, emoji) => updateTask("morning", id, title, emoji)}
                 onDeleteTask={(id) => deleteTask("morning", id)}
                 onSkipTask={(id) => skipTask("morning", id, morningTasks, morningDone, morningSkipped, setMorningDone, setMorningSkipped, "朝のやること")}
                 onSelectTask={(id) => selectWorkTask("morning", id, morningDone, morningSkipped, setMorningDone)}
@@ -1058,6 +1066,7 @@ export default function KeigoTaskApp() {
                 newRecordTaskId={newRecordTaskId}
                 onReorder={setHomeTasks}
                 onAddTask={(title, emoji, scope) => addTask("home", title, emoji, scope)}
+                onEditTask={(id, title, emoji) => updateTask("home", id, title, emoji)}
                 onDeleteTask={(id) => deleteTask("home", id)}
                 onSkipTask={(id) => skipTask("home", id, homeTasks, homeDone, homeSkipped, setHomeDone, setHomeSkipped, "帰宅後のやること")}
                 onSelectTask={(id) => selectWorkTask("home", id, homeDone, homeSkipped, setHomeDone)}
@@ -1085,6 +1094,7 @@ export default function KeigoTaskApp() {
                 newRecordTaskId={newRecordTaskId}
                 onReorder={setEveningTasks}
                 onAddTask={(title, emoji, scope) => addTask("evening", title, emoji, scope)}
+                onEditTask={(id, title, emoji) => updateTask("evening", id, title, emoji)}
                 onDeleteTask={(id) => deleteTask("evening", id)}
                 onSkipTask={(id) => skipTask("evening", id, eveningTasks, eveningDone, eveningSkipped, setEveningDone, setEveningSkipped, "夜のやること")}
                 onSelectTask={(id) => selectWorkTask("evening", id, eveningDone, eveningSkipped, setEveningDone)}
@@ -1470,10 +1480,8 @@ function BestTimeSummary({
   tasks: Task[];
   bestTimes: Record<string, number>;
 }) {
-  const { totalSec, recorded, total } = sumSessionBestTimes(session, tasks, bestTimes);
+  const { totalSec, recorded } = sumSessionBestTimes(session, tasks, bestTimes);
   if (recorded === 0) return null;
-
-  const allRecorded = recorded === total;
 
   return (
     <div style={{
@@ -1482,26 +1490,14 @@ function BestTimeSummary({
       border: `1.5px solid ${theme.category.orange}33`,
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
     }}>
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.secondary, marginBottom: 2 }}>
-          さいこう記録の合計
-        </div>
-        <div style={{ fontSize: 12, color: theme.text.tertiary }}>
-          {allRecorded
-            ? "ぜんぶのタスクのさいこうを足したよ"
-            : `${total}件中${recorded}件の記録を足したよ`}
-        </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.secondary }}>
+        全部終わるまでの時間
       </div>
-      <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div style={{
-          fontSize: 22, fontWeight: 900, color: theme.category.orange,
-          fontVariantNumeric: "tabular-nums", lineHeight: 1,
-        }}>
-          🏆 {fmtTaskTime(totalSec)}
-        </div>
-        <div style={{ fontSize: 10, color: theme.text.tertiary, marginTop: 3 }}>
-          これが最短の目安
-        </div>
+      <div style={{
+        fontSize: 22, fontWeight: 900, color: theme.category.orange,
+        fontVariantNumeric: "tabular-nums", lineHeight: 1, flexShrink: 0,
+      }}>
+        🏆 {fmtTaskTime(totalSec)}
       </div>
     </div>
   );
@@ -1535,6 +1531,128 @@ function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: Scree
   );
 }
 
+// ── Task Edit / Action Sheet ──────────────────────────
+
+function TaskEditForm({
+  header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, autoFocus = true,
+}: {
+  header?: string;
+  initialTitle: string;
+  initialEmoji: string;
+  saveLabel: string;
+  onSave: (title: string, emoji: string) => void;
+  onCancel: () => void;
+  autoFocus?: boolean;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+  const [emoji, setEmoji] = useState(initialEmoji);
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave(title, emoji);
+  };
+
+  return (
+    <div style={{
+      padding: "10px 12px", borderRadius: 14,
+      border: `1.5px solid ${theme.accent.primary}44`,
+      backgroundColor: `${theme.accent.primary}08`,
+      display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      {header && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>{header}</div>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {QUICK_EMOJIS.map((e) => (
+          <button key={e} type="button" onClick={() => setEmoji(e)} style={{
+            width: 36, height: 36, borderRadius: 8,
+            border: emoji === e ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
+            backgroundColor: emoji === e ? `${theme.accent.primary}18` : theme.fill.secondary,
+            fontSize: 20, cursor: "pointer", padding: 0,
+          }}>{e}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 22 }}>{emoji}</span>
+        <input
+          autoFocus={autoFocus}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          placeholder="タスク名を入力..."
+          style={{
+            flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${theme.stroke.secondary}`,
+            fontSize: 15, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
+            fontFamily: "inherit",
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" onClick={handleSave} style={{
+          flex: 2, padding: "10px", borderRadius: 10, border: "none",
+          backgroundColor: theme.accent.primary, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
+        }}>{saveLabel}</button>
+        <button type="button" onClick={onCancel} style={{
+          flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${theme.stroke.secondary}`,
+          backgroundColor: "transparent", color: theme.text.tertiary, fontSize: 13, cursor: "pointer",
+        }}>キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
+function TaskActionSheet({
+  task, onEdit, onClose,
+}: {
+  task: Task;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 100,
+        backgroundColor: "rgba(0,0,0,0.45)",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          backgroundColor: theme.bg.editor,
+          borderRadius: "20px 20px 0 0",
+          padding: "20px 16px max(env(safe-area-inset-bottom, 16px), 16px)",
+          boxShadow: "0 -4px 24px rgba(0,0,0,0.15)",
+        }}
+      >
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          marginBottom: 16, padding: "0 4px",
+        }}>
+          <span style={{ fontSize: 28 }}>{task.emoji}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: theme.text.primary }}>{task.title}</span>
+        </div>
+        <button type="button" onClick={onEdit} style={{
+          width: "100%", padding: "14px", borderRadius: 12, border: "none",
+          backgroundColor: theme.accent.primary, color: "#fff",
+          fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 8,
+        }}>
+          ✏️ 名前を変える
+        </button>
+        <button type="button" onClick={onClose} style={{
+          width: "100%", padding: "14px", borderRadius: 12,
+          border: `1px solid ${theme.stroke.secondary}`,
+          backgroundColor: "transparent", color: theme.text.tertiary,
+          fontSize: 15, cursor: "pointer",
+        }}>
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Task Screen ───────────────────────────────────────
 
 interface TaskScreenProps {
@@ -1549,6 +1667,7 @@ interface TaskScreenProps {
   newRecordTaskId: number | null;
   onReorder: (tasks: Task[]) => void;
   onAddTask: (title: string, emoji: string, scope: TaskScope) => void;
+  onEditTask: (id: number, title: string, emoji: string) => void;
   onDeleteTask: (id: number) => void;
   onSkipTask: (id: number) => void;
   onSelectTask: (id: number) => void;
@@ -1562,15 +1681,18 @@ interface TaskScreenProps {
 function TaskScreen({
   session, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
-  onReorder, onAddTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
+  onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
-  const [newTitle, setNewTitle] = useState("");
-  const [newEmoji, setNewEmoji] = useState("📝");
   const [openSwipe, setOpenSwipe] = useState<{ id: number; mode: SwipeMode } | null>(null);
   const [confirmDeleteTimeId, setConfirmDeleteTimeId] = useState<number | null>(null);
+  const [actionSheetTaskId, setActionSheetTaskId] = useState<number | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+
+  const actionSheetTask = actionSheetTaskId !== null ? tasks.find((t) => t.id === actionSheetTaskId) : null;
+  const editingTask = editingTaskId !== null ? tasks.find((t) => t.id === editingTaskId) : null;
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1586,17 +1708,19 @@ function TaskScreen({
     }
   };
 
-  const handleAdd = () => {
-    if (!newTitle.trim()) return;
-    onAddTask(newTitle, newEmoji, addMode);
-    setNewTitle("");
-    setNewEmoji("📝");
+  const handleAdd = (title: string, emoji: string) => {
+    onAddTask(title, emoji, addMode);
     setIsAdding(false);
   };
 
   const startAdding = (mode: TaskScope) => {
     setAddMode(mode);
     setIsAdding(true);
+  };
+
+  const handleLongPress = (taskId: number) => {
+    setOpenSwipe(null);
+    setActionSheetTaskId(taskId);
   };
 
   return (
@@ -1653,6 +1777,7 @@ function TaskScreen({
                     setConfirmDeleteTimeId(null);
                   }}
                   onCancelDeleteTime={() => setConfirmDeleteTimeId(null)}
+                  onLongPress={() => handleLongPress(task.id)}
                 />
               );
             })}
@@ -1662,47 +1787,15 @@ function TaskScreen({
 
       {/* タスク追加エリア */}
       {isAdding ? (
-        <div style={{ padding: "10px 12px", borderRadius: 14, border: `1.5px solid ${theme.accent.primary}44`, backgroundColor: `${theme.accent.primary}08`, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>
-            {addMode === "today" ? "きょうだけのタスク" : "レギュラータスク"}
-          </div>
-          {/* 絵文字選択 */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {QUICK_EMOJIS.map((e) => (
-              <button key={e} onClick={() => setNewEmoji(e)} style={{
-                width: 36, height: 36, borderRadius: 8, border: newEmoji === e ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
-                backgroundColor: newEmoji === e ? `${theme.accent.primary}18` : theme.fill.secondary,
-                fontSize: 20, cursor: "pointer", padding: 0,
-              }}>{e}</button>
-            ))}
-          </div>
-          {/* タイトル入力 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 22 }}>{newEmoji}</span>
-            <input
-              autoFocus
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              placeholder="タスク名を入力..."
-              style={{
-                flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${theme.stroke.secondary}`,
-                fontSize: 15, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
-                fontFamily: "inherit",
-              }}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleAdd} style={{
-              flex: 2, padding: "10px", borderRadius: 10, border: "none",
-              backgroundColor: theme.accent.primary, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer",
-            }}>追加する</button>
-            <button onClick={() => { setIsAdding(false); setNewTitle(""); }} style={{
-              flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${theme.stroke.secondary}`,
-              backgroundColor: "transparent", color: theme.text.tertiary, fontSize: 13, cursor: "pointer",
-            }}>キャンセル</button>
-          </div>
-        </div>
+        <TaskEditForm
+          key={`add-${addMode}`}
+          header={addMode === "today" ? "きょうだけのタスク" : "レギュラータスク"}
+          initialTitle=""
+          initialEmoji="📝"
+          saveLabel="追加する"
+          onSave={handleAdd}
+          onCancel={() => setIsAdding(false)}
+        />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <button onClick={() => startAdding("today")} style={addBtnStyle}>
@@ -1713,6 +1806,44 @@ function TaskScreen({
           </button>
         </div>
       )}
+
+      {actionSheetTask && (
+        <TaskActionSheet
+          task={actionSheetTask}
+          onEdit={() => {
+            setEditingTaskId(actionSheetTask.id);
+            setActionSheetTaskId(null);
+          }}
+          onClose={() => setActionSheetTaskId(null)}
+        />
+      )}
+
+      {editingTask && (
+        <div
+          onClick={() => setEditingTaskId(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 110,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400 }}>
+            <TaskEditForm
+              key={editingTask.id}
+              header="名前を変える"
+              initialTitle={editingTask.title}
+              initialEmoji={editingTask.emoji}
+              saveLabel="保存する"
+              onSave={(title, emoji) => {
+                onEditTask(editingTask.id, title, emoji);
+                setEditingTaskId(null);
+              }}
+              onCancel={() => setEditingTaskId(null)}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1721,6 +1852,7 @@ function TaskScreen({
 
 const SWIPE_DELETE_WIDTH = 72;
 const SWIPE_SKIP_WIDTH = 80;
+const LONG_PRESS_MS = 500;
 
 const addBtnStyle: CSSProperties = {
   width: "100%", padding: "11px", borderRadius: 12,
@@ -1732,7 +1864,7 @@ const addBtnStyle: CSSProperties = {
 interface TaskRowProps {
   task: Task; isDone: boolean; isSkipped: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
   floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean;
-  onSelect: () => void; onDelete: () => void; onSkip: () => void;
+  onSelect: () => void; onDelete: () => void; onSkip: () => void; onLongPress: () => void;
   swipeMode: SwipeMode | null; onSwipeOpen: (mode: SwipeMode) => void; onSwipeClose: () => void;
   onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
   confirmDeleteTime: boolean;
@@ -1747,7 +1879,7 @@ function swipeSnapOffset(mode: SwipeMode | null) {
 
 function SortableTaskRow(props: TaskRowProps) {
   const {
-    swipeMode, onSwipeOpen, onSwipeClose, onSelect, onDelete, onSkip, isSkipped,
+    swipeMode, onSwipeOpen, onSwipeClose, onSelect, onDelete, onSkip, onLongPress, isSkipped,
     onStartTimer, onPauseTimer, onCancelTask, onCompleteTask, isActive, liveElapsed, timerRunning,
     confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
     ...rowProps
@@ -1755,6 +1887,7 @@ function SortableTaskRow(props: TaskRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
   const swipeRef = useRef<HTMLDivElement>(null);
   const gesture = useRef({ startX: 0, startY: 0, startOffset: 0, swiping: false, moved: false, lastOffset: 0 });
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
 
@@ -1762,6 +1895,15 @@ function SortableTaskRow(props: TaskRowProps) {
   const displayX = dragging ? offsetX : snapOffset;
 
   const clampOffset = (v: number) => Math.min(SWIPE_SKIP_WIDTH, Math.max(-SWIPE_DELETE_WIDTH, v));
+
+  const clearLongPressTimer = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  useEffect(() => () => clearLongPressTimer(), []);
 
   useEffect(() => {
     const el = swipeRef.current;
@@ -1774,16 +1916,24 @@ function SortableTaskRow(props: TaskRowProps) {
   }, []);
 
   const beginGesture = (clientX: number, clientY: number) => {
+    clearLongPressTimer();
     const startOffset = swipeSnapOffset(swipeMode);
     gesture.current = { startX: clientX, startY: clientY, startOffset, swiping: false, moved: false, lastOffset: startOffset };
     setDragging(true);
     setOffsetX(startOffset);
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      gesture.current.moved = true;
+      navigator.vibrate?.(10);
+      onLongPress();
+    }, LONG_PRESS_MS);
   };
 
   const moveGesture = (clientX: number, clientY: number) => {
     const g = gesture.current;
     const dx = clientX - g.startX;
     const dy = clientY - g.startY;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLongPressTimer();
     if (!g.swiping && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
       g.swiping = true;
     }
@@ -1794,6 +1944,7 @@ function SortableTaskRow(props: TaskRowProps) {
   };
 
   const endGesture = () => {
+    clearLongPressTimer();
     const g = gesture.current;
     setDragging(false);
     if (!g.swiping) return;
