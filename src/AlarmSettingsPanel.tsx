@@ -1,6 +1,7 @@
 import { theme } from "./theme";
 import {
   ALARM_DURATION_PRESETS,
+  isVibrationSupported,
   type AlarmSettings,
 } from "./alarm";
 
@@ -22,6 +23,7 @@ export function AlarmSettingsPanel({
   compact?: boolean;
 }) {
   const set = (patch: Partial<AlarmSettings>) => onChange({ ...settings, ...patch });
+  const vibrateSupported = isVibrationSupported();
 
   return (
     <div style={{
@@ -60,10 +62,10 @@ export function AlarmSettingsPanel({
       />
       <ToggleRow
         label="振動させる"
-        hint={navigator.vibrate ? "スマホがブルブル震える" : "この端末では振動非対応"}
+        hint={vibrateSupported ? "スマホがブルブル震える" : "この端末では振動非対応"}
         checked={settings.vibrationEnabled}
         onChange={(vibrationEnabled) => set({ vibrationEnabled })}
-        disabled={!navigator.vibrate}
+        disabled={!vibrateSupported}
       />
 
       {onTest && (

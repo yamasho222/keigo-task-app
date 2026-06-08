@@ -6,6 +6,10 @@ export interface AlarmSettings {
 
 export const ALARM_DURATION_PRESETS = [10, 30, 60, 120, 180] as const;
 
+export function isVibrationSupported() {
+  return typeof navigator !== "undefined" && "vibrate" in navigator;
+}
+
 const ALARM_SETTINGS_KEY = "keigo-alarm-settings-v1";
 
 const DEFAULT_SETTINGS: AlarmSettings = {
@@ -74,7 +78,7 @@ function playAttentionBeep() {
 }
 
 function startVibrationLoop() {
-  if (!navigator.vibrate) return;
+  if (!isVibrationSupported()) return;
   navigator.vibrate(VIBRATE_PATTERN);
   vibrateInterval = setInterval(() => {
     if (alarmActive) navigator.vibrate(VIBRATE_PATTERN);
