@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 
-export interface DayHistory { morning: boolean; evening: boolean; }
+export interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
 
 export type DayStatus = "none" | "morning" | "evening" | "both";
 
@@ -20,7 +20,7 @@ export function getStreak(history: Record<string, DayHistory>): number {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const day = history[d.toISOString().slice(0, 10)];
-    if (day && (day.morning || day.evening)) streak++;
+    if (day && (day.morning || day.evening || day.home)) streak++;
     else break;
   }
   return streak;

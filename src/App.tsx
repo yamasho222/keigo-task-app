@@ -21,9 +21,11 @@ import { RecordScreen, getStreak } from "./RecordCalendar";
 
 // ── Types & Data ──────────────────────────────────────
 
-type ScreenId  = "morning" | "evening" | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record";
+type SessionId = "morning" | "evening" | "home";
+type ScreenId  = SessionId | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type TaskScope = "regular" | "today";
+type SwipeMode = "delete" | "skip";
 
 interface Task { id: number; title: string; emoji: string; scope?: TaskScope; }
 
@@ -46,6 +48,13 @@ const EVENING_TASKS_DEFAULT: Task[] = [
   { id: 5, title: "パジャマを着る", emoji: "😴" },
 ];
 
+const HOME_TASKS_DEFAULT: Task[] = [
+  { id: 1, title: "大事なプリントなど机に出す", emoji: "📄" },
+  { id: 2, title: "宿題",                       emoji: "📖" },
+  { id: 3, title: "水筒をキッチンに出す",       emoji: "🧴" },
+  { id: 4, title: "洗濯物の片付け",             emoji: "👕" },
+];
+
 const CELEB_TYPES: CelebType[] = ["confetti", "burst", "stripes", "bars", "diagonal"];
 const CELEB_NAMES: Record<CelebType, string> = {
   confetti: "かみふぶき！", burst: "ドカン！",
@@ -65,24 +74,42 @@ const FLOAT_COLORS = [
 
 const STORAGE_KEY = "keigo-app-v1";
 
-interface DayHistory { morning: boolean; evening: boolean; }
+interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
 
 interface StoredState {
   date: string;
   morningDone: number[];
   eveningDone: number[];
+  homeDone: number[];
+  morningSkipped: number[];
+  eveningSkipped: number[];
+  homeSkipped: number[];
   morningApproved: boolean;
   eveningApproved: boolean;
+  homeApproved: boolean;
   morningTasks: Task[];
   eveningTasks: Task[];
+  homeTasks: Task[];
   history: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
 }
 
-interface ActiveWorkTask { session: "morning" | "evening"; taskId: number; }
+interface ActiveWorkTask { session: SessionId; taskId: number; }
 
-function taskTimeKey(session: "morning" | "evening", taskId: number) {
+function taskTimeKey(session: SessionId, taskId: number) {
   return `${session}-${taskId}`;
+}
+
+function isTaskResolved(done: Set<number>, skipped: Set<number>, id: number) {
+  return done.has(id) || skipped.has(id);
+}
+
+function resolvedCount(done: Set<number>, skipped: Set<number>) {
+  return done.size + skipped.size;
+}
+
+function isAllResolved(tasks: Task[], done: Set<number>, skipped: Set<number>) {
+  return tasks.length > 0 && resolvedCount(done, skipped) === tasks.length;
 }
 
 function fmtTaskTime(totalSec: number) {
@@ -107,27 +134,46 @@ function stripTodayTasks(tasks: Task[]): Task[] {
   return normalizeTasks(tasks).filter((t) => t.scope !== "today");
 }
 
+function hydrateStoredState(data: StoredState): StoredState {
+  return {
+    ...data,
+    morningTasks: normalizeTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
+    eveningTasks: normalizeTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
+    homeTasks: normalizeTasks(data.homeTasks ?? HOME_TASKS_DEFAULT),
+    morningDone: data.morningDone ?? [],
+    eveningDone: data.eveningDone ?? [],
+    homeDone: data.homeDone ?? [],
+    morningSkipped: data.morningSkipped ?? [],
+    eveningSkipped: data.eveningSkipped ?? [],
+    homeSkipped: data.homeSkipped ?? [],
+    homeApproved: data.homeApproved ?? false,
+  };
+}
+
 function loadStoredState(): StoredState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data: StoredState = JSON.parse(raw);
       if (data.date === todayKey()) {
-        return {
-          ...data,
-          morningTasks: normalizeTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
-          eveningTasks: normalizeTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
-        };
+        return hydrateStoredState(data);
       }
+      const hydrated = hydrateStoredState(data);
       return {
-        ...data,
+        ...hydrated,
         date: todayKey(),
         morningDone: [],
         eveningDone: [],
+        homeDone: [],
+        morningSkipped: [],
+        eveningSkipped: [],
+        homeSkipped: [],
         morningApproved: false,
         eveningApproved: false,
-        morningTasks: stripTodayTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
-        eveningTasks: stripTodayTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
+        homeApproved: false,
+        morningTasks: stripTodayTasks(hydrated.morningTasks),
+        eveningTasks: stripTodayTasks(hydrated.eveningTasks),
+        homeTasks: stripTodayTasks(hydrated.homeTasks),
       };
     }
   } catch { /* ignore */ }
@@ -135,17 +181,29 @@ function loadStoredState(): StoredState {
     date: todayKey(),
     morningDone: [],
     eveningDone: [],
+    homeDone: [],
+    morningSkipped: [],
+    eveningSkipped: [],
+    homeSkipped: [],
     morningApproved: false,
     eveningApproved: false,
+    homeApproved: false,
     morningTasks: MORNING_TASKS_DEFAULT,
     eveningTasks: EVENING_TASKS_DEFAULT,
+    homeTasks: HOME_TASKS_DEFAULT,
     history: {},
   };
 }
 
-function getInitialScreen(): ScreenId {
+function getSessionScreen(): SessionId {
   const h = new Date().getHours();
-  return h >= 5 && h < 12 ? "morning" : "evening";
+  if (h >= 5 && h < 12) return "morning";
+  if (h >= 12 && h < 18) return "home";
+  return "evening";
+}
+
+function getInitialScreen(): ScreenId {
+  return getSessionScreen();
 }
 
 function fmtTime(d: Date) {
@@ -295,10 +353,16 @@ export default function KeigoTaskApp() {
   const [screen,         setScreen]         = useState<ScreenId>(getInitialScreen());
   const [morningTasks,   setMorningTasks]   = useState<Task[]>(stored.morningTasks ?? MORNING_TASKS_DEFAULT);
   const [eveningTasks,   setEveningTasks]   = useState<Task[]>(stored.eveningTasks ?? EVENING_TASKS_DEFAULT);
+  const [homeTasks,      setHomeTasks]      = useState<Task[]>(stored.homeTasks ?? HOME_TASKS_DEFAULT);
   const [morningDone,    setMorningDone]    = useState<Set<number>>(new Set(stored.morningDone));
   const [eveningDone,    setEveningDone]    = useState<Set<number>>(new Set(stored.eveningDone));
+  const [homeDone,       setHomeDone]       = useState<Set<number>>(new Set(stored.homeDone));
+  const [morningSkipped, setMorningSkipped] = useState<Set<number>>(new Set(stored.morningSkipped));
+  const [eveningSkipped, setEveningSkipped] = useState<Set<number>>(new Set(stored.eveningSkipped));
+  const [homeSkipped,    setHomeSkipped]    = useState<Set<number>>(new Set(stored.homeSkipped));
   const [morningApproved, setMorningApproved] = useState(stored.morningApproved);
   const [eveningApproved, setEveningApproved] = useState(stored.eveningApproved);
+  const [homeApproved,    setHomeApproved]    = useState(stored.homeApproved);
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
   const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
 
@@ -320,7 +384,7 @@ export default function KeigoTaskApp() {
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>("morning");
   const [showMenu,     setShowMenu]     = useState(false);
-  const [parentSession, setParentSession] = useState<"morning" | "evening">("morning");
+  const [parentSession, setParentSession] = useState<SessionId>("morning");
   const [parentCtx, setParentCtx] = useState<{ label: string; taskNames: string[]; completedAt: string }>({
     label: "朝のやること",
     taskNames: MORNING_TASKS_DEFAULT.map((t) => t.title),
@@ -339,7 +403,11 @@ export default function KeigoTaskApp() {
   useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
   const streak = getStreak(history);
-  const approved   = parentSession === "morning" ? morningApproved : eveningApproved;
+  const approved = parentSession === "morning"
+    ? morningApproved
+    : parentSession === "evening"
+      ? eveningApproved
+      : homeApproved;
 
   // ── localStorage save ──
   useEffect(() => {
@@ -347,15 +415,27 @@ export default function KeigoTaskApp() {
       date: todayKey(),
       morningDone:    [...morningDone],
       eveningDone:    [...eveningDone],
+      homeDone:       [...homeDone],
+      morningSkipped: [...morningSkipped],
+      eveningSkipped: [...eveningSkipped],
+      homeSkipped:    [...homeSkipped],
       morningApproved,
       eveningApproved,
+      homeApproved,
       morningTasks,
       eveningTasks,
+      homeTasks,
       history,
       bestTimes,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [morningDone, eveningDone, morningApproved, eveningApproved, morningTasks, eveningTasks, history, bestTimes]);
+  }, [
+    morningDone, eveningDone, homeDone,
+    morningSkipped, eveningSkipped, homeSkipped,
+    morningApproved, eveningApproved, homeApproved,
+    morningTasks, eveningTasks, homeTasks,
+    history, bestTimes,
+  ]);
 
   useEffect(() => {
     saveAlarmSettings(alarmSettings);
@@ -442,8 +522,8 @@ export default function KeigoTaskApp() {
     setWorkTimerRunning(true);
   };
 
-  const selectWorkTask = (session: "morning" | "evening", taskId: number, isDone: boolean) => {
-    if (isDone || celebType || anticipating) return;
+  const selectWorkTask = (session: SessionId, taskId: number, resolved: boolean) => {
+    if (resolved || celebType || anticipating) return;
     if (activeWorkTask?.session === session && activeWorkTask.taskId === taskId) return;
     pauseWorkTimer();
     resetWorkTimer();
@@ -456,10 +536,28 @@ export default function KeigoTaskApp() {
     setActiveWorkTask(null);
   };
 
-  const completeWorkTask = (
-    session: "morning" | "evening",
+  const maybeCelebrate = (
+    session: SessionId,
     tasks: Task[],
     done: Set<number>,
+    skipped: Set<number>,
+    label: string,
+  ) => {
+    if (isAllResolved(tasks, done, skipped)) {
+      const names = tasks.map((t) => {
+        if (skipped.has(t.id)) return `${t.title}（保留）`;
+        return t.title;
+      });
+      setAnticipating(true);
+      setTimeout(() => fireCelebration({ label, taskNames: names }, session), 750);
+    }
+  };
+
+  const completeWorkTask = (
+    session: SessionId,
+    tasks: Task[],
+    done: Set<number>,
+    skipped: Set<number>,
     setDone: (s: Set<number>) => void,
     label: string,
   ) => {
@@ -477,8 +575,14 @@ export default function KeigoTaskApp() {
       setTimeout(() => setNewRecordTaskId(null), 2500);
     }
 
-    if (!done.has(taskId)) {
-      handleToggle(done, setDone, tasks, label, session, taskId);
+    if (!done.has(taskId) && !skipped.has(taskId)) {
+      const next = new Set(done);
+      next.add(taskId);
+      setDone(next);
+      setFloatColor(FLOAT_COLORS[Math.floor(Math.random() * FLOAT_COLORS.length)]);
+      setJustChecked(taskId);
+      setTimeout(() => setJustChecked(null), 1350);
+      maybeCelebrate(session, tasks, next, skipped, label);
     }
     resetWorkTimer();
     setActiveWorkTask(null);
@@ -547,7 +651,7 @@ export default function KeigoTaskApp() {
   // ── celebration ──
   const fireCelebration = (
     ctx: { label: string; taskNames: string[] },
-    session: "morning" | "evening",
+    session: SessionId,
   ) => {
     setAnticipating(false);
     setStampVisible(false);
@@ -574,48 +678,25 @@ export default function KeigoTaskApp() {
   const handleApprove = () => {
     if (approved) return;
     const today = todayKey();
-    const prev = history[today] ?? { morning: false, evening: false };
+    const prev = history[today] ?? { morning: false, evening: false, home: false };
     if (parentSession === "morning") {
       setMorningApproved(true);
       setHistory({ ...history, [today]: { ...prev, morning: true } });
-    } else {
+    } else if (parentSession === "evening") {
       setEveningApproved(true);
       setHistory({ ...history, [today]: { ...prev, evening: true } });
+    } else {
+      setHomeApproved(true);
+      setHistory({ ...history, [today]: { ...prev, home: true } });
     }
     triggerStamp();
   };
 
   const resetApproval = () => {
     if (parentSession === "morning") setMorningApproved(false);
-    else setEveningApproved(false);
+    else if (parentSession === "evening") setEveningApproved(false);
+    else setHomeApproved(false);
     setStampVisible(false);
-  };
-
-  const handleToggle = (
-    done: Set<number>,
-    setDone: (s: Set<number>) => void,
-    tasks: Task[],
-    label: string,
-    session: "morning" | "evening",
-    id: number,
-  ) => {
-    if (celebType || anticipating) return;
-    const next = new Set(done);
-    const adding = !next.has(id);
-    adding ? next.add(id) : next.delete(id);
-    setDone(next);
-    if (adding) {
-      setFloatColor(FLOAT_COLORS[Math.floor(Math.random() * FLOAT_COLORS.length)]);
-      setJustChecked(id);
-      setTimeout(() => setJustChecked(null), 1350);
-      if (next.size === tasks.length) {
-        setAnticipating(true);
-        setTimeout(
-          () => fireCelebration({ label, taskNames: tasks.map((t) => t.title) }, session),
-          750,
-        );
-      }
-    }
   };
 
   const goToTimer = () => {
@@ -642,19 +723,18 @@ export default function KeigoTaskApp() {
   };
 
   const goHome = () => {
-    const h = new Date().getHours();
-    setScreen(h >= 5 && h < 12 ? "morning" : "evening");
+    setScreen(getSessionScreen());
   };
 
-  const addTask = (session: "morning" | "evening", title: string, emoji: string, scope: TaskScope) => {
+  const addTask = (session: SessionId, title: string, emoji: string, scope: TaskScope) => {
     if (!title.trim()) return;
-    const base = session === "morning" ? morningTasks : eveningTasks;
-    const setTasks = session === "morning" ? setMorningTasks : setEveningTasks;
+    const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
+    const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
     const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
     setTasks([...base, { id: maxId + 1, title: title.trim(), emoji, scope }]);
   };
 
-  const clearBestTime = (session: "morning" | "evening", taskId: number) => {
+  const clearBestTime = (session: SessionId, taskId: number) => {
     const key = taskTimeKey(session, taskId);
     setBestTimes((prev) => {
       const updated = { ...prev };
@@ -663,15 +743,20 @@ export default function KeigoTaskApp() {
     });
   };
 
-  const deleteTask = (session: "morning" | "evening", id: number) => {
-    const base = session === "morning" ? morningTasks : eveningTasks;
-    const setTasks = session === "morning" ? setMorningTasks : setEveningTasks;
-    const setDone = session === "morning" ? setMorningDone : setEveningDone;
-    const doneSet = session === "morning" ? morningDone : eveningDone;
+  const deleteTask = (session: SessionId, id: number) => {
+    const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
+    const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
+    const setDone = session === "morning" ? setMorningDone : session === "evening" ? setEveningDone : setHomeDone;
+    const setSkipped = session === "morning" ? setMorningSkipped : session === "evening" ? setEveningSkipped : setHomeSkipped;
+    const doneSet = session === "morning" ? morningDone : session === "evening" ? eveningDone : homeDone;
+    const skippedSet = session === "morning" ? morningSkipped : session === "evening" ? eveningSkipped : homeSkipped;
     setTasks(base.filter((t) => t.id !== id));
     const next = new Set(doneSet);
     next.delete(id);
     setDone(next);
+    const nextSkipped = new Set(skippedSet);
+    nextSkipped.delete(id);
+    setSkipped(nextSkipped);
     const key = taskTimeKey(session, id);
     setBestTimes((prev) => {
       const updated = { ...prev };
@@ -682,6 +767,43 @@ export default function KeigoTaskApp() {
       resetWorkTimer();
       setActiveWorkTask(null);
     }
+  };
+
+  const skipTask = (
+    session: SessionId,
+    id: number,
+    tasks: Task[],
+    done: Set<number>,
+    skipped: Set<number>,
+    setDone: (s: Set<number>) => void,
+    setSkipped: (s: Set<number>) => void,
+    label: string,
+  ) => {
+    if (celebType || anticipating) return;
+
+    if (skipped.has(id)) {
+      const nextSkipped = new Set(skipped);
+      nextSkipped.delete(id);
+      setSkipped(nextSkipped);
+      return;
+    }
+
+    const nextSkipped = new Set(skipped);
+    nextSkipped.add(id);
+    setSkipped(nextSkipped);
+
+    let nextDone = done;
+    if (done.has(id)) {
+      nextDone = new Set(done);
+      nextDone.delete(id);
+      setDone(nextDone);
+    }
+
+    if (activeWorkTask?.session === session && activeWorkTask.taskId === id) {
+      cancelWorkTask();
+    }
+
+    maybeCelebrate(session, tasks, nextDone, nextSkipped, label);
   };
 
   const dayLabel = getDayLabel();
@@ -744,6 +866,7 @@ export default function KeigoTaskApp() {
             {/* メニュー項目 */}
             {[
               { icon: "🌅", label: "朝のタスク",    action: () => { setScreen("morning"); setShowMenu(false); } },
+              { icon: "🏠", label: "帰宅後のタスク", action: () => { setScreen("home"); setShowMenu(false); } },
               { icon: "🌙", label: "夜のタスク",    action: () => { setScreen("evening"); setShowMenu(false); } },
               { icon: "✅", label: "親チェック画面", action: () => { setScreen("show_parent"); setShowMenu(false); } },
               { icon: "⏱", label: "タイマー",
@@ -830,7 +953,7 @@ export default function KeigoTaskApp() {
           pointerEvents: (anticipating || !!celebType) ? "none" : "auto",
         }}
       >
-        {(screen === "morning" || screen === "evening") && (
+        {(screen === "morning" || screen === "evening" || screen === "home") && (
           <>
             <InAppTabs screen={screen} onSwitch={goToScreen} />
             {screen === "morning" && (
@@ -840,6 +963,7 @@ export default function KeigoTaskApp() {
                 timeLabel={`${dayLabel} 朝`}
                 tasks={morningTasks}
                 done={morningDone}
+                skipped={morningSkipped}
                 justChecked={justChecked}
                 floatColor={floatColor}
                 bestTimes={bestTimes}
@@ -850,12 +974,40 @@ export default function KeigoTaskApp() {
                 onReorder={setMorningTasks}
                 onAddTask={(title, emoji, scope) => addTask("morning", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("morning", id)}
-                onSelectTask={(id) => selectWorkTask("morning", id, morningDone.has(id))}
+                onSkipTask={(id) => skipTask("morning", id, morningTasks, morningDone, morningSkipped, setMorningDone, setMorningSkipped, "朝のやること")}
+                onSelectTask={(id) => selectWorkTask("morning", id, isTaskResolved(morningDone, morningSkipped, id))}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
-                onCompleteTask={() => completeWorkTask("morning", morningTasks, morningDone, setMorningDone, "朝のやること")}
+                onCompleteTask={() => completeWorkTask("morning", morningTasks, morningDone, morningSkipped, setMorningDone, "朝のやること")}
                 onClearBestTime={(id) => clearBestTime("morning", id)}
+              />
+            )}
+            {screen === "home" && (
+              <TaskScreen
+                session="home"
+                label="帰宅後のやること"
+                timeLabel={`${dayLabel} 帰宅後`}
+                tasks={homeTasks}
+                done={homeDone}
+                skipped={homeSkipped}
+                justChecked={justChecked}
+                floatColor={floatColor}
+                bestTimes={bestTimes}
+                activeWorkTask={activeWorkTask}
+                workTimerElapsed={workTimerElapsed}
+                workTimerRunning={workTimerRunning}
+                newRecordTaskId={newRecordTaskId}
+                onReorder={setHomeTasks}
+                onAddTask={(title, emoji, scope) => addTask("home", title, emoji, scope)}
+                onDeleteTask={(id) => deleteTask("home", id)}
+                onSkipTask={(id) => skipTask("home", id, homeTasks, homeDone, homeSkipped, setHomeDone, setHomeSkipped, "帰宅後のやること")}
+                onSelectTask={(id) => selectWorkTask("home", id, isTaskResolved(homeDone, homeSkipped, id))}
+                onStartTimer={startWorkTimer}
+                onPauseTimer={pauseWorkTimer}
+                onCancelTask={cancelWorkTask}
+                onCompleteTask={() => completeWorkTask("home", homeTasks, homeDone, homeSkipped, setHomeDone, "帰宅後のやること")}
+                onClearBestTime={(id) => clearBestTime("home", id)}
               />
             )}
             {screen === "evening" && (
@@ -865,6 +1017,7 @@ export default function KeigoTaskApp() {
                 timeLabel={`${dayLabel} 夜`}
                 tasks={eveningTasks}
                 done={eveningDone}
+                skipped={eveningSkipped}
                 justChecked={justChecked}
                 floatColor={floatColor}
                 bestTimes={bestTimes}
@@ -875,11 +1028,12 @@ export default function KeigoTaskApp() {
                 onReorder={setEveningTasks}
                 onAddTask={(title, emoji, scope) => addTask("evening", title, emoji, scope)}
                 onDeleteTask={(id) => deleteTask("evening", id)}
-                onSelectTask={(id) => selectWorkTask("evening", id, eveningDone.has(id))}
+                onSkipTask={(id) => skipTask("evening", id, eveningTasks, eveningDone, eveningSkipped, setEveningDone, setEveningSkipped, "夜のやること")}
+                onSelectTask={(id) => selectWorkTask("evening", id, isTaskResolved(eveningDone, eveningSkipped, id))}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
-                onCompleteTask={() => completeWorkTask("evening", eveningTasks, eveningDone, setEveningDone, "夜のやること")}
+                onCompleteTask={() => completeWorkTask("evening", eveningTasks, eveningDone, eveningSkipped, setEveningDone, "夜のやること")}
                 onClearBestTime={(id) => clearBestTime("evening", id)}
               />
             )}
@@ -1169,11 +1323,15 @@ function getEncouragement(done: number, total: number): string {
   return `あと${total - done}こ！`;
 }
 
-function StepProgress({ tasks, done, justChecked }: { tasks: Task[]; done: Set<number>; justChecked: number | null }) {
-  const total      = tasks.length;
-  const doneCount  = done.size;
-  const allDone    = doneCount === total;
-  const activeIdx  = tasks.findIndex((t) => !done.has(t.id));
+function StepProgress({
+  tasks, done, skipped, justChecked,
+}: {
+  tasks: Task[]; done: Set<number>; skipped: Set<number>; justChecked: number | null;
+}) {
+  const total       = tasks.length;
+  const doneCount   = resolvedCount(done, skipped);
+  const allDone     = doneCount === total;
+  const activeIdx   = tasks.findIndex((t) => !isTaskResolved(done, skipped, t.id));
   const circleSize = total <= 5 ? 36 : total <= 7 ? 28 : 22;
   const iconSize   = circleSize * 0.44;
   const lineW      = total <= 5 ? 22 : total <= 7 ? 14 : 8;
@@ -1193,17 +1351,19 @@ function StepProgress({ tasks, done, justChecked }: { tasks: Task[]; done: Set<n
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
         {tasks.map((task, idx) => {
-          const isDone   = done.has(task.id);
-          const isActive = idx === activeIdx;
-          const isJust   = justChecked === task.id;
-          const isFuture = !isDone && !isActive;
-          const prevDone = idx > 0 && done.has(tasks[idx - 1].id);
+          const isDone    = done.has(task.id);
+          const isSkipped = skipped.has(task.id);
+          const isResolved = isDone || isSkipped;
+          const isActive  = idx === activeIdx;
+          const isJust    = justChecked === task.id;
+          const isFuture  = !isResolved && !isActive;
+          const prevDone  = idx > 0 && isTaskResolved(done, skipped, tasks[idx - 1].id);
           return (
             <div key={task.id} style={{ display: "flex", alignItems: "center" }}>
               {idx > 0 && (
                 <div style={{
                   width: lineW, height: 3, borderRadius: 2, flexShrink: 0,
-                  backgroundColor: isDone || (isActive && prevDone) ? theme.category.green : theme.fill.secondary,
+                  backgroundColor: isResolved || (isActive && prevDone) ? theme.category.green : theme.fill.secondary,
                 }} />
               )}
               <div style={{ position: "relative", flexShrink: 0 }}>
@@ -1211,8 +1371,8 @@ function StepProgress({ tasks, done, justChecked }: { tasks: Task[]; done: Set<n
                   className={isJust ? "step-just" : isActive ? "step-active" : ""}
                   style={{
                     width: circleSize, height: circleSize, borderRadius: circleSize / 2,
-                    backgroundColor: isDone ? theme.category.green : isActive ? theme.accent.primary : "transparent",
-                    border: isFuture ? `2px solid ${theme.stroke.secondary}` : isActive ? `2px solid ${theme.accent.primary}` : "none",
+                    backgroundColor: isDone ? theme.category.green : isSkipped ? theme.category.orange : isActive ? theme.accent.primary : "transparent",
+                    border: isFuture ? `2px solid ${theme.stroke.secondary}` : isActive ? `2px solid ${theme.accent.primary}` : isSkipped ? `2px solid ${theme.category.orange}` : "none",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     position: "relative", zIndex: 1,
                   }}
@@ -1221,6 +1381,8 @@ function StepProgress({ tasks, done, justChecked }: { tasks: Task[]; done: Set<n
                     <svg width={iconSize} height={iconSize * 0.82} viewBox="0 0 12 10" fill="none">
                       <path d="M1 5L4.5 8.5L11 1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
+                  ) : isSkipped ? (
+                    <span style={{ fontSize: circleSize * 0.34, fontWeight: 900, color: "#fff" }}>－</span>
                   ) : (
                     <span style={{ fontSize: circleSize * 0.38, fontWeight: 800, color: isActive ? theme.text.onAccent : theme.text.tertiary }}>
                       {idx + 1}
@@ -1248,16 +1410,17 @@ function StepProgress({ tasks, done, justChecked }: { tasks: Task[]; done: Set<n
 function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: ScreenId) => void }) {
   const tabs: { id: ScreenId; label: string }[] = [
     { id: "morning", label: "☀️ 朝" },
+    { id: "home",    label: "🏠 帰宅後" },
     { id: "evening", label: "🌙 夜" },
   ];
   return (
-    <div style={{ display: "flex", gap: 8, padding: "2px 0 4px" }}>
+    <div style={{ display: "flex", gap: 6, padding: "2px 0 4px" }}>
       {tabs.map((t) => {
         const active = screen === t.id;
         return (
           <button key={t.id} onClick={() => onSwitch(t.id)} style={{
             flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
-            fontWeight: active ? 800 : 600, fontSize: 14,
+            fontWeight: active ? 800 : 600, fontSize: 12,
             color: active ? "#fff" : theme.text.secondary,
             background: active ? theme.accent.primary : `${theme.accent.primary}18`,
             transition: "all 0.2s",
@@ -1273,9 +1436,9 @@ function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: Scree
 // ── Task Screen ───────────────────────────────────────
 
 interface TaskScreenProps {
-  session: "morning" | "evening";
+  session: SessionId;
   label: string; timeLabel: string;
-  tasks: Task[]; done: Set<number>; justChecked: number | null;
+  tasks: Task[]; done: Set<number>; skipped: Set<number>; justChecked: number | null;
   floatColor: string;
   bestTimes: Record<string, number>;
   activeWorkTask: ActiveWorkTask | null;
@@ -1285,6 +1448,7 @@ interface TaskScreenProps {
   onReorder: (tasks: Task[]) => void;
   onAddTask: (title: string, emoji: string, scope: TaskScope) => void;
   onDeleteTask: (id: number) => void;
+  onSkipTask: (id: number) => void;
   onSelectTask: (id: number) => void;
   onStartTimer: () => void;
   onPauseTimer: () => void;
@@ -1294,16 +1458,16 @@ interface TaskScreenProps {
 }
 
 function TaskScreen({
-  session, label, timeLabel, tasks, done, justChecked, floatColor,
+  session, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
-  onReorder, onAddTask, onDeleteTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
+  onReorder, onAddTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
   const [newTitle, setNewTitle] = useState("");
   const [newEmoji, setNewEmoji] = useState("📝");
-  const [openSwipeId, setOpenSwipeId] = useState<number | null>(null);
+  const [openSwipe, setOpenSwipe] = useState<{ id: number; mode: SwipeMode } | null>(null);
   const [confirmDeleteTimeId, setConfirmDeleteTimeId] = useState<number | null>(null);
 
   const sensors = useSensors(
@@ -1344,7 +1508,7 @@ function TaskScreen({
         </div>
       </div>
 
-      <StepProgress tasks={tasks} done={done} justChecked={justChecked} />
+      <StepProgress tasks={tasks} done={done} skipped={skipped} justChecked={justChecked} />
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1352,11 +1516,14 @@ function TaskScreen({
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {tasks.map((task) => {
               const isActive = activeWorkTask?.session === session && activeWorkTask.taskId === task.id;
+              const isSkipped = skipped.has(task.id);
+              const swipeMode = openSwipe?.id === task.id ? openSwipe.mode : null;
               return (
                 <SortableTaskRow
                   key={task.id}
                   task={task}
                   isDone={done.has(task.id)}
+                  isSkipped={isSkipped}
                   isJustChecked={justChecked === task.id}
                   isActive={isActive}
                   isNewRecord={newRecordTaskId === task.id}
@@ -1364,11 +1531,12 @@ function TaskScreen({
                   bestTime={bestTimes[taskTimeKey(session, task.id)]}
                   liveElapsed={isActive ? workTimerElapsed : undefined}
                   timerRunning={isActive && workTimerRunning}
-                  swipeOpen={openSwipeId === task.id}
-                  onSwipeOpen={() => setOpenSwipeId(task.id)}
-                  onSwipeClose={() => setOpenSwipeId(null)}
+                  swipeMode={swipeMode}
+                  onSwipeOpen={(mode) => setOpenSwipe({ id: task.id, mode })}
+                  onSwipeClose={() => setOpenSwipe(null)}
                   onSelect={() => onSelectTask(task.id)}
-                  onDelete={() => { onDeleteTask(task.id); setOpenSwipeId(null); }}
+                  onDelete={() => { onDeleteTask(task.id); setOpenSwipe(null); }}
+                  onSkip={() => { onSkipTask(task.id); setOpenSwipe(null); }}
                   onStartTimer={onStartTimer}
                   onPauseTimer={onPauseTimer}
                   onCancelTask={onCancelTask}
@@ -1449,6 +1617,7 @@ function TaskScreen({
 // ── Sortable Task Row ─────────────────────────────────
 
 const SWIPE_DELETE_WIDTH = 72;
+const SWIPE_SKIP_WIDTH = 80;
 
 const addBtnStyle: CSSProperties = {
   width: "100%", padding: "11px", borderRadius: 12,
@@ -1458,18 +1627,24 @@ const addBtnStyle: CSSProperties = {
 };
 
 interface TaskRowProps {
-  task: Task; isDone: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
+  task: Task; isDone: boolean; isSkipped: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
   floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean;
-  onSelect: () => void; onDelete: () => void;
-  swipeOpen: boolean; onSwipeOpen: () => void; onSwipeClose: () => void;
+  onSelect: () => void; onDelete: () => void; onSkip: () => void;
+  swipeMode: SwipeMode | null; onSwipeOpen: (mode: SwipeMode) => void; onSwipeClose: () => void;
   onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
   confirmDeleteTime: boolean;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }
 
+function swipeSnapOffset(mode: SwipeMode | null) {
+  if (mode === "delete") return -SWIPE_DELETE_WIDTH;
+  if (mode === "skip") return SWIPE_SKIP_WIDTH;
+  return 0;
+}
+
 function SortableTaskRow(props: TaskRowProps) {
   const {
-    swipeOpen, onSwipeOpen, onSwipeClose, onSelect, onDelete,
+    swipeMode, onSwipeOpen, onSwipeClose, onSelect, onDelete, onSkip, isSkipped,
     onStartTimer, onPauseTimer, onCancelTask, onCompleteTask, isActive, liveElapsed, timerRunning,
     confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
     ...rowProps
@@ -1480,10 +1655,10 @@ function SortableTaskRow(props: TaskRowProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const snapOffset = swipeOpen ? -SWIPE_DELETE_WIDTH : 0;
+  const snapOffset = swipeSnapOffset(swipeMode);
   const displayX = dragging ? offsetX : snapOffset;
 
-  const clampOffset = (v: number) => Math.min(0, Math.max(-SWIPE_DELETE_WIDTH, v));
+  const clampOffset = (v: number) => Math.min(SWIPE_SKIP_WIDTH, Math.max(-SWIPE_DELETE_WIDTH, v));
 
   useEffect(() => {
     const el = swipeRef.current;
@@ -1496,7 +1671,7 @@ function SortableTaskRow(props: TaskRowProps) {
   }, []);
 
   const beginGesture = (clientX: number, clientY: number) => {
-    const startOffset = swipeOpen ? -SWIPE_DELETE_WIDTH : 0;
+    const startOffset = swipeSnapOffset(swipeMode);
     gesture.current = { startX: clientX, startY: clientY, startOffset, swiping: false, moved: false, lastOffset: startOffset };
     setDragging(true);
     setOffsetX(startOffset);
@@ -1519,7 +1694,8 @@ function SortableTaskRow(props: TaskRowProps) {
     const g = gesture.current;
     setDragging(false);
     if (!g.swiping) return;
-    if (g.lastOffset < -SWIPE_DELETE_WIDTH / 2) onSwipeOpen();
+    if (g.lastOffset > SWIPE_SKIP_WIDTH / 2) onSwipeOpen("skip");
+    else if (g.lastOffset < -SWIPE_DELETE_WIDTH / 2) onSwipeOpen("delete");
     else onSwipeClose();
   };
 
@@ -1528,7 +1704,7 @@ function SortableTaskRow(props: TaskRowProps) {
       gesture.current.moved = false;
       return;
     }
-    if (swipeOpen) {
+    if (swipeMode) {
       onSwipeClose();
       return;
     }
@@ -1543,7 +1719,7 @@ function SortableTaskRow(props: TaskRowProps) {
         transform: DndCSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
-        zIndex: isDragging ? 50 : swipeOpen ? 2 : "auto",
+        zIndex: isDragging ? 50 : swipeMode ? 2 : "auto",
       }}
     >
       <div
@@ -1561,6 +1737,21 @@ function SortableTaskRow(props: TaskRowProps) {
         ref={swipeRef}
         style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 14, touchAction: "pan-y" }}
       >
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onSkip(); }}
+          aria-label={isSkipped ? "保留をもどす" : "タスクを保留"}
+          style={{
+            position: "absolute", left: 0, top: 0, bottom: 0, width: SWIPE_SKIP_WIDTH,
+            border: "none", cursor: "pointer",
+            backgroundColor: theme.category.orange,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            gap: 2, padding: 0, color: "#fff", fontSize: 11, fontWeight: 800,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>{isSkipped ? "↩" : "⏭"}</span>
+          {isSkipped ? "もどす" : "保留"}
+        </button>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -1604,6 +1795,7 @@ function SortableTaskRow(props: TaskRowProps) {
         >
           <TaskRow
             {...rowProps}
+            isSkipped={isSkipped}
             isActive={isActive}
             onSelect={handleSelect}
             confirmDeleteTime={confirmDeleteTime}
@@ -1700,34 +1892,40 @@ function TaskTimerPanel({
 }
 
 function TaskRow({
-  task, isDone, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, onSelect,
+  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, onSelect,
   confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
-}: Pick<TaskRowProps, "task" | "isDone" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "confirmDeleteTime"> & {
+}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "confirmDeleteTime"> & {
   onSelect: () => void;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }) {
+  const resolved = isDone || isSkipped;
+
   return (
     <div
-      onClick={isDone ? undefined : onSelect}
+      onClick={resolved ? undefined : onSelect}
       className={isJustChecked ? "row-glow" : ""}
       style={{
         display: "flex", alignItems: "center", gap: 12,
         padding: "13px 14px", borderRadius: isActive ? "14px 14px 0 0" : 14,
         backgroundColor: isDone
           ? `${theme.category.green}16`
-          : isActive
-            ? `${theme.accent.primary}12`
-            : theme.fill.quaternary,
-        cursor: isDone ? "default" : "pointer",
+          : isSkipped
+            ? `${theme.category.orange}14`
+            : isActive
+              ? `${theme.accent.primary}12`
+              : theme.fill.quaternary,
+        cursor: resolved ? "default" : "pointer",
         border: `1.5px solid ${
           isDone ? `${theme.category.green}44`
+            : isSkipped ? `${theme.category.orange}55`
             : isActive ? `${theme.accent.primary}55`
             : theme.stroke.tertiary
         }`,
         position: "relative", overflow: "visible",
+        opacity: isSkipped ? 0.82 : 1,
       }}
     >
-      <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1, filter: isDone ? "grayscale(40%)" : "none", transition: "filter 0.3s" }}>
+      <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1, filter: resolved ? "grayscale(40%)" : "none", transition: "filter 0.3s" }}>
         {task.emoji}
       </span>
       <div style={{ position: "relative", flexShrink: 0 }}>
@@ -1735,8 +1933,8 @@ function TaskRow({
           className={isJustChecked ? "check-pop" : ""}
           style={{
             width: 28, height: 28, borderRadius: 14,
-            backgroundColor: isDone ? theme.category.green : "transparent",
-            border: isDone ? "none" : `2px solid ${theme.stroke.primary}`,
+            backgroundColor: isDone ? theme.category.green : isSkipped ? theme.category.orange : "transparent",
+            border: resolved ? "none" : `2px solid ${theme.stroke.primary}`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
@@ -1744,6 +1942,9 @@ function TaskRow({
             <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
               <path d="M1.5 6L5.5 10L12.5 1.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
+          )}
+          {isSkipped && !isDone && (
+            <span style={{ fontSize: 14, fontWeight: 900, color: "#fff" }}>－</span>
           )}
         </div>
         {isJustChecked && (
@@ -1754,11 +1955,19 @@ function TaskRow({
         )}
       </div>
       <span style={{
-        fontSize: 15, fontWeight: isDone ? 400 : 600, flex: 1,
-        color: isDone ? theme.text.tertiary : theme.text.primary,
+        fontSize: 15, fontWeight: resolved ? 400 : 600, flex: 1,
+        color: resolved ? theme.text.tertiary : theme.text.primary,
         textDecoration: isDone ? "line-through" : "none",
       }}>
         {task.title}
+        {isSkipped && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 700, color: theme.category.orange,
+            backgroundColor: `${theme.category.orange}22`, padding: "2px 6px", borderRadius: 6,
+          }}>
+            保留
+          </span>
+        )}
         {task.scope === "today" && (
           <span style={{
             marginLeft: 6, fontSize: 10, fontWeight: 700, color: theme.accent.primary,
