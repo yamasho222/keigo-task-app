@@ -61,6 +61,30 @@ function taskScheduleBadge(task: Task): string {
   return weekdayBadgeLabel(task.weekdays) ?? "毎日";
 }
 
+type ScheduleBadgeKind = "today" | "daily" | "weekday" | "weekend" | "custom";
+
+function taskScheduleBadgeKind(task: Task): ScheduleBadgeKind {
+  if (task.scope === "today") return "today";
+  if (!task.weekdays?.length || task.weekdays.length === 7) return "daily";
+  const sorted = [...task.weekdays].sort((a, b) => a - b);
+  if (sorted.join() === WEEKDAYS_WEEKDAY.join()) return "weekday";
+  if (sorted.join() === WEEKDAYS_WEEKEND.join()) return "weekend";
+  return "custom";
+}
+
+function taskScheduleBadgeStyle(task: Task): { label: string; color: string; backgroundColor: string } {
+  const label = taskScheduleBadge(task);
+  const colorByKind: Record<ScheduleBadgeKind, string> = {
+    today: theme.category.pink,
+    daily: theme.category.blue,
+    weekday: theme.category.purple,
+    weekend: theme.category.orange,
+    custom: theme.category.green,
+  };
+  const color = colorByKind[taskScheduleBadgeKind(task)];
+  return { label, color, backgroundColor: `${color}18` };
+}
+
 function normalizeWeekdaysForSave(weekdays: number[]): number[] | undefined {
   const unique = [...new Set(weekdays)].sort((a, b) => a - b);
   if (unique.length === 0 || unique.length === 7) return undefined;
@@ -1397,6 +1421,7 @@ export default function KeigoTaskApp() {
             eveningTasks={eveningTasks}
             onSwitchSession={setTaskListSession}
             onBack={goHome}
+            onAddTask={(title, emoji, scope, weekdays) => addTask(taskListSession, title, emoji, scope, weekdays)}
             onEditTask={(sess, id, title, emoji, weekdays) => updateTask(sess, id, title, emoji, weekdays)}
           />
         )}
@@ -1843,7 +1868,7 @@ function WeekdayFilterBar({
 
 function TaskListScreen({
   session, morningTasks, homeTasks, eveningTasks,
-  onSwitchSession, onBack, onEditTask,
+  onSwitchSession, onBack, onAddTask, onEditTask,
 }: {
   session: SessionId;
   morningTasks: Task[];
@@ -1851,10 +1876,13 @@ function TaskListScreen({
   eveningTasks: Task[];
   onSwitchSession: (s: SessionId) => void;
   onBack: () => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[]) => void;
   onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[]) => void;
 }) {
   const [filterDow, setFilterDow] = useState<number | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addMode, setAddMode] = useState<TaskScope>("regular");
 
   const allTasks = session === "morning" ? morningTasks : session === "home" ? homeTasks : eveningTasks;
   const filteredTasks = allTasks.filter((t) => taskMatchesWeekdayFilter(t, filterDow));
@@ -1864,6 +1892,16 @@ function TaskListScreen({
   const summaryText = filterDow === null
     ? `${allTasks.length}件登録 · きょう ${todayVisibleCount}件`
     : `${filteredTasks.length}件 · ${WEEKDAY_LABELS[filterDow]}曜のタスク`;
+
+  const handleAdd = (title: string, emoji: string, weekdays?: number[]) => {
+    onAddTask(title, emoji, addMode, weekdays);
+    setIsAdding(false);
+  };
+
+  const startAdding = (mode: TaskScope) => {
+    setAddMode(mode);
+    setIsAdding(true);
+  };
 
   return (
     <>
@@ -1903,6 +1941,7 @@ function TaskListScreen({
             {filteredTasks.map((task) => {
               const visibleToday = isTaskVisibleToday(task);
               const showRestBadge = filterDow === null && !visibleToday;
+              const scheduleBadge = taskScheduleBadgeStyle(task);
               return (
                 <button
                   key={task.id}
@@ -1924,11 +1963,11 @@ function TaskListScreen({
                   </span>
                   <span style={{
                     fontSize: 10, fontWeight: 700, flexShrink: 0,
-                    color: theme.category.purple,
-                    backgroundColor: `${theme.category.purple}18`,
+                    color: scheduleBadge.color,
+                    backgroundColor: scheduleBadge.backgroundColor,
                     padding: "2px 6px", borderRadius: 6,
                   }}>
-                    {taskScheduleBadge(task)}
+                    {scheduleBadge.label}
                   </span>
                   {filterDow === null && visibleToday && (
                     <span style={{
@@ -1953,6 +1992,28 @@ function TaskListScreen({
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {isAdding ? (
+          <TaskEditForm
+            key={`list-add-${addMode}`}
+            header={addMode === "today" ? "きょうだけのタスク" : "レギュラータスク"}
+            initialTitle=""
+            initialEmoji="📝"
+            saveLabel="追加する"
+            showWeekdays={addMode === "regular"}
+            onSave={handleAdd}
+            onCancel={() => setIsAdding(false)}
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={() => startAdding("today")} style={addBtnStyle}>
+              <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
+            </button>
+            <button type="button" onClick={() => startAdding("regular")} style={{ ...addBtnStyle, borderColor: `${theme.accent.primary}55`, color: theme.text.secondary }}>
+              <span style={{ fontSize: 18 }}>＋</span> レギュラータスク
+            </button>
           </div>
         )}
       </div>
