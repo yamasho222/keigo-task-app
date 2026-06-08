@@ -26,7 +26,7 @@ import {
 // ── Types & Data ──────────────────────────────────────
 
 type SessionId = "morning" | "evening" | "home";
-type ScreenId  = SessionId | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record";
+type ScreenId  = SessionId | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type TaskScope = "regular" | "today";
 type SwipeMode = "delete" | "skip";
@@ -47,6 +47,18 @@ function isTaskVisibleToday(task: Task, now = new Date()): boolean {
 
 function visibleTasks(tasks: Task[], now = new Date()): Task[] {
   return tasks.filter((t) => isTaskVisibleToday(t, now));
+}
+
+function taskMatchesWeekdayFilter(task: Task, filterDow: number | null, now = new Date()): boolean {
+  if (filterDow === null) return true;
+  if (task.scope === "today") return filterDow === now.getDay();
+  if (!task.weekdays?.length) return true;
+  return task.weekdays.includes(filterDow);
+}
+
+function taskScheduleBadge(task: Task): string {
+  if (task.scope === "today") return "きょう";
+  return weekdayBadgeLabel(task.weekdays) ?? "毎日";
 }
 
 function normalizeWeekdaysForSave(weekdays: number[]): number[] | undefined {
@@ -517,6 +529,7 @@ export default function KeigoTaskApp() {
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>("morning");
   const [showMenu,     setShowMenu]     = useState(false);
+  const [taskListSession, setTaskListSession] = useState<SessionId>(getSessionScreen());
   const [parentSession, setParentSession] = useState<SessionId>("morning");
   const [parentCtx, setParentCtx] = useState<{ label: string; taskNames: string[]; completedAt: string }>({
     label: "朝のやること",
@@ -1156,6 +1169,7 @@ export default function KeigoTaskApp() {
               { icon: "🌅", label: "朝のタスク",    action: () => { setScreen("morning"); setShowMenu(false); } },
               { icon: "🏠", label: "帰宅後のタスク", action: () => { setScreen("home"); setShowMenu(false); } },
               { icon: "🌙", label: "夜のタスク",    action: () => { setScreen("evening"); setShowMenu(false); } },
+              { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(getSessionScreen()); setScreen("task_list"); setShowMenu(false); } },
               { icon: "✅", label: "親チェック画面", action: () => { setScreen("show_parent"); setShowMenu(false); } },
               { icon: "⏱", label: "タイマー",
                 action: () => {
@@ -1373,6 +1387,18 @@ export default function KeigoTaskApp() {
 
         {screen === "record" && (
           <RecordScreen history={history} streak={streak} stickerAlbum={stickerAlbum} onBack={goHome} />
+        )}
+
+        {screen === "task_list" && (
+          <TaskListScreen
+            session={taskListSession}
+            morningTasks={morningTasks}
+            homeTasks={homeTasks}
+            eveningTasks={eveningTasks}
+            onSwitchSession={setTaskListSession}
+            onBack={goHome}
+            onEditTask={(sess, id, title, emoji, weekdays) => updateTask(sess, id, title, emoji, weekdays)}
+          />
         )}
 
         {screen === "alarm_settings" && (
@@ -1727,6 +1753,251 @@ function BestTimeSummary({
 }
 
 // ── InApp Tabs ────────────────────────────────────────
+
+function BackLink({ onBack }: { onBack: () => void }) {
+  return (
+    <div
+      onClick={onBack}
+      style={{
+        display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
+        color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6,
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      もどる
+    </div>
+  );
+}
+
+function SessionTabs({ session, onSwitch }: { session: SessionId; onSwitch: (s: SessionId) => void }) {
+  const tabs: { id: SessionId; label: string }[] = [
+    { id: "morning", label: "☀️ 朝" },
+    { id: "home",    label: "🏠 帰宅後" },
+    { id: "evening", label: "🌙 夜" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 6, padding: "2px 0 4px" }}>
+      {tabs.map((t) => {
+        const active = session === t.id;
+        return (
+          <button key={t.id} type="button" onClick={() => onSwitch(t.id)} style={{
+            flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
+            fontWeight: active ? 800 : 600, fontSize: 12,
+            color: active ? "#fff" : theme.text.secondary,
+            background: active ? theme.accent.primary : `${theme.accent.primary}18`,
+            transition: "all 0.2s",
+          }}>
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function WeekdayFilterBar({
+  selected, onChange,
+}: {
+  selected: number | null;
+  onChange: (dow: number | null) => void;
+}) {
+  const todayDow = new Date().getDay();
+  const chipStyle = (active: boolean, isToday: boolean): CSSProperties => ({
+    flex: 1, padding: "7px 0", borderRadius: 8, border: "none",
+    fontSize: 12, fontWeight: 800, cursor: "pointer",
+    backgroundColor: active ? theme.accent.primary : theme.fill.secondary,
+    color: active ? "#fff" : theme.text.secondary,
+    outline: isToday ? `2px solid ${theme.category.yellow}` : "none",
+    outlineOffset: 1,
+  });
+
+  return (
+    <div style={{ display: "flex", gap: 5, alignItems: "stretch" }}>
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        style={{
+          padding: "7px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+          fontSize: 12, fontWeight: 800, flexShrink: 0,
+          backgroundColor: selected === null ? theme.accent.primary : theme.fill.secondary,
+          color: selected === null ? "#fff" : theme.text.secondary,
+        }}
+      >
+        すべて
+      </button>
+      {WEEKDAY_DISPLAY_ORDER.map((dow) => (
+        <button
+          key={dow}
+          type="button"
+          onClick={() => onChange(selected === dow ? null : dow)}
+          style={chipStyle(selected === dow, dow === todayDow)}
+        >
+          {WEEKDAY_LABELS[dow]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TaskListScreen({
+  session, morningTasks, homeTasks, eveningTasks,
+  onSwitchSession, onBack, onEditTask,
+}: {
+  session: SessionId;
+  morningTasks: Task[];
+  homeTasks: Task[];
+  eveningTasks: Task[];
+  onSwitchSession: (s: SessionId) => void;
+  onBack: () => void;
+  onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[]) => void;
+}) {
+  const [filterDow, setFilterDow] = useState<number | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+
+  const allTasks = session === "morning" ? morningTasks : session === "home" ? homeTasks : eveningTasks;
+  const filteredTasks = allTasks.filter((t) => taskMatchesWeekdayFilter(t, filterDow));
+  const editingTask = editingTaskId !== null ? allTasks.find((t) => t.id === editingTaskId) : null;
+  const todayVisibleCount = visibleTasks(allTasks).length;
+
+  const summaryText = filterDow === null
+    ? `${allTasks.length}件登録 · きょう ${todayVisibleCount}件`
+    : `${filteredTasks.length}件 · ${WEEKDAY_LABELS[filterDow]}曜のタスク`;
+
+  return (
+    <>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: "80vh" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <BackLink onBack={onBack} />
+          <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>タスク一覧</div>
+        </div>
+
+        <SessionTabs session={session} onSwitch={onSwitchSession} />
+        <WeekdayFilterBar selected={filterDow} onChange={setFilterDow} />
+
+        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text.secondary }}>
+          {summaryText}
+        </div>
+
+        {filteredTasks.length === 0 ? (
+          <div style={{
+            padding: "32px 16px", textAlign: "center", borderRadius: 14,
+            backgroundColor: theme.fill.quaternary, border: `1px solid ${theme.stroke.tertiary}`,
+          }}>
+            <div style={{ fontSize: 14, color: theme.text.secondary, marginBottom: 12 }}>
+              {filterDow === null ? "タスクがありません" : `${WEEKDAY_LABELS[filterDow]}曜のタスクはありません`}
+            </div>
+            {filterDow !== null && (
+              <button type="button" onClick={() => setFilterDow(null)} style={{
+                padding: "8px 16px", borderRadius: 8, border: `1px solid ${theme.stroke.secondary}`,
+                backgroundColor: theme.fill.secondary, fontSize: 13, fontWeight: 700,
+                color: theme.text.secondary, cursor: "pointer",
+              }}>
+                すべて表示
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {filteredTasks.map((task) => {
+              const visibleToday = isTaskVisibleToday(task);
+              const showRestBadge = filterDow === null && !visibleToday;
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => setEditingTaskId(task.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    padding: "13px 14px", borderRadius: 14, border: `1.5px solid ${theme.stroke.tertiary}`,
+                    backgroundColor: theme.fill.quaternary, cursor: "pointer",
+                    textAlign: "left", width: "100%", fontFamily: "inherit",
+                    opacity: showRestBadge ? 0.55 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 22, flexShrink: 0 }}>{task.emoji}</span>
+                  <span style={{
+                    fontSize: 15, fontWeight: 600, flex: 1, color: theme.text.primary,
+                  }}>
+                    {task.title}
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, flexShrink: 0,
+                    color: theme.category.purple,
+                    backgroundColor: `${theme.category.purple}18`,
+                    padding: "2px 6px", borderRadius: 6,
+                  }}>
+                    {taskScheduleBadge(task)}
+                  </span>
+                  {filterDow === null && visibleToday && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, flexShrink: 0,
+                      color: theme.category.green,
+                      backgroundColor: `${theme.category.green}18`,
+                      padding: "2px 6px", borderRadius: 6,
+                    }}>
+                      きょう
+                    </span>
+                  )}
+                  {showRestBadge && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, flexShrink: 0,
+                      color: theme.text.tertiary,
+                      backgroundColor: theme.fill.secondary,
+                      padding: "2px 6px", borderRadius: 6,
+                    }}>
+                      お休み
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {editingTask && (
+        <div
+          onClick={() => setEditingTaskId(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 110,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "flex-end", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 480,
+              maxHeight: "92dvh", overflowY: "auto",
+              backgroundColor: theme.bg.editor,
+              borderRadius: "20px 20px 0 0",
+              padding: "16px 16px max(env(safe-area-inset-bottom, 16px), 16px)",
+              boxShadow: "0 -4px 24px rgba(0,0,0,0.15)",
+            }}
+          >
+            <TaskEditForm
+              key={`list-edit-${editingTask.id}`}
+              header="タスクを編集"
+              initialTitle={editingTask.title}
+              initialEmoji={editingTask.emoji}
+              initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
+              showWeekdays={(editingTask.scope ?? "regular") !== "today"}
+              saveLabel="保存する"
+              autoFocus={false}
+              onSave={(title, emoji, weekdays) => {
+                onEditTask(session, editingTask.id, title, emoji, weekdays);
+                setEditingTaskId(null);
+              }}
+              onCancel={() => setEditingTaskId(null)}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: ScreenId) => void }) {
   const tabs: { id: ScreenId; label: string }[] = [
