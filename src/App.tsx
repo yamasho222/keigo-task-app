@@ -1143,12 +1143,14 @@ export default function KeigoTaskApp() {
       )}
       {dailyTreatOpen && (
         <DailyTreatOverlay
+          collectedIds={stickerAlbum}
           onClose={() => setDailyTreatOpen(false)}
           onCollect={collectSticker}
         />
       )}
       {weeklyRewardOpen && (
         <WeeklyRewardOverlay
+          collectedIds={stickerAlbum}
           onClose={() => setWeeklyRewardOpen(false)}
           onCollect={collectSticker}
         />
@@ -1228,6 +1230,10 @@ export default function KeigoTaskApp() {
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
+              ...(import.meta.env.DEV ? [
+                { icon: "🎁", label: "ごほうびテスト", action: () => { setDailyTreatOpen(true); setShowMenu(false); } },
+                { icon: "🎊", label: "週間ごほうびテスト", action: () => { setWeeklyRewardOpen(true); setShowMenu(false); } },
+              ] : []),
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
                 display: "flex", alignItems: "center", gap: 14,

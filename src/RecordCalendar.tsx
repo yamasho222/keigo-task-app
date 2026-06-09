@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
-import { REWARD_LOOKUP } from "./Rewards";
+import { REWARD_LOOKUP } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 
 export interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
@@ -217,12 +217,16 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
               if (!item) return null;
               return (
                 <div key={id} title={item.label} style={{
-                  width: 44, height: 44, borderRadius: 10,
+                  width: 52, height: 52, borderRadius: 10,
                   backgroundColor: theme.fill.secondary,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 24, border: `1px solid ${theme.stroke.secondary}`,
+                  border: `1px solid ${theme.stroke.secondary}`, overflow: "hidden",
                 }}>
-                  {item.emoji}
+                  <img
+                    src={item.image}
+                    alt={item.label}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
                 </div>
               );
             })}
