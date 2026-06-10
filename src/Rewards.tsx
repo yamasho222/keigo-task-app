@@ -1,9 +1,12 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
-import { pickStickerReward, type StickerReward } from "./stickerRewards";
+import { pickTreatReward, type RewardItem, type StickerReward } from "./stickerRewards";
 
-export type { StickerReward };
-export { REWARD_LOOKUP, STICKER_REWARDS, pickStickerReward } from "./stickerRewards";
+export type { RewardItem, StickerReward };
+export {
+  REWARD_LOOKUP, STICKER_REWARDS, DAILY_EMOJI_REWARDS, ALL_REWARDS, TOTAL_REWARD_COUNT,
+  pickStickerReward, pickDailyReward, pickTreatReward,
+} from "./stickerRewards";
 
 export interface NewRecordCelebration {
   emoji: string;
@@ -27,6 +30,23 @@ function StickerImage({ reward, size = 160 }: { reward: StickerReward; size?: nu
       />
     </div>
   );
+}
+
+function RewardReveal({ reward, size = 160 }: { reward: RewardItem; size?: number }) {
+  if (reward.kind === "emoji") {
+    return (
+      <div style={{
+        width: size, height: size, borderRadius: 16,
+        backgroundColor: `${theme.category.green}14`,
+        border: `3px solid ${theme.category.green}55`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: size * 0.45,
+      }}>
+        {reward.emoji}
+      </div>
+    );
+  }
+  return <StickerImage reward={reward} size={size} />;
 }
 
 function MegaConfetti({ count, celebKey }: { count: number; celebKey: number }) {
@@ -171,12 +191,12 @@ function TreatOverlay({
   onCollect: (rewardId: string) => void;
 }) {
   const [opened, setOpened] = useState(false);
-  const [reward, setReward] = useState<StickerReward | null>(null);
+  const [reward, setReward] = useState<RewardItem | null>(null);
   const isWeekly = mode === "weekly";
 
   const handleOpen = () => {
     if (opened) return;
-    const picked = pickStickerReward(collectedIds);
+    const picked = pickTreatReward(collectedIds, mode);
     setReward(picked);
     setOpened(true);
     onCollect(picked.id);
@@ -210,7 +230,7 @@ function TreatOverlay({
         <div style={{ fontSize: 14, color: theme.text.secondary, marginBottom: 20 }}>
           {isWeekly
             ? "7日連続で3つ全部クリア！すごすぎ！"
-            : "朝・帰宅後・夜、3つ全部クリア！"}
+            : "この時間のやること、全部クリア！"}
         </div>
 
         <div style={{ marginBottom: 20, minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -225,7 +245,23 @@ function TreatOverlay({
             </button>
           ) : reward && (
             <div className="treat-reveal" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <StickerImage reward={reward} size={isWeekly ? 180 : 160} />
+              <RewardReveal reward={reward} size={isWeekly ? 180 : 160} />
+              {reward.rarity === "low" && (
+                <div style={{
+                  fontSize: 10, fontWeight: 800, color: theme.category.green,
+                  backgroundColor: `${theme.category.green}18`, padding: "2px 8px", borderRadius: 6,
+                }}>
+                  ノーマル
+                </div>
+              )}
+              {reward.rarity === "high" && !isWeekly && (
+                <div style={{
+                  fontSize: 10, fontWeight: 800, color: theme.category.purple,
+                  backgroundColor: `${theme.category.purple}18`, padding: "2px 8px", borderRadius: 6,
+                }}>
+                  レア！
+                </div>
+              )}
               <div style={{ fontSize: 18, fontWeight: 900, color: theme.text.primary }}>{reward.label}</div>
               <div style={{ fontSize: 14, color: theme.text.secondary }}>{reward.message}</div>
               <div style={{ fontSize: 11, color: theme.text.tertiary }}>

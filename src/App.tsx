@@ -23,6 +23,7 @@ import {
   NewRecordOverlay, DailyTreatOverlay, WeeklyRewardOverlay,
   type NewRecordCelebration,
 } from "./Rewards";
+import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum } from "./stickerRewards";
 
 // ── Types & Data ──────────────────────────────────────
 
@@ -181,6 +182,16 @@ interface StoredState {
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
 
+function sessionTreatKey(date: string, session: SessionId) {
+  return `${date}:${session}`;
+}
+
+function isSessionTreatClaimed(claimed: Record<string, boolean>, date: string, session: SessionId) {
+  if (claimed[sessionTreatKey(date, session)]) return true;
+  if (claimed[date]) return true;
+  return false;
+}
+
 function taskTimeKey(session: SessionId, taskId: number) {
   return `${session}-${taskId}`;
 }
@@ -303,6 +314,11 @@ function loadStoredState(): StoredState {
       return {
         ...hydrated,
         ...freshCompletionSlice(hydrated.morningTasks, hydrated.eveningTasks, hydrated.homeTasks),
+        history: hydrated.history ?? {},
+        bestTimes: hydrated.bestTimes,
+        stickerAlbum: hydrated.stickerAlbum,
+        dailyTreatClaimed: hydrated.dailyTreatClaimed,
+        lastWeeklyRewardStreak: hydrated.lastWeeklyRewardStreak,
       };
     }
   } catch { /* ignore */ }
@@ -531,6 +547,8 @@ export default function KeigoTaskApp() {
   const [activeWorkTask, setActiveWorkTask] = useState<ActiveWorkTask | null>(null);
   const [workTimerElapsed, setWorkTimerElapsed] = useState(0);
   const [workTimerRunning, setWorkTimerRunning] = useState(false);
+  const isWorkTimerLocked =
+    activeWorkTask !== null && (workTimerRunning || workTimerElapsed > 0);
   const [newRecordTaskId, setNewRecordTaskId] = useState<number | null>(null);
   const [newRecordCelebration, setNewRecordCelebration] = useState<NewRecordCelebration | null>(null);
   const [newRecordCelebKey, setNewRecordCelebKey] = useState(0);
@@ -538,7 +556,11 @@ export default function KeigoTaskApp() {
   const [weeklyRewardOpen, setWeeklyRewardOpen] = useState(false);
   const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
   const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
-  const [stickerAlbum, setStickerAlbum] = useState<string[]>(stored.stickerAlbum ?? []);
+  const [stickerAlbum, setStickerAlbum] = useState<string[]>(() => {
+    const merged = mergeStickerAlbums(loadStickerAlbum(), stored.stickerAlbum ?? []);
+    if (merged.length > 0) saveStickerAlbum(merged);
+    return merged;
+  });
   const taskDayRef = useRef(stored.date);
   const screenRef = useRef<ScreenId>(getInitialScreen());
   const workTimerBaseRef = useRef(0);
@@ -605,6 +627,7 @@ export default function KeigoTaskApp() {
       stickerAlbum,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    saveStickerAlbum(stickerAlbum);
   }, [
     morningDone, eveningDone, homeDone,
     morningSkipped, eveningSkipped, homeSkipped,
@@ -774,6 +797,7 @@ export default function KeigoTaskApp() {
     skipped: Set<number>,
     setDone: (s: Set<number>) => void,
   ) => {
+    if (isWorkTimerLocked) return;
     if (skipped.has(taskId) || celebType || anticipating) return;
     if (done.has(taskId)) {
       redoTask(session, taskId, done, setDone);
@@ -942,7 +966,11 @@ export default function KeigoTaskApp() {
   };
 
   const collectSticker = (rewardId: string) => {
-    setStickerAlbum((prev) => (prev.includes(rewardId) ? prev : [...prev, rewardId]));
+    setStickerAlbum((prev) => {
+      const next = mergeStickerAlbums(prev, [rewardId]);
+      saveStickerAlbum(next);
+      return next;
+    });
   };
 
   const handleApprove = () => {
@@ -964,22 +992,24 @@ export default function KeigoTaskApp() {
     setHistory(newHistory);
     triggerStamp();
 
-    if (isFullDay(updatedDay)) {
-      const fds = getFullDayStreak(newHistory);
-      const weeklyMilestone = fds >= 7 && fds % 7 === 0 && fds > lastWeeklyRewardStreak;
-      const needsDaily = !dailyTreatClaimed[today];
-      setTimeout(() => {
-        if (weeklyMilestone) {
-          setWeeklyRewardOpen(true);
-          setLastWeeklyRewardStreak(fds);
-        } else if (needsDaily) {
-          setDailyTreatOpen(true);
-        }
-        if (needsDaily) {
-          setDailyTreatClaimed((c) => ({ ...c, [today]: true }));
-        }
-      }, 950);
-    }
+    const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
+    const fullDayStreak = getFullDayStreak(newHistory);
+    const weeklyMilestone = isFullDay(updatedDay)
+      && fullDayStreak >= 7
+      && fullDayStreak % 7 === 0
+      && fullDayStreak > lastWeeklyRewardStreak;
+
+    setTimeout(() => {
+      if (weeklyMilestone) {
+        setWeeklyRewardOpen(true);
+        setLastWeeklyRewardStreak(fullDayStreak);
+      } else if (needsDaily) {
+        setDailyTreatOpen(true);
+      }
+      if (needsDaily) {
+        setDailyTreatClaimed((c) => ({ ...c, [sessionTreatKey(today, parentSession)]: true }));
+      }
+    }, 950);
   };
 
   const resetApproval = () => {
@@ -1005,6 +1035,7 @@ export default function KeigoTaskApp() {
   };
 
   const goToScreen = (id: ScreenId) => {
+    if (isWorkTimerLocked) return;
     if (id === "timer") {
       goToTimer();
       return;
@@ -1013,6 +1044,7 @@ export default function KeigoTaskApp() {
   };
 
   const navigateToScreen = (next: ScreenId) => {
+    if (isWorkTimerLocked) return;
     setPrevScreen(screen);
     setScreen(next);
   };
@@ -1163,7 +1195,8 @@ export default function KeigoTaskApp() {
       <button
         type="button"
         aria-label="メニューを開く"
-        onClick={() => setShowMenu(true)}
+        onClick={() => { if (!isWorkTimerLocked) setShowMenu(true); }}
+        disabled={isWorkTimerLocked}
         style={{
           position: "fixed",
           right: 16,
@@ -1171,7 +1204,9 @@ export default function KeigoTaskApp() {
           zIndex: 80, width: 48, height: 48, borderRadius: 14,
           backgroundColor: theme.fill.secondary, border: `1px solid ${theme.stroke.secondary}`,
           boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-          cursor: "pointer", display: "flex", flexDirection: "column",
+          cursor: isWorkTimerLocked ? "default" : "pointer",
+          opacity: isWorkTimerLocked ? 0.35 : 1,
+          display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center", gap: 5,
         }}
       >
@@ -1307,10 +1342,11 @@ export default function KeigoTaskApp() {
       >
         {(screen === "morning" || screen === "evening" || screen === "home") && (
           <>
-            <InAppTabs screen={screen} onSwitch={goToScreen} />
+            <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} />
             {screen === "morning" && (
               <TaskScreen
                 session="morning"
+                interactionLocked={isWorkTimerLocked}
                 label="朝のやること"
                 timeLabel={`${dayLabel} 朝`}
                 tasks={morningTasks}
@@ -1339,6 +1375,7 @@ export default function KeigoTaskApp() {
             {screen === "home" && (
               <TaskScreen
                 session="home"
+                interactionLocked={isWorkTimerLocked}
                 label="帰宅後のやること"
                 timeLabel={`${dayLabel} 帰宅後`}
                 tasks={homeTasks}
@@ -1367,6 +1404,7 @@ export default function KeigoTaskApp() {
             {screen === "evening" && (
               <TaskScreen
                 session="evening"
+                interactionLocked={isWorkTimerLocked}
                 label="夜のやること"
                 timeLabel={`${dayLabel} 夜`}
                 tasks={eveningTasks}
@@ -2074,24 +2112,35 @@ function TaskListScreen({
   );
 }
 
-function InAppTabs({ screen, onSwitch }: { screen: ScreenId; onSwitch: (s: ScreenId) => void }) {
+function InAppTabs({
+  screen, onSwitch, disabled = false,
+}: {
+  screen: ScreenId; onSwitch: (s: ScreenId) => void; disabled?: boolean;
+}) {
   const tabs: { id: ScreenId; label: string }[] = [
     { id: "morning", label: "☀️ 朝" },
     { id: "home",    label: "🏠 帰宅後" },
     { id: "evening", label: "🌙 夜" },
   ];
   return (
-    <div style={{ display: "flex", gap: 6, padding: "2px 0 4px" }}>
+    <div style={{ display: "flex", gap: 6, padding: "2px 0 4px", opacity: disabled ? 0.45 : 1 }}>
       {tabs.map((t) => {
         const active = screen === t.id;
         return (
-          <button key={t.id} onClick={() => onSwitch(t.id)} style={{
-            flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
-            fontWeight: active ? 800 : 600, fontSize: 12,
-            color: active ? "#fff" : theme.text.secondary,
-            background: active ? theme.accent.primary : `${theme.accent.primary}18`,
-            transition: "all 0.2s",
-          }}>
+          <button
+            key={t.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSwitch(t.id)}
+            style={{
+              flex: 1, padding: "8px 0", borderRadius: 10, border: "none",
+              cursor: disabled ? "default" : "pointer",
+              fontWeight: active ? 800 : 600, fontSize: 12,
+              color: active ? "#fff" : theme.text.secondary,
+              background: active ? theme.accent.primary : `${theme.accent.primary}18`,
+              transition: "all 0.2s",
+            }}
+          >
             {t.label}
           </button>
         );
@@ -2311,6 +2360,7 @@ function TaskActionSheet({
 
 interface TaskScreenProps {
   session: SessionId;
+  interactionLocked?: boolean;
   label: string; timeLabel: string;
   tasks: Task[]; done: Set<number>; skipped: Set<number>; justChecked: number | null;
   floatColor: string;
@@ -2333,7 +2383,7 @@ interface TaskScreenProps {
 }
 
 function TaskScreen({
-  session, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
+  session, interactionLocked = false, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime,
@@ -2356,6 +2406,7 @@ function TaskScreen({
   const shownTasks = visibleTasks(tasks);
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (interactionLocked) return;
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIdx = shownTasks.findIndex((t) => t.id === active.id);
@@ -2376,6 +2427,7 @@ function TaskScreen({
   };
 
   const handleLongPress = (taskId: number) => {
+    if (interactionLocked) return;
     setOpenSwipe(null);
     setActionSheetTaskId(taskId);
   };
@@ -2415,8 +2467,12 @@ function TaskScreen({
                   bestTime={bestTimes[taskTimeKey(session, task.id)]}
                   liveElapsed={isActive ? workTimerElapsed : undefined}
                   timerRunning={isActive && workTimerRunning}
+                  interactionLocked={interactionLocked}
                   swipeMode={swipeMode}
-                  onSwipeOpen={(mode) => setOpenSwipe({ id: task.id, mode })}
+                  onSwipeOpen={(mode) => {
+                    if (interactionLocked) return;
+                    setOpenSwipe({ id: task.id, mode });
+                  }}
                   onSwipeClose={() => setOpenSwipe(null)}
                   onSelect={() => onSelectTask(task.id)}
                   onDelete={() => { onDeleteTask(task.id); setOpenSwipe(null); }}
@@ -2454,7 +2510,7 @@ function TaskScreen({
           onSave={handleAdd}
           onCancel={() => setIsAdding(false)}
         />
-      ) : (
+      ) : !interactionLocked && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <button onClick={() => startAdding("today")} style={addBtnStyle}>
             <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
@@ -2559,7 +2615,7 @@ const addBtnStyle: CSSProperties = {
 
 interface TaskRowProps {
   task: Task; isDone: boolean; isSkipped: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
-  floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean;
+  floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean; interactionLocked?: boolean;
   onSelect: () => void; onDelete: () => void; onSkip: () => void; onLongPress: () => void;
   swipeMode: SwipeMode | null; onSwipeOpen: (mode: SwipeMode) => void; onSwipeClose: () => void;
   onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
@@ -2577,6 +2633,7 @@ function SortableTaskRow(props: TaskRowProps) {
   const {
     swipeMode, onSwipeOpen, onSwipeClose, onSelect, onDelete, onSkip, onLongPress, isSkipped,
     onStartTimer, onPauseTimer, onCancelTask, onCompleteTask, isActive, liveElapsed, timerRunning,
+    interactionLocked = false,
     confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
     ...rowProps
   } = props;
@@ -2630,6 +2687,7 @@ function SortableTaskRow(props: TaskRowProps) {
   }, []);
 
   const beginGesture = (clientX: number, clientY: number, pointerId: number) => {
+    if (interactionLocked) return;
     clearLongPressTimer();
     const startOffset = swipeSnapOffset(swipeMode);
     gesture.current = {
@@ -2697,6 +2755,7 @@ function SortableTaskRow(props: TaskRowProps) {
   };
 
   const handleSelect = () => {
+    if (interactionLocked) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
@@ -2724,12 +2783,13 @@ function SortableTaskRow(props: TaskRowProps) {
       }}
     >
       <div
-        {...attributes}
-        {...listeners}
+        {...(interactionLocked ? {} : { ...attributes, ...listeners })}
         style={{
           flexShrink: 0, width: 22, display: "flex", justifyContent: "center", alignItems: "center",
-          cursor: "grab", color: theme.text.tertiary, fontSize: 18,
-          userSelect: "none", touchAction: "none",
+          cursor: interactionLocked ? "default" : "grab",
+          color: theme.text.tertiary, fontSize: 18,
+          userSelect: "none", touchAction: interactionLocked ? "auto" : "none",
+          opacity: interactionLocked ? 0.35 : 1,
         }}
       >
         ⠿
@@ -2790,6 +2850,7 @@ function SortableTaskRow(props: TaskRowProps) {
             {...rowProps}
             isSkipped={isSkipped}
             isActive={isActive}
+            interactionLocked={interactionLocked}
             onSelect={handleSelect}
             confirmDeleteTime={confirmDeleteTime}
             onTimeBadgeTap={onTimeBadgeTap}
@@ -2885,14 +2946,14 @@ function TaskTimerPanel({
 }
 
 function TaskRow({
-  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, onSelect,
+  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, interactionLocked = false, onSelect,
   confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
-}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "confirmDeleteTime"> & {
+}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "interactionLocked" | "confirmDeleteTime"> & {
   onSelect: () => void;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }) {
   const resolved = isDone || isSkipped;
-  const canTap = !isSkipped;
+  const canTap = !isSkipped && !interactionLocked;
 
   return (
     <div

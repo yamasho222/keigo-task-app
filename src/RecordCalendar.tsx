@@ -1,6 +1,8 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
-import { REWARD_LOOKUP } from "./stickerRewards";
+import {
+  REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, groupCollectedByCategory,
+} from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 
 export interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
@@ -112,6 +114,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const firstDay = new Date(year, month, 1);
   const lastDate = new Date(year, month + 1, 0).getDate();
@@ -139,6 +142,9 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
   }).filter(Boolean).length;
 
   const fullDayStreak = getFullDayStreak(history);
+  const uniqueAlbum = dedupeStickerIds(stickerAlbum);
+  const albumGroups = groupCollectedByCategory(uniqueAlbum);
+  const previewItem = previewId ? REWARD_LOOKUP[previewId] : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
@@ -202,34 +208,129 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
         <span>⭐ 3つとも</span>
       </div>
 
-      {stickerAlbum.length > 0 && (
-        <div style={{
-          padding: 14, borderRadius: 14,
-          backgroundColor: `${theme.accent.primary}0A`,
-          border: `1.5px solid ${theme.accent.primary}33`,
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.secondary, marginBottom: 10, textAlign: "center" }}>
-            集めたごほうび ({stickerAlbum.length})
+      <div style={{
+        padding: 14, borderRadius: 14,
+        backgroundColor: `${theme.accent.primary}0A`,
+        border: `1.5px solid ${theme.accent.primary}33`,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.secondary, marginBottom: 10, textAlign: "center" }}>
+          集めたごほうび ({uniqueAlbum.length}/{TOTAL_REWARD_COUNT})
+        </div>
+        {uniqueAlbum.length === 0 ? (
+          <div style={{ fontSize: 12, color: theme.text.tertiary, textAlign: "center", padding: "8px 0" }}>
+            まだごほうびがないよ。がんばって集めよう！
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-            {stickerAlbum.map((id) => {
-              const item = REWARD_LOOKUP[id];
-              if (!item) return null;
-              return (
-                <div key={id} title={item.label} style={{
-                  width: 52, height: 52, borderRadius: 10,
-                  backgroundColor: theme.fill.secondary,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  border: `1px solid ${theme.stroke.secondary}`, overflow: "hidden",
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {albumGroups.map((group) => (
+              <div key={group.category}>
+                <div style={{
+                  fontSize: 11, fontWeight: 800, color: theme.text.tertiary,
+                  marginBottom: 8, letterSpacing: 0.5,
                 }}>
-                  <img
-                    src={item.image}
-                    alt={item.label}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
+                  {group.label} ({group.ids.length})
                 </div>
-              );
-            })}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {group.ids.map((id) => {
+                    const item = REWARD_LOOKUP[id];
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        aria-label={`${item.label}を大きく見る`}
+                        onClick={() => setPreviewId(id)}
+                        style={{
+                          width: 52, height: 52, borderRadius: 10, padding: 0,
+                          backgroundColor: theme.fill.secondary,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          border: `1px solid ${theme.stroke.secondary}`, overflow: "hidden",
+                          fontSize: item.emoji ? 26 : undefined,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {item.emoji ? (
+                          item.emoji
+                        ) : (
+                          <img
+                            src={item.image}
+                            alt={item.label}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {previewItem && previewId && (
+        <div
+          data-modal-overlay
+          onClick={() => setPreviewId(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 120,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 320, borderRadius: 24, padding: "28px 24px",
+              backgroundColor: theme.bg.editor,
+              boxShadow: "0 12px 48px rgba(0,0,0,0.3)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{
+              width: 220, height: 220, margin: "0 auto 16px", borderRadius: 20,
+              backgroundColor: previewItem.emoji ? `${theme.category.green}14` : theme.fill.secondary,
+              border: previewItem.emoji
+                ? `3px solid ${theme.category.green}55`
+                : `3px solid ${theme.accent.primary}44`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              overflow: "hidden",
+              fontSize: previewItem.emoji ? 100 : undefined,
+              boxShadow: `0 8px 32px ${theme.accent.primary}22`,
+            }}>
+              {previewItem.emoji ? (
+                previewItem.emoji
+              ) : (
+                <img
+                  src={previewItem.image}
+                  alt={previewItem.label}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              )}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: theme.text.primary, marginBottom: 6 }}>
+              {previewItem.label}
+            </div>
+            {previewItem.rarity === "low" && (
+              <div style={{
+                display: "inline-block", fontSize: 11, fontWeight: 800, color: theme.category.green,
+                backgroundColor: `${theme.category.green}18`, padding: "3px 10px", borderRadius: 8,
+                marginBottom: 12,
+              }}>
+                ノーマル
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setPreviewId(null)}
+              style={{
+                width: "100%", marginTop: 8, padding: "14px", borderRadius: 12, border: "none",
+                backgroundColor: theme.accent.primary, color: "#fff",
+                fontSize: 15, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              とじる
+            </button>
           </div>
         </div>
       )}
