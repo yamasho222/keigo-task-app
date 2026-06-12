@@ -1,4 +1,4 @@
-export type StickerCategory = "sumanai" | "hikakin" | "orochinyu" | "kimitsu" | "doraemon";
+export type StickerCategory = "sumanai" | "hikakin" | "orochinyu" | "kimitsu" | "doraemon" | "brainrot";
 export type RewardCategory = "daily" | StickerCategory;
 export type RewardRarity = "low" | "high";
 
@@ -31,6 +31,7 @@ export const STICKER_CATEGORIES: { id: RewardCategory; label: string }[] = [
   { id: "orochinyu", label: "おろちんゆー" },
   { id: "kimitsu", label: "鬼滅の刃" },
   { id: "doraemon", label: "ドラえもん" },
+  { id: "brainrot", label: "ブレインロット" },
 ];
 
 const STICKER_ALBUM_KEY = "keigo-sticker-album-v1";
@@ -47,7 +48,7 @@ export const DAILY_EMOJI_REWARDS: EmojiReward[] = [
   { kind: "emoji", id: "fire", emoji: "🔥", label: "ファイヤー", message: "メラメラパワー全開！", category: "daily", rarity: "low" },
 ];
 
-/** ごほうびシール（38枚・高レアリティ・個人利用） */
+/** ごほうびシール（48枚・高レアリティ・個人利用） */
 export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "warrior-baby", label: "ミスター赤ちゃん", message: "ミスター赤ちゃんゲット！", image: "/stickers/warrior-baby.png", category: "sumanai", rarity: "high" },
   { kind: "sticker", id: "blue-fist", label: "ミスター・ブルー", message: "ミスター・ブルー登場！", image: "/stickers/blue-fist.png", category: "sumanai", rarity: "high" },
@@ -87,6 +88,16 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "nobita", label: "のびた", message: "のびたくん！", image: "/stickers/nobita.png", category: "doraemon", rarity: "high" },
   { kind: "sticker", id: "suneo", label: "スネ夫", message: "スネ夫ゲット！", image: "/stickers/suneo.png", category: "doraemon", rarity: "high" },
   { kind: "sticker", id: "gian", label: "ジャイアン", message: "歌のジャイアン！", image: "/stickers/gian.png", category: "doraemon", rarity: "high" },
+  { kind: "sticker", id: "wood-log", label: "トゥントゥントゥンサフール", message: "トゥントゥントゥンサフール！", image: "/stickers/wood-log.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "shark-legs", label: "トララレロ・トラララ", message: "トララレロ・トラララ！", image: "/stickers/shark-legs.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "monkey-banana", label: "チンパンジーニ・バナニーニ", message: "チンパンジーニ・バナニーニ！", image: "/stickers/monkey-banana.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "cactus-elephant", label: "リリリ・ラリラ", message: "リリリ・ラリラ！", image: "/stickers/cactus-elephant.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "mystical-tree", label: "ブルブル・パタピム", message: "ブルブル・パタピム！", image: "/stickers/mystical-tree.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "teapot-man", label: "タタタタ・サフール", message: "タタタタ・サフール！", image: "/stickers/teapot-man.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "ninja-coffee", label: "カプチーノ・アサシーノ", message: "カプチーノ・アサシーノ！", image: "/stickers/ninja-coffee.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "shinobi-cup", label: "トゥントゥントゥントゥントゥントゥントゥントゥンアサシーノボネカ", message: "トゥントゥントゥンアサシーノボネカ！", image: "/stickers/shinobi-cup.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "brainrot-tower", label: "トリッピトロッパトララリリラトゥントゥントゥンサフールボネカトゥントゥントララレロトリッピトロッパクロコディーナ", message: "最強のブレインロット！", image: "/stickers/brainrot-tower.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "pasta-dragon", label: "カネロニ・ドラゴーニ", message: "カネロニ・ドラゴーニ！", image: "/stickers/pasta-dragon.png", category: "brainrot", rarity: "high" },
 ];
 
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
@@ -156,6 +167,28 @@ export function groupCollectedByCategory(ids: string[]): { category: RewardCateg
       ids: unique.filter((id) => REWARD_LOOKUP[id]?.category === cat.id),
     }))
     .filter((g) => g.ids.length > 0);
+}
+
+export interface AlbumCategoryGroup {
+  category: RewardCategory;
+  label: string;
+  rewards: RewardItem[];
+  collectedCount: number;
+  totalCount: number;
+}
+
+export function getAlbumCategoryGroups(collectedIds: string[]): AlbumCategoryGroup[] {
+  const collected = new Set(dedupeStickerIds(collectedIds));
+  return STICKER_CATEGORIES.map((cat) => {
+    const rewards = ALL_REWARDS.filter((r) => r.category === cat.id);
+    return {
+      category: cat.id,
+      label: cat.label,
+      rewards,
+      collectedCount: rewards.filter((r) => collected.has(r.id)).length,
+      totalCount: rewards.length,
+    };
+  });
 }
 
 export function pickStickerReward(collectedIds: string[]): StickerReward {

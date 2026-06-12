@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 import {
-  REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, groupCollectedByCategory,
+  REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, getAlbumCategoryGroups,
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 
@@ -143,8 +143,14 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
 
   const fullDayStreak = getFullDayStreak(history);
   const uniqueAlbum = dedupeStickerIds(stickerAlbum);
-  const albumGroups = groupCollectedByCategory(uniqueAlbum);
+  const albumGroups = getAlbumCategoryGroups(stickerAlbum);
   const previewItem = previewId ? REWARD_LOOKUP[previewId] : null;
+
+  const albumCellStyle: CSSProperties = {
+    width: 52, height: 52, borderRadius: 10, padding: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    overflow: "hidden", flexShrink: 0,
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
@@ -216,34 +222,30 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
         <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.secondary, marginBottom: 10, textAlign: "center" }}>
           集めたごほうび ({uniqueAlbum.length}/{TOTAL_REWARD_COUNT})
         </div>
-        {uniqueAlbum.length === 0 ? (
-          <div style={{ fontSize: 12, color: theme.text.tertiary, textAlign: "center", padding: "8px 0" }}>
-            まだごほうびがないよ。がんばって集めよう！
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {albumGroups.map((group) => (
-              <div key={group.category}>
-                <div style={{
-                  fontSize: 11, fontWeight: 800, color: theme.text.tertiary,
-                  marginBottom: 8, letterSpacing: 0.5,
-                }}>
-                  {group.label} ({group.ids.length})
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {group.ids.map((id) => {
-                    const item = REWARD_LOOKUP[id];
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {albumGroups.map((group) => (
+            <div key={group.category}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: theme.text.secondary,
+                marginBottom: 8, letterSpacing: 0.5,
+              }}>
+                {group.label} ({group.collectedCount}/{group.totalCount})
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {group.rewards.map((reward) => {
+                  const collected = uniqueAlbum.includes(reward.id);
+                  const item = REWARD_LOOKUP[reward.id];
+                  if (collected) {
                     return (
                       <button
-                        key={id}
+                        key={reward.id}
                         type="button"
                         aria-label={`${item.label}を大きく見る`}
-                        onClick={() => setPreviewId(id)}
+                        onClick={() => setPreviewId(reward.id)}
                         style={{
-                          width: 52, height: 52, borderRadius: 10, padding: 0,
+                          ...albumCellStyle,
                           backgroundColor: theme.fill.secondary,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          border: `1px solid ${theme.stroke.secondary}`, overflow: "hidden",
+                          border: `1px solid ${theme.stroke.secondary}`,
                           fontSize: item.emoji ? 26 : undefined,
                           cursor: "pointer",
                         }}
@@ -259,12 +261,31 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
                         )}
                       </button>
                     );
-                  })}
-                </div>
+                  }
+                  return (
+                    <div
+                      key={reward.id}
+                      aria-label="まだ集めていないごほうび"
+                      title="まだ集めていないごほうび"
+                      style={{
+                        ...albumCellStyle,
+                        backgroundColor: theme.fill.quaternary,
+                        border: `1.5px dashed ${theme.stroke.secondary}`,
+                        color: theme.text.tertiary,
+                        fontSize: 22, fontWeight: 800,
+                      }}
+                    >
+                      ?
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: theme.text.tertiary, textAlign: "center", marginTop: 10 }}>
+          ？＝まだ集めていないごほうび
+        </div>
       </div>
 
       {previewItem && previewId && (
