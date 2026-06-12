@@ -48,7 +48,7 @@ export const DAILY_EMOJI_REWARDS: EmojiReward[] = [
   { kind: "emoji", id: "fire", emoji: "🔥", label: "ファイヤー", message: "メラメラパワー全開！", category: "daily", rarity: "low" },
 ];
 
-/** ごほうびシール（48枚・高レアリティ・個人利用） */
+/** ごほうびシール（50枚・高レアリティ・個人利用） */
 export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "warrior-baby", label: "ミスター赤ちゃん", message: "ミスター赤ちゃんゲット！", image: "/stickers/warrior-baby.png", category: "sumanai", rarity: "high" },
   { kind: "sticker", id: "blue-fist", label: "ミスター・ブルー", message: "ミスター・ブルー登場！", image: "/stickers/blue-fist.png", category: "sumanai", rarity: "high" },
@@ -98,6 +98,8 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "shinobi-cup", label: "トゥントゥントゥントゥントゥントゥントゥントゥンアサシーノボネカ", message: "トゥントゥントゥンアサシーノボネカ！", image: "/stickers/shinobi-cup.png", category: "brainrot", rarity: "high" },
   { kind: "sticker", id: "brainrot-tower", label: "トリッピトロッパトララリリラトゥントゥントゥンサフールボネカトゥントゥントララレロトリッピトロッパクロコディーナ", message: "最強のブレインロット！", image: "/stickers/brainrot-tower.png", category: "brainrot", rarity: "high" },
   { kind: "sticker", id: "pasta-dragon", label: "カネロニ・ドラゴーニ", message: "カネロニ・ドラゴーニ！", image: "/stickers/pasta-dragon.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "tigro-fruitoni", label: "ティーグロリーグレ・フルトーニ", message: "ティーグロリーグレ・フルトーニ！", image: "/stickers/tigro-fruitoni.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "pussini-sushini", label: "プッシーニ・スッシーニ", message: "プッシーニ・スッシーニ！", image: "/stickers/pussini-sushini.png", category: "brainrot", rarity: "high" },
 ];
 
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
