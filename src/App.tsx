@@ -33,32 +33,32 @@ import {
   MissionSetupSheet, ShowParentMissionScreen,
   isMissionBriefingSeen, markMissionBriefingSeen,
 } from "./missions";
+import {
+  type Task, type SessionId, type AllSessionTasks, type TaskScope,
+  SESSION_IDS, SESSION_SHORT_LABELS,
+  DEFAULT_HOMEWORK_SHARED_KEY,
+  isTaskVisibleToday, isTaskVisibleInSession, visibleTasksForSession,
+  resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
+  maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
+  buildSharedTaskRow,
+} from "./sharedTasks";
 
 // ── Types & Data ──────────────────────────────────────
 
-type SessionId = "morning" | "daytime" | "home" | "evening";
 type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
-type TaskScope = "regular" | "today";
 type SwipeMode = "delete" | "skip";
 
-interface Task { id: number; title: string; emoji: string; scope?: TaskScope; weekdays?: number[]; }
+const HOMEWORK_SHARED_META = {
+  sharedKey: DEFAULT_HOMEWORK_SHARED_KEY,
+  sharedSessions: ["home", "evening"] as SessionId[],
+};
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
 const WEEKDAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const WEEKDAYS_WEEKDAY = [1, 2, 3, 4, 5];
 const WEEKDAYS_WEEKEND = [0, 6];
-
-function isTaskVisibleToday(task: Task, now = new Date()): boolean {
-  if (task.scope === "today") return true;
-  if (!task.weekdays?.length) return true;
-  return task.weekdays.includes(now.getDay());
-}
-
-function visibleTasks(tasks: Task[], now = new Date()): Task[] {
-  return tasks.filter((t) => isTaskVisibleToday(t, now));
-}
 
 function taskMatchesWeekdayFilter(task: Task, filterDow: number | null, now = new Date()): boolean {
   if (filterDow === null) return true;
@@ -113,12 +113,41 @@ function weekdayBadgeLabel(weekdays?: number[]): string | null {
     .join("");
 }
 
-function reorderVisibleInAll(allTasks: Task[], reorderedVisible: Task[]): Task[] {
+function taskSharedBadgeStyle(task: Task): { label: string; color: string; backgroundColor: string } | null {
+  if (!task.sharedKey || !task.sharedSessions?.length) return null;
+  return {
+    label: `共有 ${sharedSessionsLabel(task.sharedSessions)}`,
+    color: theme.category.purple,
+    backgroundColor: `${theme.category.purple}18`,
+  };
+}
+
+function reorderVisibleInAll(
+  session: SessionId,
+  allTasks: Task[],
+  reorderedVisible: Task[],
+  allSessions: AllSessionTasks,
+): Task[] {
   let vi = 0;
   return allTasks.map((t) => {
-    if (!isTaskVisibleToday(t)) return t;
+    if (!isTaskVisibleInSession(t, session, allSessions)) return t;
     return reorderedVisible[vi++];
   });
+}
+
+function applyHomeworkMigrationToState(tasks: {
+  morning: Task[];
+  daytime: Task[];
+  home: Task[];
+  evening: Task[];
+}): typeof tasks {
+  const migrated = migrateDefaultHomeworkSharing(tasks);
+  return {
+    morning: migrated.morning,
+    daytime: migrated.daytime,
+    home: migrated.home,
+    evening: migrated.evening,
+  };
 }
 
 const MORNING_TASKS_DEFAULT: Task[] = [
@@ -133,7 +162,7 @@ const MORNING_TASKS_DEFAULT: Task[] = [
 ];
 
 const EVENING_TASKS_DEFAULT: Task[] = [
-  { id: 1, title: "宿題",           emoji: "📚" },
+  { id: 1, title: "宿題", emoji: "📚", ...HOMEWORK_SHARED_META },
   { id: 2, title: "歯みがき",       emoji: "🦷" },
   { id: 3, title: "お風呂",         emoji: "🛁" },
   { id: 4, title: "頭を乾かす",     emoji: "💨" },
@@ -142,7 +171,7 @@ const EVENING_TASKS_DEFAULT: Task[] = [
 
 const HOME_TASKS_DEFAULT: Task[] = [
   { id: 1, title: "大事なプリントなど机に出す", emoji: "📄" },
-  { id: 2, title: "宿題",                       emoji: "📖" },
+  { id: 2, title: "宿題",                       emoji: "📖", ...HOMEWORK_SHARED_META },
   { id: 3, title: "水筒をキッチンに出す",       emoji: "🧴" },
   { id: 4, title: "洗濯物の片付け",             emoji: "👕" },
 ];
@@ -151,8 +180,6 @@ const DAYTIME_TASKS_DEFAULT: Task[] = [
   { id: 1, title: "お弁当",     emoji: "🍱" },
   { id: 2, title: "水筒を飲む", emoji: "💧" },
 ];
-
-const SESSION_IDS: SessionId[] = ["morning", "daytime", "home", "evening"];
 
 const SESSION_TABS: { id: SessionId; label: string }[] = [
   { id: "morning", label: "☀️ 朝" },
@@ -269,16 +296,17 @@ function buildTreatQueue(
   return queue;
 }
 
-function taskTimeKey(session: SessionId, taskId: number) {
-  return `${session}-${taskId}`;
+function taskTimeKey(session: SessionId, taskId: number, task?: Task) {
+  return resolveTaskTimeKey(task, session, taskId);
 }
 
 function isTaskResolved(done: Set<number>, skipped: Set<number>, id: number) {
   return done.has(id) || skipped.has(id);
 }
 
-function isAllResolved(tasks: Task[], done: Set<number>, skipped: Set<number>) {
-  const visible = visibleTasks(tasks);
+function isAllResolved(session: SessionId, allSessions: AllSessionTasks) {
+  const visible = visibleTasksForSession(session, allSessions);
+  const { done, skipped } = allSessions[session];
   return visible.length > 0 && visible.every((t) => isTaskResolved(done, skipped, t.id));
 }
 
@@ -300,7 +328,7 @@ function sumSessionBestTimes(
   let totalSec = 0;
   let recorded = 0;
   for (const t of tasks) {
-    const sec = bestTimes[taskTimeKey(session, t.id)];
+    const sec = bestTimes[resolveTaskTimeKey(t, session, t.id)];
     if (sec !== undefined) {
       totalSec += sec;
       recorded++;
@@ -364,17 +392,31 @@ function normalizeTasks(tasks: Task[]): Task[] {
   return tasks.map((t) => ({ ...t, scope: t.scope ?? "regular" }));
 }
 
+function normalizeAllTaskLists(stored: StoredState): Pick<StoredState, "morningTasks" | "daytimeTasks" | "eveningTasks" | "homeTasks"> {
+  const raw = {
+    morning: normalizeTasks(stored.morningTasks ?? MORNING_TASKS_DEFAULT),
+    daytime: normalizeTasks(stored.daytimeTasks ?? DAYTIME_TASKS_DEFAULT),
+    evening: normalizeTasks(stored.eveningTasks ?? EVENING_TASKS_DEFAULT),
+    home: normalizeTasks(stored.homeTasks ?? HOME_TASKS_DEFAULT),
+  };
+  const migrated = applyHomeworkMigrationToState(raw);
+  return {
+    morningTasks: migrated.morning,
+    daytimeTasks: migrated.daytime,
+    eveningTasks: migrated.evening,
+    homeTasks: migrated.home,
+  };
+}
+
 function stripTodayTasks(tasks: Task[]): Task[] {
   return normalizeTasks(tasks).filter((t) => t.scope !== "today");
 }
 
 function hydrateStoredState(data: StoredState): StoredState {
+  const lists = normalizeAllTaskLists(data);
   return {
     ...data,
-    morningTasks: normalizeTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
-    daytimeTasks: normalizeTasks(data.daytimeTasks ?? DAYTIME_TASKS_DEFAULT),
-    eveningTasks: normalizeTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
-    homeTasks: normalizeTasks(data.homeTasks ?? HOME_TASKS_DEFAULT),
+    ...lists,
     morningDone: data.morningDone ?? [],
     daytimeDone: data.daytimeDone ?? [],
     eveningDone: data.eveningDone ?? [],
@@ -1094,6 +1136,22 @@ export default function KeigoTaskApp() {
     },
   } as const;
 
+  const getAllSessionTasks = (
+    patch?: Partial<Record<SessionId, Partial<{ done: Set<number>; skipped: Set<number> }>>>,
+  ): AllSessionTasks => {
+    const pick = (sid: SessionId) => ({
+      tasks: sessionState[sid].tasks,
+      done: patch?.[sid]?.done ?? sessionState[sid].done,
+      skipped: patch?.[sid]?.skipped ?? sessionState[sid].skipped,
+    });
+    return {
+      morning: pick("morning"),
+      daytime: pick("daytime"),
+      home: pick("home"),
+      evening: pick("evening"),
+    };
+  };
+
   const approved = sessionState[parentSession].approved;
 
   useEffect(() => {
@@ -1366,13 +1424,13 @@ export default function KeigoTaskApp() {
 
   const maybeCelebrate = (
     session: SessionId,
-    tasks: Task[],
     done: Set<number>,
     skipped: Set<number>,
     label: string,
   ) => {
-    const visible = visibleTasks(tasks);
-    if (isAllResolved(tasks, done, skipped)) {
+    const allSessions = getAllSessionTasks({ [session]: { done, skipped } });
+    const visible = visibleTasksForSession(session, allSessions);
+    if (isAllResolved(session, allSessions)) {
       const names = visible.map((t) => {
         if (skipped.has(t.id)) return `${t.title}（保留）`;
         return t.title;
@@ -1396,13 +1454,13 @@ export default function KeigoTaskApp() {
     if (totalSec < 1) return;
 
     const { taskId } = activeWorkTask;
-    const key = taskTimeKey(session, taskId);
+    const task = tasks.find((t) => t.id === taskId);
+    const key = resolveTaskTimeKey(task, session, taskId);
     const prevBest = bestTimes[key];
     if (prevBest === undefined || totalSec < prevBest) {
       setBestTimes((prev) => ({ ...prev, [key]: totalSec }));
       setNewRecordTaskId(taskId);
       setTimeout(() => setNewRecordTaskId(null), 4500);
-      const task = tasks.find((t) => t.id === taskId);
       if (task) {
         setNewRecordCelebKey((k) => k + 1);
         setNewRecordCelebration({ emoji: task.emoji, title: task.title, timeSec: totalSec });
@@ -1419,7 +1477,7 @@ export default function KeigoTaskApp() {
       setFloatColor(FLOAT_COLORS[Math.floor(Math.random() * FLOAT_COLORS.length)]);
       setJustChecked(taskId);
       setTimeout(() => setJustChecked(null), 1350);
-      maybeCelebrate(session, tasks, next, skipped, label);
+      maybeCelebrate(session, next, skipped, label);
     }
     resetWorkTimer();
     setActiveWorkTask(null);
@@ -1715,42 +1773,7 @@ export default function KeigoTaskApp() {
     setScreen(getSessionScreen());
   };
 
-  const addTask = (
-    session: SessionId, title: string, emoji: string, scope: TaskScope, weekdays?: number[],
-  ) => {
-    if (!title.trim()) return;
-    const { tasks: base, setTasks } = sessionState[session];
-    const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
-    const task: Task = { id: maxId + 1, title: title.trim(), emoji, scope };
-    if (scope === "regular") task.weekdays = normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS);
-    setTasks([...base, task]);
-  };
-
-  const updateTask = (
-    session: SessionId, id: number, title: string, emoji: string, weekdays?: number[],
-  ) => {
-    if (!title.trim()) return;
-    const { tasks: base, setTasks } = sessionState[session];
-    setTasks(base.map((t) => {
-      if (t.id !== id) return t;
-      const updated: Task = { ...t, title: title.trim(), emoji };
-      if ((t.scope ?? "regular") === "regular") {
-        updated.weekdays = normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS);
-      }
-      return updated;
-    }));
-  };
-
-  const clearBestTime = (session: SessionId, taskId: number) => {
-    const key = taskTimeKey(session, taskId);
-    setBestTimes((prev) => {
-      const updated = { ...prev };
-      delete updated[key];
-      return updated;
-    });
-  };
-
-  const deleteTask = (session: SessionId, id: number) => {
+  const removeTaskRow = (session: SessionId, id: number, task?: Task) => {
     const { tasks: base, setTasks, done: doneSet, setDone, skipped: skippedSet, setSkipped } = sessionState[session];
     setTasks(base.filter((t) => t.id !== id));
     const next = new Set(doneSet);
@@ -1759,7 +1782,7 @@ export default function KeigoTaskApp() {
     const nextSkipped = new Set(skippedSet);
     nextSkipped.delete(id);
     setSkipped(nextSkipped);
-    const key = taskTimeKey(session, id);
+    const key = resolveTaskTimeKey(task ?? base.find((t) => t.id === id), session, id);
     setBestTimes((prev) => {
       const updated = { ...prev };
       delete updated[key];
@@ -1771,10 +1794,159 @@ export default function KeigoTaskApp() {
     }
   };
 
+  const addTask = (
+    session: SessionId,
+    title: string,
+    emoji: string,
+    scope: TaskScope,
+    weekdays?: number[],
+    targetSessions?: SessionId[],
+  ) => {
+    if (!title.trim()) return;
+    const sessions = (targetSessions?.length ? targetSessions : [session]) as SessionId[];
+    const normalizedWeekdays = scope === "regular"
+      ? normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS)
+      : undefined;
+
+    if (sessions.length >= 2) {
+      const sharedKey = generateSharedKey();
+      const sharedSessions = [...new Set(sessions)].sort(
+        (a, b) => SESSION_IDS.indexOf(a) - SESSION_IDS.indexOf(b),
+      );
+      let nextId = maxTaskIdAcross(morningTasks, daytimeTasks, homeTasks, eveningTasks);
+      for (const sid of sharedSessions) {
+        nextId += 1;
+        const task = buildSharedTaskRow(
+          nextId, title.trim(), emoji, scope, normalizedWeekdays, sharedKey, sharedSessions,
+        );
+        const { tasks: base, setTasks } = sessionState[sid];
+        setTasks([...base, task]);
+      }
+      return;
+    }
+
+    const sid = sessions[0];
+    const { tasks: base, setTasks } = sessionState[sid];
+    const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
+    const task: Task = { id: maxId + 1, title: title.trim(), emoji, scope };
+    if (scope === "regular") task.weekdays = normalizedWeekdays;
+    setTasks([...base, task]);
+  };
+
+  const updateTask = (
+    session: SessionId,
+    id: number,
+    title: string,
+    emoji: string,
+    weekdays?: number[],
+    targetSessions?: SessionId[],
+  ) => {
+    if (!title.trim()) return;
+    const existing = sessionState[session].tasks.find((t) => t.id === id);
+    if (!existing) return;
+
+    const scope = existing.scope ?? "regular";
+    const normalizedWeekdays = scope === "regular"
+      ? normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS)
+      : undefined;
+
+    const desiredSessions = (targetSessions?.length
+      ? targetSessions
+      : existing.sharedKey
+        ? collectSharedSessions(getAllSessionTasks(), existing.sharedKey)
+        : [session]) as SessionId[];
+    const sortedDesired = [...new Set(desiredSessions)].sort(
+      (a, b) => SESSION_IDS.indexOf(a) - SESSION_IDS.indexOf(b),
+    );
+
+    if (sortedDesired.length >= 2) {
+      const sharedKey = existing.sharedKey ?? generateSharedKey();
+      const currentSessions = existing.sharedKey
+        ? collectSharedSessions(getAllSessionTasks(), sharedKey)
+        : [session];
+
+      for (const sid of currentSessions) {
+        if (!sortedDesired.includes(sid)) {
+          const row = sessionState[sid].tasks.find((t) => t.sharedKey === sharedKey || t.id === id);
+          if (row) removeTaskRow(sid, row.id, row);
+        }
+      }
+
+      let nextId = maxTaskIdAcross(morningTasks, daytimeTasks, homeTasks, eveningTasks);
+      for (const sid of sortedDesired) {
+        const { tasks: base, setTasks } = sessionState[sid];
+        const row = base.find((t) => t.sharedKey === sharedKey);
+        if (row) {
+          setTasks(base.map((t) => (t.sharedKey === sharedKey ? {
+            ...t,
+            title: title.trim(),
+            emoji,
+            scope,
+            weekdays: normalizedWeekdays,
+            sharedKey,
+            sharedSessions: sortedDesired,
+          } : t)));
+        } else {
+          nextId += 1;
+          setTasks([
+            ...base,
+            buildSharedTaskRow(
+              nextId, title.trim(), emoji, scope, normalizedWeekdays, sharedKey, sortedDesired,
+            ),
+          ]);
+        }
+      }
+      return;
+    }
+
+    if (existing.sharedKey) {
+      const sharedKey = existing.sharedKey;
+      for (const sid of SESSION_IDS) {
+        const row = sessionState[sid].tasks.find((t) => t.sharedKey === sharedKey);
+        if (row && sid !== session) removeTaskRow(sid, row.id, row);
+      }
+    }
+
+    const { tasks: base, setTasks } = sessionState[session];
+    setTasks(base.map((t) => {
+      if (t.id !== id) return t;
+      const updated: Task = { ...t, title: title.trim(), emoji };
+      delete updated.sharedKey;
+      delete updated.sharedSessions;
+      if (scope === "regular") updated.weekdays = normalizedWeekdays;
+      return updated;
+    }));
+  };
+
+  const clearBestTime = (session: SessionId, taskId: number) => {
+    const task = sessionState[session].tasks.find((t) => t.id === taskId);
+    const key = resolveTaskTimeKey(task, session, taskId);
+    setBestTimes((prev) => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
+  };
+
+  const deleteTask = (session: SessionId, id: number) => {
+    const task = sessionState[session].tasks.find((t) => t.id === id);
+    if (!task) return;
+
+    if (task.sharedKey) {
+      for (const sid of SESSION_IDS) {
+        const row = sessionState[sid].tasks.find((t) => t.sharedKey === task.sharedKey);
+        if (row) removeTaskRow(sid, row.id, row);
+      }
+      return;
+    }
+
+    removeTaskRow(session, id, task);
+  };
+
   const skipTask = (
     session: SessionId,
     id: number,
-    tasks: Task[],
+    _tasks: Task[],
     done: Set<number>,
     skipped: Set<number>,
     setDone: (s: Set<number>) => void,
@@ -1805,7 +1977,7 @@ export default function KeigoTaskApp() {
       cancelWorkTask();
     }
 
-    maybeCelebrate(session, tasks, nextDone, nextSkipped, label);
+    maybeCelebrate(session, nextDone, nextSkipped, label);
   };
 
   const dayLabel = getDayLabel();
@@ -2103,9 +2275,10 @@ export default function KeigoTaskApp() {
                 workTimerElapsed={workTimerElapsed}
                 workTimerRunning={workTimerRunning}
                 newRecordTaskId={newRecordTaskId}
+                allSessionTasks={getAllSessionTasks()}
                 onReorder={sessionState[sid].setTasks}
-                onAddTask={(title, emoji, scope, weekdays) => addTask(sid, title, emoji, scope, weekdays)}
-                onEditTask={(id, title, emoji, weekdays) => updateTask(sid, id, title, emoji, weekdays)}
+                onAddTask={(title, emoji, scope, weekdays, targetSessions) => addTask(sid, title, emoji, scope, weekdays, targetSessions)}
+                onEditTask={(id, title, emoji, weekdays, targetSessions) => updateTask(sid, id, title, emoji, weekdays, targetSessions)}
                 onDeleteTask={(id) => deleteTask(sid, id)}
                 onSkipTask={(id) => skipTask(
                   sid, id,
@@ -2210,8 +2383,8 @@ export default function KeigoTaskApp() {
             eveningTasks={eveningTasks}
             onSwitchSession={setTaskListSession}
             onBack={goHome}
-            onAddTask={(title, emoji, scope, weekdays) => addTask(taskListSession, title, emoji, scope, weekdays)}
-            onEditTask={(sess, id, title, emoji, weekdays) => updateTask(sess, id, title, emoji, weekdays)}
+            onAddTask={(title, emoji, scope, weekdays, targetSessions) => addTask(taskListSession, title, emoji, scope, weekdays, targetSessions)}
+            onEditTask={(sess, id, title, emoji, weekdays, targetSessions) => updateTask(sess, id, title, emoji, weekdays, targetSessions)}
             onDeleteTask={(sess, id) => deleteTask(sess, id)}
             customTaskEmojis={customTaskEmojis}
             onAddCustomTaskEmoji={addCustomTaskEmoji}
@@ -2835,6 +3008,19 @@ function TaskListSwipeRow({
           }}>
             {scheduleBadge.label}
           </span>
+          {(() => {
+            const sharedBadge = taskSharedBadgeStyle(task);
+            return sharedBadge ? (
+              <span style={{
+                fontSize: 10, fontWeight: 700, flexShrink: 0,
+                color: sharedBadge.color,
+                backgroundColor: sharedBadge.backgroundColor,
+                padding: "2px 6px", borderRadius: 6,
+              }}>
+                {sharedBadge.label}
+              </span>
+            ) : null;
+          })()}
           {filterDow === null && visibleToday && (
             <span style={{
               fontSize: 10, fontWeight: 700, flexShrink: 0,
@@ -2874,8 +3060,8 @@ function TaskListScreen({
   eveningTasks: Task[];
   onSwitchSession: (s: SessionId) => void;
   onBack: () => void;
-  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[]) => void;
-  onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[]) => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[]) => void;
+  onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[]) => void;
   onDeleteTask: (session: SessionId, id: number) => void;
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
@@ -2898,15 +3084,22 @@ function TaskListScreen({
   const allTasks = tasksBySession[session];
   const filteredTasks = allTasks.filter((t) => taskMatchesWeekdayFilter(t, filterDow));
   const editingTask = editingTaskId !== null ? allTasks.find((t) => t.id === editingTaskId) : null;
-  const todayVisibleCount = visibleTasks(allTasks).length;
+  const todayVisibleCount = allTasks.filter((t) => isTaskVisibleToday(t)).length;
 
   const summaryText = filterDow === null
     ? `${allTasks.length}件登録 · きょう ${todayVisibleCount}件`
     : `${filteredTasks.length}件 · ${WEEKDAY_LABELS[filterDow]}曜のタスク`;
 
-  const handleAdd = (title: string, emoji: string, weekdays?: number[]) => {
-    onAddTask(title, emoji, addMode, weekdays);
+  const handleAdd = (title: string, emoji: string, weekdays?: number[], sharedSessions?: SessionId[]) => {
+    onAddTask(title, emoji, addMode, weekdays, sharedSessions);
     setIsAdding(false);
+  };
+
+  const confirmDeleteShared = (task: Task): boolean => {
+    if (!task.sharedKey || !task.sharedSessions || task.sharedSessions.length < 2) return true;
+    return window.confirm(
+      `「${task.title}」をすべての時間帯（${sharedSessionsLabel(task.sharedSessions)}）から削除しますか？`,
+    );
   };
 
   const startAdding = (mode: TaskScope) => {
@@ -2915,6 +3108,8 @@ function TaskListScreen({
   };
 
   const handleDeleteTask = (taskId: number) => {
+    const task = allTasks.find((t) => t.id === taskId);
+    if (task && !confirmDeleteShared(task)) return;
     onDeleteTask(session, taskId);
     setOpenSwipeId(null);
     if (editingTaskId === taskId) setEditingTaskId(null);
@@ -3024,6 +3219,7 @@ function TaskListScreen({
             initialEmoji="📝"
             saveLabel="追加する"
             showWeekdays={addMode === "regular"}
+            currentSession={session}
             customTaskEmojis={customTaskEmojis}
             onAddCustomTaskEmoji={onAddCustomTaskEmoji}
             onSave={handleAdd}
@@ -3071,10 +3267,12 @@ function TaskListScreen({
               showWeekdays={(editingTask.scope ?? "regular") !== "today"}
               saveLabel="保存する"
               autoFocus={false}
+              currentSession={session}
+              initialSharedSessions={editingTask.sharedSessions}
               customTaskEmojis={customTaskEmojis}
               onAddCustomTaskEmoji={onAddCustomTaskEmoji}
-              onSave={(title, emoji, weekdays) => {
-                onEditTask(session, editingTask.id, title, emoji, weekdays);
+              onSave={(title, emoji, weekdays, sharedSessions) => {
+                onEditTask(session, editingTask.id, title, emoji, weekdays, sharedSessions);
                 setEditingTaskId(null);
               }}
               onCancel={() => setEditingTaskId(null)}
@@ -3179,27 +3377,77 @@ function WeekdayPicker({
   );
 }
 
+function SessionMultiPicker({
+  selected, onChange,
+}: {
+  selected: SessionId[];
+  onChange: (sessions: SessionId[]) => void;
+}) {
+  const toggle = (sid: SessionId) => {
+    if (selected.includes(sid)) {
+      if (selected.length <= 1) return;
+      onChange(selected.filter((s) => s !== sid));
+      return;
+    }
+    onChange([...selected, sid].sort((a, b) => SESSION_IDS.indexOf(a) - SESSION_IDS.indexOf(b)));
+  };
+
+  const chipStyle = (active: boolean): CSSProperties => ({
+    flex: 1, padding: "10px 4px", borderRadius: 10, border: "none",
+    fontSize: 12, fontWeight: 800, cursor: "pointer",
+    backgroundColor: active ? theme.category.purple : theme.fill.secondary,
+    color: active ? "#fff" : theme.text.secondary,
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>出す時間帯</div>
+      <div style={{ fontSize: 11, color: theme.text.tertiary }}>
+        2つ以上選ぶと共有タスク（1日1回）になります
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {SESSION_IDS.map((sid) => (
+          <button key={sid} type="button" onClick={() => toggle(sid)} style={chipStyle(selected.includes(sid))}>
+            {SESSION_SHORT_LABELS[sid]}
+          </button>
+        ))}
+      </div>
+      {selected.length >= 2 && (
+        <div style={{ fontSize: 11, fontWeight: 700, color: theme.category.purple }}>
+          共有: {sharedSessionsLabel(selected)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskEditForm({
   header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, onDelete, autoFocus = true,
   showWeekdays = false, initialWeekdays,
+  currentSession, initialSharedSessions,
   customTaskEmojis, onAddCustomTaskEmoji,
 }: {
   header?: string;
   initialTitle: string;
   initialEmoji: string;
   saveLabel: string;
-  onSave: (title: string, emoji: string, weekdays?: number[]) => void;
+  onSave: (title: string, emoji: string, weekdays?: number[], sharedSessions?: SessionId[]) => void;
   onCancel: () => void;
   onDelete?: () => void;
   autoFocus?: boolean;
   showWeekdays?: boolean;
   initialWeekdays?: number[];
+  currentSession: SessionId;
+  initialSharedSessions?: SessionId[];
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [emoji, setEmoji] = useState(initialEmoji);
   const [weekdays, setWeekdays] = useState<number[]>(initialWeekdays ?? ALL_WEEKDAYS);
+  const [sharedSessions, setSharedSessions] = useState<SessionId[]>(
+    initialSharedSessions?.length ? initialSharedSessions : [currentSession],
+  );
   const [weekdayError, setWeekdayError] = useState(false);
   const [customEmojiInput, setCustomEmojiInput] = useState("");
   const [customEmojiError, setCustomEmojiError] = useState(false);
@@ -3212,10 +3460,11 @@ function TaskEditForm({
     setTitle(initialTitle);
     setEmoji(initialEmoji);
     setWeekdays(initialWeekdays ?? ALL_WEEKDAYS);
+    setSharedSessions(initialSharedSessions?.length ? initialSharedSessions : [currentSession]);
     setWeekdayError(false);
     setCustomEmojiInput("");
     setCustomEmojiError(false);
-  }, [initialTitle, initialEmoji, initialWeekdays]);
+  }, [initialTitle, initialEmoji, initialWeekdays, initialSharedSessions, currentSession]);
 
   const handleAddCustomEmoji = () => {
     const picked = extractFirstEmoji(customEmojiInput);
@@ -3237,7 +3486,7 @@ function TaskEditForm({
     }
     setWeekdayError(false);
     onAddCustomTaskEmoji(emoji);
-    onSave(title, emoji, showWeekdays ? weekdays : undefined);
+    onSave(title, emoji, showWeekdays ? weekdays : undefined, sharedSessions);
   };
 
   const emojiBtnStyle = (selected: boolean): CSSProperties => ({
@@ -3329,6 +3578,7 @@ function TaskEditForm({
           )}
         </>
       )}
+      <SessionMultiPicker selected={sharedSessions} onChange={setSharedSessions} />
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" onClick={handleSave} style={{
           flex: 2, padding: "10px", borderRadius: 10, border: "none",
@@ -3346,7 +3596,7 @@ function TaskEditForm({
           backgroundColor: `${theme.category.pink}10`, color: theme.category.pink,
           fontSize: 14, fontWeight: 700, cursor: "pointer",
         }}>
-          削除する
+          {sharedSessions.length >= 2 ? "すべての時間帯から削除する" : "削除する"}
         </button>
       )}
     </div>
@@ -3410,6 +3660,7 @@ function TaskActionSheet({
 
 interface TaskScreenProps {
   session: SessionId;
+  allSessionTasks: AllSessionTasks;
   interactionLocked?: boolean;
   label: string; timeLabel: string;
   tasks: Task[]; done: Set<number>; skipped: Set<number>; justChecked: number | null;
@@ -3420,8 +3671,8 @@ interface TaskScreenProps {
   workTimerRunning: boolean;
   newRecordTaskId: number | null;
   onReorder: (tasks: Task[]) => void;
-  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[]) => void;
-  onEditTask: (id: number, title: string, emoji: string, weekdays?: number[]) => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[]) => void;
+  onEditTask: (id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[]) => void;
   onDeleteTask: (id: number) => void;
   onSkipTask: (id: number) => void;
   onSelectTask: (id: number) => void;
@@ -3440,7 +3691,7 @@ interface TaskScreenProps {
 }
 
 function TaskScreen({
-  session, interactionLocked = false, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
+  session, allSessionTasks, interactionLocked = false, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
@@ -3461,7 +3712,7 @@ function TaskScreen({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
 
-  const shownTasks = visibleTasks(tasks);
+  const shownTasks = visibleTasksForSession(session, allSessionTasks);
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (interactionLocked) return;
@@ -3470,13 +3721,26 @@ function TaskScreen({
       const oldIdx = shownTasks.findIndex((t) => t.id === active.id);
       const newIdx = shownTasks.findIndex((t) => t.id === over.id);
       if (oldIdx < 0 || newIdx < 0) return;
-      onReorder(reorderVisibleInAll(tasks, arrayMove(shownTasks, oldIdx, newIdx)));
+      onReorder(reorderVisibleInAll(session, tasks, arrayMove(shownTasks, oldIdx, newIdx), allSessionTasks));
     }
   };
 
-  const handleAdd = (title: string, emoji: string, weekdays?: number[]) => {
-    onAddTask(title, emoji, addMode, weekdays);
+  const handleAdd = (title: string, emoji: string, weekdays?: number[], sharedSessions?: SessionId[]) => {
+    onAddTask(title, emoji, addMode, weekdays, sharedSessions);
     setIsAdding(false);
+  };
+
+  const confirmDeleteShared = (task: Task): boolean => {
+    if (!task.sharedKey || !task.sharedSessions || task.sharedSessions.length < 2) return true;
+    return window.confirm(
+      `「${task.title}」をすべての時間帯（${sharedSessionsLabel(task.sharedSessions)}）から削除しますか？`,
+    );
+  };
+
+  const handleDeleteTask = (id: number) => {
+    const task = tasks.find((t) => t.id === id);
+    if (task && !confirmDeleteShared(task)) return;
+    onDeleteTask(id);
   };
 
   const startAdding = (mode: TaskScope) => {
@@ -3532,7 +3796,7 @@ function TaskScreen({
                   isActive={isActive}
                   isNewRecord={newRecordTaskId === task.id}
                   floatColor={floatColor}
-                  bestTime={bestTimes[taskTimeKey(session, task.id)]}
+                  bestTime={bestTimes[taskTimeKey(session, task.id, task)]}
                   liveElapsed={isActive ? workTimerElapsed : undefined}
                   timerRunning={isActive && workTimerRunning}
                   interactionLocked={interactionLocked}
@@ -3543,7 +3807,7 @@ function TaskScreen({
                   }}
                   onSwipeClose={() => setOpenSwipe(null)}
                   onSelect={() => onSelectTask(task.id)}
-                  onDelete={() => { onDeleteTask(task.id); setOpenSwipe(null); }}
+                  onDelete={() => { handleDeleteTask(task.id); setOpenSwipe(null); }}
                   onSkip={() => { onSkipTask(task.id); setOpenSwipe(null); }}
                   onStartTimer={onStartTimer}
                   onPauseTimer={onPauseTimer}
@@ -3575,6 +3839,7 @@ function TaskScreen({
           initialEmoji="📝"
           saveLabel="追加する"
           showWeekdays={addMode === "regular"}
+          currentSession={session}
           customTaskEmojis={customTaskEmojis}
           onAddCustomTaskEmoji={onAddCustomTaskEmoji}
           onSave={handleAdd}
@@ -3632,13 +3897,19 @@ function TaskScreen({
               showWeekdays={(editingTask.scope ?? "regular") !== "today"}
               saveLabel="保存する"
               autoFocus={false}
+              currentSession={session}
+              initialSharedSessions={editingTask.sharedSessions}
               customTaskEmojis={customTaskEmojis}
               onAddCustomTaskEmoji={onAddCustomTaskEmoji}
-              onSave={(title, emoji, weekdays) => {
-                onEditTask(editingTask.id, title, emoji, weekdays);
+              onSave={(title, emoji, weekdays, sharedSessions) => {
+                onEditTask(editingTask.id, title, emoji, weekdays, sharedSessions);
                 setEditingTaskId(null);
               }}
               onCancel={() => setEditingTaskId(null)}
+              onDelete={() => {
+                handleDeleteTask(editingTask.id);
+                setEditingTaskId(null);
+              }}
             />
           </div>
         </div>
