@@ -18,16 +18,19 @@ import {
   unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
-import { RecordScreen, getStreak, isFullDay, getFullDayStreak } from "./RecordCalendar";
+import { RecordScreen, getStreak, isFullDay, getFullDayStreak, type DayHistory } from "./RecordCalendar";
 import {
-  NewRecordOverlay, DailyTreatOverlay, WeeklyRewardOverlay,
-  type NewRecordCelebration,
+  NewRecordOverlay, TreatOverlay,
+  type NewRecordCelebration, type TreatMode,
 } from "./Rewards";
 import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum } from "./stickerRewards";
+import {
+  getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate,
+} from "./japaneseCalendar";
 
 // ── Types & Data ──────────────────────────────────────
 
-type SessionId = "morning" | "evening" | "home";
+type SessionId = "morning" | "daytime" | "home" | "evening";
 type ScreenId  = SessionId | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type TaskScope = "regular" | "today";
@@ -138,6 +141,37 @@ const HOME_TASKS_DEFAULT: Task[] = [
   { id: 4, title: "洗濯物の片付け",             emoji: "👕" },
 ];
 
+const DAYTIME_TASKS_DEFAULT: Task[] = [
+  { id: 1, title: "お弁当",     emoji: "🍱" },
+  { id: 2, title: "水筒を飲む", emoji: "💧" },
+];
+
+const SESSION_IDS: SessionId[] = ["morning", "daytime", "home", "evening"];
+
+const SESSION_TABS: { id: SessionId; label: string }[] = [
+  { id: "morning", label: "☀️ 朝" },
+  { id: "daytime", label: "🌤 昼" },
+  { id: "home",    label: "🏠 帰宅" },
+  { id: "evening", label: "🌙 夜" },
+];
+
+const SESSION_META: Record<SessionId, {
+  label: string; timeSuffix: string; menuIcon: string; menuLabel: string;
+}> = {
+  morning: { label: "朝のやること", timeSuffix: "朝", menuIcon: "🌅", menuLabel: "朝のタスク" },
+  daytime: { label: "昼のやること", timeSuffix: "昼", menuIcon: "🌤", menuLabel: "昼のタスク" },
+  home:    { label: "帰宅後のやること", timeSuffix: "帰宅後", menuIcon: "🏠", menuLabel: "帰宅後のタスク" },
+  evening: { label: "夜のやること", timeSuffix: "夜", menuIcon: "🌙", menuLabel: "夜のタスク" },
+};
+
+function isSessionScreen(s: ScreenId): s is SessionId {
+  return SESSION_IDS.includes(s as SessionId);
+}
+
+function emptyDayHistory(): DayHistory {
+  return { morning: false, daytime: false, home: false, evening: false };
+}
+
 const CELEB_TYPES: CelebType[] = ["confetti", "burst", "stripes", "bars", "diagonal"];
 const CELEB_NAMES: Record<CelebType, string> = {
   confetti: "かみふぶき！", burst: "ドカン！",
@@ -157,27 +191,31 @@ const FLOAT_COLORS = [
 
 const STORAGE_KEY = "keigo-app-v1";
 
-interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
-
 interface StoredState {
   date: string;
   morningDone: number[];
+  daytimeDone: number[];
   eveningDone: number[];
   homeDone: number[];
   morningSkipped: number[];
+  daytimeSkipped: number[];
   eveningSkipped: number[];
   homeSkipped: number[];
   morningApproved: boolean;
+  daytimeApproved: boolean;
   eveningApproved: boolean;
   homeApproved: boolean;
   morningTasks: Task[];
+  daytimeTasks: Task[];
   eveningTasks: Task[];
   homeTasks: Task[];
   history: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
   dailyTreatClaimed?: Record<string, boolean>;
+  fullDayBonusClaimed?: Record<string, boolean>;
   lastWeeklyRewardStreak?: number;
   stickerAlbum?: string[];
+  customTaskEmojis?: string[];
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -190,6 +228,27 @@ function isSessionTreatClaimed(claimed: Record<string, boolean>, date: string, s
   if (claimed[sessionTreatKey(date, session)]) return true;
   if (claimed[date]) return true;
   return false;
+}
+
+interface PendingTreat {
+  mode: TreatMode;
+  devForceTier?: import("./stickerRewards").StickerRarity;
+  devForceTease?: boolean;
+  devForceTeaseId?: import("./treatTease").TeaseVariantId;
+}
+
+function buildTreatQueue(
+  opts: {
+    needsDaily: boolean;
+    fullDayBonusEligible: boolean;
+    weeklyMilestone: boolean;
+  },
+): PendingTreat[] {
+  const queue: PendingTreat[] = [];
+  if (opts.needsDaily) queue.push({ mode: "daily" });
+  if (opts.fullDayBonusEligible) queue.push({ mode: "fullDayBonus" });
+  if (opts.weeklyMilestone) queue.push({ mode: "weekly" });
+  return queue;
 }
 
 function taskTimeKey(session: SessionId, taskId: number) {
@@ -258,21 +317,26 @@ function taskDayKey(now = new Date()): string {
 
 function freshCompletionSlice(
   morningTasks: Task[],
+  daytimeTasks: Task[],
   eveningTasks: Task[],
   homeTasks: Task[],
 ) {
   return {
     date: taskDayKey(),
     morningDone: [] as number[],
+    daytimeDone: [] as number[],
     eveningDone: [] as number[],
     homeDone: [] as number[],
     morningSkipped: [] as number[],
+    daytimeSkipped: [] as number[],
     eveningSkipped: [] as number[],
     homeSkipped: [] as number[],
     morningApproved: false,
+    daytimeApproved: false,
     eveningApproved: false,
     homeApproved: false,
     morningTasks: stripTodayTasks(morningTasks),
+    daytimeTasks: stripTodayTasks(daytimeTasks),
     eveningTasks: stripTodayTasks(eveningTasks),
     homeTasks: stripTodayTasks(homeTasks),
   };
@@ -290,14 +354,20 @@ function hydrateStoredState(data: StoredState): StoredState {
   return {
     ...data,
     morningTasks: normalizeTasks(data.morningTasks ?? MORNING_TASKS_DEFAULT),
+    daytimeTasks: normalizeTasks(data.daytimeTasks ?? DAYTIME_TASKS_DEFAULT),
     eveningTasks: normalizeTasks(data.eveningTasks ?? EVENING_TASKS_DEFAULT),
     homeTasks: normalizeTasks(data.homeTasks ?? HOME_TASKS_DEFAULT),
     morningDone: data.morningDone ?? [],
+    daytimeDone: data.daytimeDone ?? [],
     eveningDone: data.eveningDone ?? [],
     homeDone: data.homeDone ?? [],
     morningSkipped: data.morningSkipped ?? [],
+    daytimeSkipped: data.daytimeSkipped ?? [],
     eveningSkipped: data.eveningSkipped ?? [],
     homeSkipped: data.homeSkipped ?? [],
+    morningApproved: data.morningApproved ?? false,
+    daytimeApproved: data.daytimeApproved ?? false,
+    eveningApproved: data.eveningApproved ?? false,
     homeApproved: data.homeApproved ?? false,
   };
 }
@@ -313,24 +383,40 @@ function loadStoredState(): StoredState {
       const hydrated = hydrateStoredState(data);
       return {
         ...hydrated,
-        ...freshCompletionSlice(hydrated.morningTasks, hydrated.eveningTasks, hydrated.homeTasks),
+        ...freshCompletionSlice(
+          hydrated.morningTasks,
+          hydrated.daytimeTasks,
+          hydrated.eveningTasks,
+          hydrated.homeTasks,
+        ),
         history: hydrated.history ?? {},
         bestTimes: hydrated.bestTimes,
         stickerAlbum: hydrated.stickerAlbum,
         dailyTreatClaimed: hydrated.dailyTreatClaimed,
+        fullDayBonusClaimed: hydrated.fullDayBonusClaimed,
         lastWeeklyRewardStreak: hydrated.lastWeeklyRewardStreak,
       };
     }
   } catch { /* ignore */ }
   return {
-    ...freshCompletionSlice(MORNING_TASKS_DEFAULT, EVENING_TASKS_DEFAULT, HOME_TASKS_DEFAULT),
+    ...freshCompletionSlice(
+      MORNING_TASKS_DEFAULT,
+      DAYTIME_TASKS_DEFAULT,
+      EVENING_TASKS_DEFAULT,
+      HOME_TASKS_DEFAULT,
+    ),
     history: {},
   };
 }
 
-function getSessionScreen(): SessionId {
-  const h = new Date().getHours();
+function getVisibleSessionTabs(d = new Date()) {
+  return SESSION_TABS.filter((t) => isSessionActiveOnDate(t.id, d));
+}
+
+function getSessionScreen(now = new Date()): SessionId {
+  const h = now.getHours();
   if (h < 12) return "morning";
+  if (h < 16 && isDaytimeSessionDay(now)) return "daytime";
   if (h < 19) return "home";
   return "evening";
 }
@@ -497,6 +583,183 @@ function AnimStyles() {
         60% { transform: scale(1.15); opacity: 1; }
         100%{ transform: scale(1); opacity: 1; }
       }
+      @keyframes treatRevealRare {
+        0%  { transform: scale(0.2); opacity: 0; }
+        55% { transform: scale(1.2); opacity: 1; }
+        100%{ transform: scale(1); opacity: 1; }
+      }
+      @keyframes treatRevealSR {
+        0%  { transform: scale(0) rotate(-8deg); opacity: 0; }
+        50% { transform: scale(1.25) rotate(2deg); opacity: 1; }
+        100%{ transform: scale(1) rotate(0deg); opacity: 1; }
+      }
+      @keyframes treatRevealUR {
+        0%  { transform: scale(0) rotate(-12deg); opacity: 0; }
+        40% { transform: scale(1.4) rotate(4deg); opacity: 1; }
+        70% { transform: scale(1.05) rotate(-2deg); opacity: 1; }
+        100%{ transform: scale(1) rotate(0deg); opacity: 1; }
+      }
+      @keyframes rarityGlowPulse {
+        0%, 100% { box-shadow: 0 0 12px var(--glow-color, #AF52DE44); }
+        50%      { box-shadow: 0 0 28px var(--glow-color, #AF52DE88), 0 0 48px var(--glow-color, #AF52DE44); }
+      }
+      @keyframes urShimmer {
+        0%  { text-shadow: 0 0 8px var(--shimmer-color, #FF950066); }
+        50% { text-shadow: 0 0 20px var(--shimmer-color, #FF9500CC), 0 0 32px var(--shimmer-color, #FF950088); }
+        100%{ text-shadow: 0 0 8px var(--shimmer-color, #FF950066); }
+      }
+      @keyframes chestOpenUR {
+        0%  { transform: scale(1); }
+        35% { transform: scale(1.8); }
+        100%{ transform: scale(1.35); }
+      }
+      @keyframes chestLevitate {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(-18px); }
+      }
+      @keyframes orbitParticle {
+        from { transform: rotate(0deg) translateX(var(--orbit-r, 60px)) rotate(0deg); }
+        to   { transform: rotate(360deg) translateX(var(--orbit-r, 60px)) rotate(-360deg); }
+      }
+      @keyframes srRipple {
+        0%   { transform: scale(0.3); opacity: 0.85; }
+        100% { transform: scale(2.8); opacity: 0; }
+      }
+      @keyframes glimmerRise {
+        0%   { transform: translateY(0) scale(0.5); opacity: 0; }
+        30%  { opacity: 1; }
+        100% { transform: translateY(-80px) scale(1); opacity: 0.2; }
+      }
+      @keyframes teaseDimIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      @keyframes urPillarGrow {
+        0%   { transform: scaleY(0); opacity: 0; }
+        40%  { opacity: 1; }
+        100% { transform: scaleY(1); opacity: 0.95; }
+      }
+      @keyframes urShockwave {
+        0%   { transform: scale(0.2); opacity: 0.75; }
+        100% { transform: scale(3.2); opacity: 0; }
+      }
+      @keyframes urMeteor {
+        0%   { transform: translate(var(--mx, 0), var(--my, 0)) scale(0.4); opacity: 0; }
+        15%  { opacity: 1; }
+        100% { transform: translate(0, 0) scale(1.3); opacity: 0; }
+      }
+      @keyframes urWhiteout {
+        0%   { opacity: 0; }
+        45%  { opacity: 1; }
+        100% { opacity: 0.92; }
+      }
+      @keyframes urAuroraSpin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      @keyframes teaseAuroraStrip {
+        0%   { transform: translateX(-30%) rotate(var(--aurora-rot, -25deg)); opacity: 0; }
+        30%  { opacity: 0.7; }
+        100% { transform: translateX(30%) rotate(var(--aurora-rot, -25deg)); opacity: 0; }
+      }
+      @keyframes chestShakeFast {
+        0%, 100% { transform: rotate(0deg) scale(1); }
+        25%      { transform: rotate(-12deg) scale(1.1); }
+        50%      { transform: rotate(12deg) scale(1.15); }
+        75%      { transform: rotate(-8deg) scale(1.12); }
+      }
+      @keyframes srMagicSpin {
+        from { transform: rotate(0deg) scale(0.75); opacity: 0; }
+        25%  { opacity: 1; }
+        to   { transform: rotate(280deg) scale(1.05); opacity: 0.92; }
+      }
+      @keyframes srMagicSpinReverse {
+        from { transform: rotate(0deg) scale(1.1); opacity: 0; }
+        25%  { opacity: 0.9; }
+        to   { transform: rotate(-360deg) scale(0.78); opacity: 0.82; }
+      }
+      @keyframes srMagicBeam {
+        0%   { transform: rotate(var(--beam-rot, 0deg)) scaleY(0); opacity: 0; }
+        40%  { opacity: 1; }
+        100% { transform: rotate(var(--beam-rot, 0deg)) scaleY(1.25); opacity: 0; }
+      }
+      @keyframes srMagicFloorGlow {
+        0%, 100% { transform: scaleX(0.5); opacity: 0; }
+        35%      { opacity: 0.9; }
+        75%      { transform: scaleX(1.3); opacity: 0.7; }
+      }
+      @keyframes srStarRain {
+        0%   { transform: translate3d(-20px, -20vh, 0) scale(0.55); opacity: 0; }
+        15%  { opacity: 1; }
+        100% { transform: translate3d(36px, 72vh, 0) scale(1.15); opacity: 0; }
+      }
+      @keyframes srStarGroundGlow {
+        0%, 100% { transform: scaleX(0.55); opacity: 0; }
+        45%      { opacity: 0.85; }
+        80%      { transform: scaleX(1.25); opacity: 0.65; }
+      }
+      @keyframes srMistRise {
+        0%   { transform: translateY(18px) scale(0.55); opacity: 0; }
+        25%  { opacity: 0.92; }
+        100% { transform: translateY(-96px) scale(1.5); opacity: 0; }
+      }
+      @keyframes srMistSpread {
+        0%   { transform: scale(0.35); opacity: 0; }
+        45%  { opacity: 0.88; }
+        100% { transform: scale(1.85); opacity: 0; }
+      }
+      @keyframes urLightColumnMax {
+        0%   { transform: scaleY(0) scaleX(0.35); opacity: 0; }
+        30%  { opacity: 1; }
+        70%  { transform: scaleY(1.15) scaleX(1); opacity: 0.95; }
+        100% { transform: scaleY(1.25) scaleX(1.25); opacity: 0; }
+      }
+      @keyframes urEmberRise {
+        0%   { transform: translateY(40px) scale(0.45); opacity: 0; }
+        20%  { opacity: 1; }
+        100% { transform: translateY(-72vh) scale(1.25); opacity: 0; }
+      }
+      @keyframes urShockwaveMax {
+        0%   { transform: scale(0.08); opacity: 0.95; }
+        100% { transform: scale(5); opacity: 0; }
+      }
+      @keyframes urMeteorMax {
+        0%   { transform: translate(var(--mx, 0), var(--my, 0)) rotate(var(--meteor-rot, 0deg)) scale(0.4); opacity: 0; }
+        12%  { opacity: 1; }
+        76%  { opacity: 1; }
+        100% { transform: translate(0, 0) rotate(var(--meteor-rot, 0deg)) scale(1.45); opacity: 0; }
+      }
+      @keyframes urImpactWhite {
+        0%   { opacity: 0; }
+        30%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes urGateSpin {
+        0%   { transform: rotate(0deg) scale(1.25); opacity: 0; }
+        20%  { opacity: 0.95; }
+        100% { transform: rotate(420deg) scale(0.45); opacity: 0; }
+      }
+      @keyframes urGateCore {
+        0%   { transform: scale(0.2); opacity: 0; }
+        35%  { opacity: 0.9; }
+        100% { transform: scale(1.45); opacity: 0; }
+      }
+      @keyframes urWhiteoutMax {
+        0%   { opacity: 0; }
+        35%  { opacity: 1; }
+        65%  { opacity: 0.35; }
+        100% { opacity: 0; }
+      }
+      @keyframes urBlackout {
+        0%   { opacity: 0; }
+        45%  { opacity: 0.85; }
+        100% { opacity: 0; }
+      }
+      @keyframes urStarDustFall {
+        0%   { transform: translateY(-12vh) scale(0.5); opacity: 0; }
+        25%  { opacity: 1; }
+        100% { transform: translateY(76vh) scale(1); opacity: 0; }
+      }
       .check-pop   { animation: checkPop   0.42s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .ring-out    { animation: ringOut    0.5s  ease-out forwards; }
       .row-glow    { animation: rowGlow    0.5s  ease-out; }
@@ -516,7 +779,44 @@ function AnimStyles() {
       .record-badge-pop   { animation: recordBadgePop 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .chest-shake   { animation: chestShake 0.8s ease-in-out infinite; }
       .chest-open    { animation: chestOpen 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
-      .treat-reveal  { animation: treatReveal 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .chest-open-ur { animation: chestOpenUR 0.65s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .treat-reveal      { animation: treatReveal 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .treat-reveal-rare { animation: treatRevealRare 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .treat-reveal-sr   { animation: treatRevealSR 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .treat-reveal-ur   { animation: treatRevealUR 0.85s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .rarity-glow-pulse { animation: rarityGlowPulse 1.6s ease-in-out infinite; }
+      .ur-shimmer        { animation: urShimmer 1.8s ease-in-out infinite; }
+      .rarity-badge-pop-delay { animation: recordBadgePop 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.15s both; }
+      .chest-levitate    { animation: chestLevitate 2s ease-in-out infinite; }
+      .chest-shake-fast  { animation: chestShakeFast 0.35s ease-in-out infinite; }
+      .orbit-particle    { animation: orbitParticle var(--orbit-dur, 2s) linear infinite; }
+      .sr-ripple         { animation: srRipple 0.85s ease-out forwards; }
+      .glimmer-rise      { animation: glimmerRise 1s ease-out forwards; }
+      .tease-dim         { animation: teaseDimIn 0.6s ease-out forwards; background: rgba(0,0,0,0.5); position: absolute; inset: 0; }
+      .ur-pillar         { animation: urPillarGrow 1.4s ease-out forwards; transform-origin: bottom center; }
+      .ur-shockwave      { animation: urShockwave 0.85s ease-out forwards; }
+      .ur-meteor         { animation: urMeteor 0.75s ease-in forwards; }
+      .ur-whiteout       { animation: urWhiteout 0.55s ease-in forwards; background: rgba(255,255,255,0.95); position: absolute; inset: 0; }
+      .ur-aurora-ring    { animation: urAuroraSpin 3s linear infinite; }
+      .tease-aurora-strip { animation: teaseAuroraStrip 1.4s ease-in-out forwards; }
+      .sr-magic-spin     { animation: srMagicSpin 1.8s ease-out forwards; }
+      .sr-magic-spin-reverse { animation: srMagicSpinReverse 1.8s ease-out forwards; }
+      .sr-magic-beam     { animation: srMagicBeam 1.35s ease-out forwards; }
+      .sr-magic-floor-glow { animation: srMagicFloorGlow 1.75s ease-out forwards; }
+      .sr-star-rain      { animation: srStarRain 1.55s ease-in forwards; }
+      .sr-star-ground-glow { animation: srStarGroundGlow 1.7s ease-out forwards; }
+      .sr-mist-rise      { animation: srMistRise 1.45s ease-out forwards; }
+      .sr-mist-spread    { animation: srMistSpread 1.65s ease-out forwards; }
+      .ur-light-column-max { animation: urLightColumnMax 1.65s ease-out forwards; }
+      .ur-ember-rise     { animation: urEmberRise 1.65s ease-out forwards; }
+      .ur-shockwave-max  { animation: urShockwaveMax 0.9s ease-out forwards; }
+      .ur-meteor-max     { animation: urMeteorMax 0.95s ease-in forwards; }
+      .ur-impact-white   { animation: urImpactWhite 0.32s ease-out both; background: rgba(255,255,255,0.92); position: absolute; inset: 0; }
+      .ur-gate-spin      { animation: urGateSpin 1.7s cubic-bezier(0.25,0.1,0.2,1) forwards; }
+      .ur-gate-core      { animation: urGateCore 1.55s ease-out forwards; }
+      .ur-whiteout-max   { animation: urWhiteoutMax 0.95s ease-out forwards; background: rgba(255,255,255,0.96); }
+      .ur-blackout       { animation: urBlackout 0.65s ease-out forwards; }
+      .ur-stardust-fall  { animation: urStarDustFall 0.9s ease-in forwards; }
     `}</style>
   );
 }
@@ -524,25 +824,55 @@ function AnimStyles() {
 // ── Main ──────────────────────────────────────────────
 
 const QUICK_EMOJIS = ["📝", "✏️", "🎯", "⭐", "🎮", "📱", "🎵", "🏃", "🍽️", "🛒", "💊", "🐾"];
+const CUSTOM_TASK_EMOJI_LIMIT = 24;
+
+function extractFirstEmoji(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const segmenter = new Intl.Segmenter("ja", { granularity: "grapheme" });
+    const segments = [...segmenter.segment(trimmed)].map((s) => s.segment);
+    const first = segments[0];
+    if (!first || !/\p{Extended_Pictographic}/u.test(first)) return null;
+    return first;
+  } catch {
+    const match = trimmed.match(/\p{Extended_Pictographic}/u);
+    return match?.[0] ?? null;
+  }
+}
+
+function rememberCustomTaskEmoji(prev: string[], emoji: string): string[] {
+  if (!emoji || QUICK_EMOJIS.includes(emoji) || prev.includes(emoji)) return prev;
+  return [emoji, ...prev].slice(0, CUSTOM_TASK_EMOJI_LIMIT);
+}
 
 export default function KeigoTaskApp() {
   const stored = loadStoredState();
 
   const [screen,         setScreen]         = useState<ScreenId>(getInitialScreen());
   const [morningTasks,   setMorningTasks]   = useState<Task[]>(stored.morningTasks ?? MORNING_TASKS_DEFAULT);
+  const [daytimeTasks,   setDaytimeTasks]   = useState<Task[]>(stored.daytimeTasks ?? DAYTIME_TASKS_DEFAULT);
   const [eveningTasks,   setEveningTasks]   = useState<Task[]>(stored.eveningTasks ?? EVENING_TASKS_DEFAULT);
   const [homeTasks,      setHomeTasks]      = useState<Task[]>(stored.homeTasks ?? HOME_TASKS_DEFAULT);
   const [morningDone,    setMorningDone]    = useState<Set<number>>(new Set(stored.morningDone));
+  const [daytimeDone,    setDaytimeDone]    = useState<Set<number>>(new Set(stored.daytimeDone));
   const [eveningDone,    setEveningDone]    = useState<Set<number>>(new Set(stored.eveningDone));
   const [homeDone,       setHomeDone]       = useState<Set<number>>(new Set(stored.homeDone));
   const [morningSkipped, setMorningSkipped] = useState<Set<number>>(new Set(stored.morningSkipped));
+  const [daytimeSkipped, setDaytimeSkipped] = useState<Set<number>>(new Set(stored.daytimeSkipped));
   const [eveningSkipped, setEveningSkipped] = useState<Set<number>>(new Set(stored.eveningSkipped));
   const [homeSkipped,    setHomeSkipped]    = useState<Set<number>>(new Set(stored.homeSkipped));
   const [morningApproved, setMorningApproved] = useState(stored.morningApproved);
+  const [daytimeApproved, setDaytimeApproved] = useState(stored.daytimeApproved);
   const [eveningApproved, setEveningApproved] = useState(stored.eveningApproved);
   const [homeApproved,    setHomeApproved]    = useState(stored.homeApproved);
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
   const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
+  const [customTaskEmojis, setCustomTaskEmojis] = useState<string[]>(stored.customTaskEmojis ?? []);
+
+  const addCustomTaskEmoji = (emoji: string) => {
+    setCustomTaskEmojis((prev) => rememberCustomTaskEmoji(prev, emoji));
+  };
 
   const [activeWorkTask, setActiveWorkTask] = useState<ActiveWorkTask | null>(null);
   const [workTimerElapsed, setWorkTimerElapsed] = useState(0);
@@ -552,10 +882,11 @@ export default function KeigoTaskApp() {
   const [newRecordTaskId, setNewRecordTaskId] = useState<number | null>(null);
   const [newRecordCelebration, setNewRecordCelebration] = useState<NewRecordCelebration | null>(null);
   const [newRecordCelebKey, setNewRecordCelebKey] = useState(0);
-  const [dailyTreatOpen, setDailyTreatOpen] = useState(false);
-  const [weeklyRewardOpen, setWeeklyRewardOpen] = useState(false);
   const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
+  const [fullDayBonusClaimed, setFullDayBonusClaimed] = useState<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
   const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
+  const [pendingTreat, setPendingTreat] = useState<PendingTreat | null>(null);
+  const [treatQueue, setTreatQueue] = useState<PendingTreat[]>([]);
   const [stickerAlbum, setStickerAlbum] = useState<string[]>(() => {
     const merged = mergeStickerAlbums(loadStickerAlbum(), stored.stickerAlbum ?? []);
     if (merged.length > 0) saveStickerAlbum(merged);
@@ -598,43 +929,85 @@ export default function KeigoTaskApp() {
 
   const streak = getStreak(history);
   useEffect(() => { screenRef.current = screen; }, [screen]);
-  const approved = parentSession === "morning"
-    ? morningApproved
-    : parentSession === "evening"
-      ? eveningApproved
-      : homeApproved;
+
+  const activeSessionIds = getActiveSessionIds();
+
+  const sessionState = {
+    morning: {
+      tasks: morningTasks, setTasks: setMorningTasks,
+      done: morningDone, setDone: setMorningDone,
+      skipped: morningSkipped, setSkipped: setMorningSkipped,
+      approved: morningApproved, setApproved: setMorningApproved,
+    },
+    daytime: {
+      tasks: daytimeTasks, setTasks: setDaytimeTasks,
+      done: daytimeDone, setDone: setDaytimeDone,
+      skipped: daytimeSkipped, setSkipped: setDaytimeSkipped,
+      approved: daytimeApproved, setApproved: setDaytimeApproved,
+    },
+    home: {
+      tasks: homeTasks, setTasks: setHomeTasks,
+      done: homeDone, setDone: setHomeDone,
+      skipped: homeSkipped, setSkipped: setHomeSkipped,
+      approved: homeApproved, setApproved: setHomeApproved,
+    },
+    evening: {
+      tasks: eveningTasks, setTasks: setEveningTasks,
+      done: eveningDone, setDone: setEveningDone,
+      skipped: eveningSkipped, setSkipped: setEveningSkipped,
+      approved: eveningApproved, setApproved: setEveningApproved,
+    },
+  } as const;
+
+  const approved = sessionState[parentSession].approved;
+
+  useEffect(() => {
+    if (screen === "daytime" && !isDaytimeSessionDay()) {
+      setScreen(getSessionScreen());
+    }
+    if (taskListSession === "daytime" && !isDaytimeSessionDay()) {
+      setTaskListSession(getSessionScreen());
+    }
+  }, [screen, taskListSession]);
 
   // ── localStorage save ──
   useEffect(() => {
     const state: StoredState = {
       date: taskDayKey(),
       morningDone:    [...morningDone],
+      daytimeDone:    [...daytimeDone],
       eveningDone:    [...eveningDone],
       homeDone:       [...homeDone],
       morningSkipped: [...morningSkipped],
+      daytimeSkipped: [...daytimeSkipped],
       eveningSkipped: [...eveningSkipped],
       homeSkipped:    [...homeSkipped],
       morningApproved,
+      daytimeApproved,
       eveningApproved,
       homeApproved,
       morningTasks,
+      daytimeTasks,
       eveningTasks,
       homeTasks,
       history,
       bestTimes,
       dailyTreatClaimed,
+      fullDayBonusClaimed,
       lastWeeklyRewardStreak,
       stickerAlbum,
+      customTaskEmojis,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
   }, [
-    morningDone, eveningDone, homeDone,
-    morningSkipped, eveningSkipped, homeSkipped,
-    morningApproved, eveningApproved, homeApproved,
-    morningTasks, eveningTasks, homeTasks,
+    morningDone, daytimeDone, eveningDone, homeDone,
+    morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
+    morningApproved, daytimeApproved, eveningApproved, homeApproved,
+    morningTasks, daytimeTasks, eveningTasks, homeTasks,
     history, bestTimes,
-    dailyTreatClaimed, lastWeeklyRewardStreak, stickerAlbum,
+    dailyTreatClaimed, fullDayBonusClaimed, lastWeeklyRewardStreak, stickerAlbum,
+    customTaskEmojis,
   ]);
 
   useEffect(() => {
@@ -714,15 +1087,19 @@ export default function KeigoTaskApp() {
       if (key === taskDayRef.current) return;
       taskDayRef.current = key;
       setMorningDone(new Set());
+      setDaytimeDone(new Set());
       setEveningDone(new Set());
       setHomeDone(new Set());
       setMorningSkipped(new Set());
+      setDaytimeSkipped(new Set());
       setEveningSkipped(new Set());
       setHomeSkipped(new Set());
       setMorningApproved(false);
+      setDaytimeApproved(false);
       setEveningApproved(false);
       setHomeApproved(false);
       setMorningTasks((t) => stripTodayTasks(t));
+      setDaytimeTasks((t) => stripTodayTasks(t));
       setEveningTasks((t) => stripTodayTasks(t));
       setHomeTasks((t) => stripTodayTasks(t));
       setActiveWorkTask(null);
@@ -730,6 +1107,10 @@ export default function KeigoTaskApp() {
       setJustChecked(null);
       setNewRecordCelebration(null);
       setStampVisible(false);
+      if (screenRef.current === "daytime" && !isDaytimeSessionDay()) {
+        setScreen(getSessionScreen());
+      }
+      setTaskListSession((s) => (s === "daytime" && !isDaytimeSessionDay() ? getSessionScreen() : s));
     };
 
     applyTaskDayReset();
@@ -761,18 +1142,38 @@ export default function KeigoTaskApp() {
 
   const resetSessionApproval = (session: SessionId) => {
     const today = todayKey();
-    const prev = history[today] ?? { morning: false, evening: false, home: false };
-    if (session === "morning") {
-      setMorningApproved(false);
-      setHistory({ ...history, [today]: { ...prev, morning: false } });
-    } else if (session === "evening") {
-      setEveningApproved(false);
-      setHistory({ ...history, [today]: { ...prev, evening: false } });
-    } else {
-      setHomeApproved(false);
-      setHistory({ ...history, [today]: { ...prev, home: false } });
+    const prev = history[today] ?? emptyDayHistory();
+    sessionState[session].setApproved(false);
+    const updatedDay = { ...prev, [session]: false };
+    setHistory({ ...history, [today]: updatedDay });
+    if (!isFullDay(updatedDay, new Date())) {
+      setFullDayBonusClaimed((claimed) => {
+        if (!claimed[today]) return claimed;
+        const next = { ...claimed };
+        delete next[today];
+        return next;
+      });
     }
     setStampVisible(false);
+  };
+
+  const closeTreatOverlay = () => {
+    setTreatQueue((queue) => {
+      if (queue.length === 0) {
+        setPendingTreat(null);
+        return [];
+      }
+      const [next, ...rest] = queue;
+      setPendingTreat(next);
+      return rest;
+    });
+  };
+
+  const openTreatQueue = (queue: PendingTreat[]) => {
+    if (queue.length === 0) return;
+    const [first, ...rest] = queue;
+    setPendingTreat(first);
+    setTreatQueue(rest);
   };
 
   const redoTask = (
@@ -951,7 +1352,7 @@ export default function KeigoTaskApp() {
     setTimeout(() => {
       setCelebType(null);
       const s = screenRef.current;
-      if (s === "morning" || s === "home" || s === "evening") setPrevScreen(s);
+      if (isSessionScreen(s)) setPrevScreen(s);
       setScreen("show_parent");
     }, 3500);
   };
@@ -976,46 +1377,42 @@ export default function KeigoTaskApp() {
   const handleApprove = () => {
     if (approved) return;
     const today = todayKey();
-    const prev = history[today] ?? { morning: false, evening: false, home: false };
+    const prev = history[today] ?? emptyDayHistory();
     let updatedDay = { ...prev };
-    if (parentSession === "morning") {
-      setMorningApproved(true);
-      updatedDay = { ...updatedDay, morning: true };
-    } else if (parentSession === "evening") {
-      setEveningApproved(true);
-      updatedDay = { ...updatedDay, evening: true };
-    } else {
-      setHomeApproved(true);
-      updatedDay = { ...updatedDay, home: true };
-    }
+    sessionState[parentSession].setApproved(true);
+    updatedDay = { ...updatedDay, [parentSession]: true };
     const newHistory = { ...history, [today]: updatedDay };
     setHistory(newHistory);
     triggerStamp();
 
     const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
+    const fullDayBonusEligible = isFullDay(updatedDay, new Date()) && !fullDayBonusClaimed[today];
     const fullDayStreak = getFullDayStreak(newHistory);
-    const weeklyMilestone = isFullDay(updatedDay)
+    const weeklyMilestone = isFullDay(updatedDay, new Date())
       && fullDayStreak >= 7
       && fullDayStreak % 7 === 0
       && fullDayStreak > lastWeeklyRewardStreak;
 
+    const treatQueueToOpen = buildTreatQueue({ needsDaily, fullDayBonusEligible, weeklyMilestone });
+
     setTimeout(() => {
-      if (weeklyMilestone) {
-        setWeeklyRewardOpen(true);
-        setLastWeeklyRewardStreak(fullDayStreak);
-      } else if (needsDaily) {
-        setDailyTreatOpen(true);
+      if (treatQueueToOpen.length > 0) {
+        openTreatQueue(treatQueueToOpen);
       }
       if (needsDaily) {
         setDailyTreatClaimed((c) => ({ ...c, [sessionTreatKey(today, parentSession)]: true }));
+      }
+      if (fullDayBonusEligible) {
+        setFullDayBonusClaimed((c) => ({ ...c, [today]: true }));
+      }
+      if (weeklyMilestone) {
+        setLastWeeklyRewardStreak(fullDayStreak);
       }
     }, 950);
   };
 
   const resetApproval = () => {
-    if (parentSession === "morning") setMorningApproved(false);
-    else if (parentSession === "evening") setEveningApproved(false);
-    else setHomeApproved(false);
+    sessionState[parentSession].setApproved(false);
     setStampVisible(false);
   };
 
@@ -1036,6 +1433,10 @@ export default function KeigoTaskApp() {
 
   const goToScreen = (id: ScreenId) => {
     if (isWorkTimerLocked) return;
+    if (id === "daytime" && !isDaytimeSessionDay()) {
+      setScreen(getSessionScreen());
+      return;
+    }
     if (id === "timer") {
       goToTimer();
       return;
@@ -1050,7 +1451,7 @@ export default function KeigoTaskApp() {
   };
 
   const goHome = () => {
-    if (prevScreen === "morning" || prevScreen === "home" || prevScreen === "evening") {
+    if (isSessionScreen(prevScreen)) {
       setScreen(prevScreen);
       return;
     }
@@ -1061,8 +1462,7 @@ export default function KeigoTaskApp() {
     session: SessionId, title: string, emoji: string, scope: TaskScope, weekdays?: number[],
   ) => {
     if (!title.trim()) return;
-    const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
-    const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
+    const { tasks: base, setTasks } = sessionState[session];
     const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
     const task: Task = { id: maxId + 1, title: title.trim(), emoji, scope };
     if (scope === "regular") task.weekdays = normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS);
@@ -1073,12 +1473,11 @@ export default function KeigoTaskApp() {
     session: SessionId, id: number, title: string, emoji: string, weekdays?: number[],
   ) => {
     if (!title.trim()) return;
-    const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
-    const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
+    const { tasks: base, setTasks } = sessionState[session];
     setTasks(base.map((t) => {
       if (t.id !== id) return t;
       const updated: Task = { ...t, title: title.trim(), emoji };
-      if (t.scope !== "today") {
+      if ((t.scope ?? "regular") === "regular") {
         updated.weekdays = normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS);
       }
       return updated;
@@ -1095,12 +1494,7 @@ export default function KeigoTaskApp() {
   };
 
   const deleteTask = (session: SessionId, id: number) => {
-    const base = session === "morning" ? morningTasks : session === "evening" ? eveningTasks : homeTasks;
-    const setTasks = session === "morning" ? setMorningTasks : session === "evening" ? setEveningTasks : setHomeTasks;
-    const setDone = session === "morning" ? setMorningDone : session === "evening" ? setEveningDone : setHomeDone;
-    const setSkipped = session === "morning" ? setMorningSkipped : session === "evening" ? setEveningSkipped : setHomeSkipped;
-    const doneSet = session === "morning" ? morningDone : session === "evening" ? eveningDone : homeDone;
-    const skippedSet = session === "morning" ? morningSkipped : session === "evening" ? eveningSkipped : homeSkipped;
+    const { tasks: base, setTasks, done: doneSet, setDone, skipped: skippedSet, setSkipped } = sessionState[session];
     setTasks(base.filter((t) => t.id !== id));
     const next = new Set(doneSet);
     next.delete(id);
@@ -1173,17 +1567,15 @@ export default function KeigoTaskApp() {
           onDone={() => setNewRecordCelebration(null)}
         />
       )}
-      {dailyTreatOpen && (
-        <DailyTreatOverlay
+      {pendingTreat && (
+        <TreatOverlay
+          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${treatQueue.length}`}
+          mode={pendingTreat.mode}
+          devForceTier={pendingTreat.devForceTier}
+          devForceTease={pendingTreat.devForceTease}
+          devForceTeaseId={pendingTreat.devForceTeaseId}
           collectedIds={stickerAlbum}
-          onClose={() => setDailyTreatOpen(false)}
-          onCollect={collectSticker}
-        />
-      )}
-      {weeklyRewardOpen && (
-        <WeeklyRewardOverlay
-          collectedIds={stickerAlbum}
-          onClose={() => setWeeklyRewardOpen(false)}
+          onClose={closeTreatOverlay}
           onCollect={collectSticker}
         />
       )}
@@ -1234,22 +1626,30 @@ export default function KeigoTaskApp() {
               boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
               display: "flex", flexDirection: "column",
               paddingTop: "max(env(safe-area-inset-top, 20px), 20px)",
-              paddingBottom: 24, gap: 0,
+              paddingBottom: "max(env(safe-area-inset-bottom, 20px), 20px)",
+              gap: 0, minHeight: 0,
             }}
           >
             {/* メニューヘッダー */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px 12px", flexShrink: 0 }}>
               <span style={{ fontSize: 15, fontWeight: 700, color: theme.text.primary }}>メニュー</span>
               <button onClick={() => setShowMenu(false)} style={{
                 background: "none", border: "none", cursor: "pointer",
                 color: theme.text.tertiary, fontSize: 22, lineHeight: 1, padding: 4,
               }}>✕</button>
             </div>
-            {/* メニュー項目 */}
+            {/* メニュー項目（スクロール） */}
+            <div style={{
+              flex: 1, minHeight: 0, overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+            }}>
             {[
-              { icon: "🌅", label: "朝のタスク",    action: () => { setScreen("morning"); setShowMenu(false); } },
-              { icon: "🏠", label: "帰宅後のタスク", action: () => { setScreen("home"); setShowMenu(false); } },
-              { icon: "🌙", label: "夜のタスク",    action: () => { setScreen("evening"); setShowMenu(false); } },
+              ...activeSessionIds.map((sid) => ({
+                icon: SESSION_META[sid].menuIcon,
+                label: SESSION_META[sid].menuLabel,
+                action: () => { setScreen(sid); setShowMenu(false); },
+              })),
               { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(getSessionScreen()); navigateToScreen("task_list"); setShowMenu(false); } },
               { icon: "✅", label: "親チェック画面", action: () => { navigateToScreen("show_parent"); setShowMenu(false); } },
               { icon: "⏱", label: "タイマー",
@@ -1266,8 +1666,51 @@ export default function KeigoTaskApp() {
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
               ...(import.meta.env.DEV ? [
-                { icon: "🎁", label: "ごほうびテスト", action: () => { setDailyTreatOpen(true); setShowMenu(false); } },
-                { icon: "🎊", label: "週間ごほうびテスト", action: () => { setWeeklyRewardOpen(true); setShowMenu(false); } },
+                { icon: "🎁", label: "通常ごほうびテスト", action: () => { openTreatQueue([{ mode: "daily" }]); setShowMenu(false); } },
+                { icon: "🌟", label: "1日ボーナステスト", action: () => {
+                  openTreatQueue([{ mode: "fullDayBonus" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🎊", label: "週間ごほうびテスト", action: () => { openTreatQueue([{ mode: "weekly" }]); setShowMenu(false); } },
+                { icon: "💙", label: "レア抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "rare" }]); setShowMenu(false); } },
+                { icon: "💜", label: "SR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "superRare" }]); setShowMenu(false); } },
+                { icon: "🧡", label: "UR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "ultraRare" }]); setShowMenu(false); } },
+                { icon: "✨", label: "期待演出SR（強制・ランダム）", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceTease: true }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🔥", label: "期待演出UR（強制・ランダム）", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceTease: true }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🌀", label: "SR演出: 魔法陣", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceTease: true, devForceTeaseId: "sr-orbit" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🌠", label: "SR演出: 星の雨", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceTease: true, devForceTeaseId: "sr-ripple" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🌫", label: "SR演出: ミスト", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceTease: true, devForceTeaseId: "sr-glimmer" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "⚡", label: "UR演出: 光柱Max", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceTease: true, devForceTeaseId: "ur-pillar" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "☄️", label: "UR演出: 流星衝突", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceTease: true, devForceTeaseId: "ur-meteor" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🌀", label: "UR演出: オーロラゲート", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceTease: true, devForceTeaseId: "ur-aurora" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "💥", label: "UR演出: 超新星Max", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceTease: true, devForceTeaseId: "ur-supernova" }]);
+                  setShowMenu(false);
+                } },
               ] : []),
             ].map(({ icon, label, action }) => (
               <button key={label} onClick={action} style={{
@@ -1280,6 +1723,7 @@ export default function KeigoTaskApp() {
                 <span style={{ fontSize: 15, color: theme.text.primary, fontWeight: 600 }}>{label}</span>
               </button>
             ))}
+            </div>
           </div>
         </div>
       )}
@@ -1340,18 +1784,19 @@ export default function KeigoTaskApp() {
           pointerEvents: (anticipating || !!celebType) ? "none" : "auto",
         }}
       >
-        {(screen === "morning" || screen === "evening" || screen === "home") && (
+        {isSessionScreen(screen) && activeSessionIds.includes(screen) && (
           <>
             <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} />
-            {screen === "morning" && (
+            {activeSessionIds.map((sid) => screen === sid && (
               <TaskScreen
-                session="morning"
+                key={sid}
+                session={sid}
                 interactionLocked={isWorkTimerLocked}
-                label="朝のやること"
-                timeLabel={`${dayLabel} 朝`}
-                tasks={morningTasks}
-                done={morningDone}
-                skipped={morningSkipped}
+                label={SESSION_META[sid].label}
+                timeLabel={`${dayLabel} ${SESSION_META[sid].timeSuffix}`}
+                tasks={sessionState[sid].tasks}
+                done={sessionState[sid].done}
+                skipped={sessionState[sid].skipped}
                 justChecked={justChecked}
                 floatColor={floatColor}
                 bestTimes={bestTimes}
@@ -1359,77 +1804,41 @@ export default function KeigoTaskApp() {
                 workTimerElapsed={workTimerElapsed}
                 workTimerRunning={workTimerRunning}
                 newRecordTaskId={newRecordTaskId}
-                onReorder={setMorningTasks}
-                onAddTask={(title, emoji, scope, weekdays) => addTask("morning", title, emoji, scope, weekdays)}
-                onEditTask={(id, title, emoji, weekdays) => updateTask("morning", id, title, emoji, weekdays)}
-                onDeleteTask={(id) => deleteTask("morning", id)}
-                onSkipTask={(id) => skipTask("morning", id, morningTasks, morningDone, morningSkipped, setMorningDone, setMorningSkipped, "朝のやること")}
-                onSelectTask={(id) => selectWorkTask("morning", id, morningDone, morningSkipped, setMorningDone)}
+                onReorder={sessionState[sid].setTasks}
+                onAddTask={(title, emoji, scope, weekdays) => addTask(sid, title, emoji, scope, weekdays)}
+                onEditTask={(id, title, emoji, weekdays) => updateTask(sid, id, title, emoji, weekdays)}
+                onDeleteTask={(id) => deleteTask(sid, id)}
+                onSkipTask={(id) => skipTask(
+                  sid, id,
+                  sessionState[sid].tasks,
+                  sessionState[sid].done,
+                  sessionState[sid].skipped,
+                  sessionState[sid].setDone,
+                  sessionState[sid].setSkipped,
+                  SESSION_META[sid].label,
+                )}
+                onSelectTask={(id) => selectWorkTask(
+                  sid, id,
+                  sessionState[sid].done,
+                  sessionState[sid].skipped,
+                  sessionState[sid].setDone,
+                )}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
-                onCompleteTask={() => completeWorkTask("morning", morningTasks, morningDone, morningSkipped, setMorningDone, "朝のやること")}
-                onClearBestTime={(id) => clearBestTime("morning", id)}
+                onCompleteTask={() => completeWorkTask(
+                  sid,
+                  sessionState[sid].tasks,
+                  sessionState[sid].done,
+                  sessionState[sid].skipped,
+                  sessionState[sid].setDone,
+                  SESSION_META[sid].label,
+                )}
+                onClearBestTime={(id) => clearBestTime(sid, id)}
+                customTaskEmojis={customTaskEmojis}
+                onAddCustomTaskEmoji={addCustomTaskEmoji}
               />
-            )}
-            {screen === "home" && (
-              <TaskScreen
-                session="home"
-                interactionLocked={isWorkTimerLocked}
-                label="帰宅後のやること"
-                timeLabel={`${dayLabel} 帰宅後`}
-                tasks={homeTasks}
-                done={homeDone}
-                skipped={homeSkipped}
-                justChecked={justChecked}
-                floatColor={floatColor}
-                bestTimes={bestTimes}
-                activeWorkTask={activeWorkTask}
-                workTimerElapsed={workTimerElapsed}
-                workTimerRunning={workTimerRunning}
-                newRecordTaskId={newRecordTaskId}
-                onReorder={setHomeTasks}
-                onAddTask={(title, emoji, scope, weekdays) => addTask("home", title, emoji, scope, weekdays)}
-                onEditTask={(id, title, emoji, weekdays) => updateTask("home", id, title, emoji, weekdays)}
-                onDeleteTask={(id) => deleteTask("home", id)}
-                onSkipTask={(id) => skipTask("home", id, homeTasks, homeDone, homeSkipped, setHomeDone, setHomeSkipped, "帰宅後のやること")}
-                onSelectTask={(id) => selectWorkTask("home", id, homeDone, homeSkipped, setHomeDone)}
-                onStartTimer={startWorkTimer}
-                onPauseTimer={pauseWorkTimer}
-                onCancelTask={cancelWorkTask}
-                onCompleteTask={() => completeWorkTask("home", homeTasks, homeDone, homeSkipped, setHomeDone, "帰宅後のやること")}
-                onClearBestTime={(id) => clearBestTime("home", id)}
-              />
-            )}
-            {screen === "evening" && (
-              <TaskScreen
-                session="evening"
-                interactionLocked={isWorkTimerLocked}
-                label="夜のやること"
-                timeLabel={`${dayLabel} 夜`}
-                tasks={eveningTasks}
-                done={eveningDone}
-                skipped={eveningSkipped}
-                justChecked={justChecked}
-                floatColor={floatColor}
-                bestTimes={bestTimes}
-                activeWorkTask={activeWorkTask}
-                workTimerElapsed={workTimerElapsed}
-                workTimerRunning={workTimerRunning}
-                newRecordTaskId={newRecordTaskId}
-                onReorder={setEveningTasks}
-                onAddTask={(title, emoji, scope, weekdays) => addTask("evening", title, emoji, scope, weekdays)}
-                onEditTask={(id, title, emoji, weekdays) => updateTask("evening", id, title, emoji, weekdays)}
-                onDeleteTask={(id) => deleteTask("evening", id)}
-                onSkipTask={(id) => skipTask("evening", id, eveningTasks, eveningDone, eveningSkipped, setEveningDone, setEveningSkipped, "夜のやること")}
-                onSelectTask={(id) => selectWorkTask("evening", id, eveningDone, eveningSkipped, setEveningDone)}
-                onStartTimer={startWorkTimer}
-                onPauseTimer={pauseWorkTimer}
-                onCancelTask={cancelWorkTask}
-                onCompleteTask={() => completeWorkTask("evening", eveningTasks, eveningDone, eveningSkipped, setEveningDone, "夜のやること")}
-                onClearBestTime={(id) => clearBestTime("evening", id)}
-              />
-            )}
+            ))}
           </>
         )}
 
@@ -1481,12 +1890,15 @@ export default function KeigoTaskApp() {
           <TaskListScreen
             session={taskListSession}
             morningTasks={morningTasks}
+            daytimeTasks={daytimeTasks}
             homeTasks={homeTasks}
             eveningTasks={eveningTasks}
             onSwitchSession={setTaskListSession}
             onBack={goHome}
             onAddTask={(title, emoji, scope, weekdays) => addTask(taskListSession, title, emoji, scope, weekdays)}
             onEditTask={(sess, id, title, emoji, weekdays) => updateTask(sess, id, title, emoji, weekdays)}
+            customTaskEmojis={customTaskEmojis}
+            onAddCustomTaskEmoji={addCustomTaskEmoji}
           />
         )}
 
@@ -1848,19 +2260,15 @@ function BackLink({ onBack }: { onBack: () => void }) {
 }
 
 function SessionTabs({ session, onSwitch }: { session: SessionId; onSwitch: (s: SessionId) => void }) {
-  const tabs: { id: SessionId; label: string }[] = [
-    { id: "morning", label: "☀️ 朝" },
-    { id: "home",    label: "🏠 帰宅後" },
-    { id: "evening", label: "🌙 夜" },
-  ];
+  const tabs = getVisibleSessionTabs();
   return (
-    <div style={{ display: "flex", gap: 6, padding: "2px 0 4px" }}>
+    <div style={{ display: "flex", gap: 4, padding: "2px 0 4px" }}>
       {tabs.map((t) => {
         const active = session === t.id;
         return (
           <button key={t.id} type="button" onClick={() => onSwitch(t.id)} style={{
             flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer",
-            fontWeight: active ? 800 : 600, fontSize: 12,
+            fontWeight: active ? 800 : 600, fontSize: 11,
             color: active ? "#fff" : theme.text.secondary,
             background: active ? theme.accent.primary : `${theme.accent.primary}18`,
             transition: "all 0.2s",
@@ -1918,24 +2326,34 @@ function WeekdayFilterBar({
 }
 
 function TaskListScreen({
-  session, morningTasks, homeTasks, eveningTasks,
+  session, morningTasks, daytimeTasks, homeTasks, eveningTasks,
   onSwitchSession, onBack, onAddTask, onEditTask,
+  customTaskEmojis, onAddCustomTaskEmoji,
 }: {
   session: SessionId;
   morningTasks: Task[];
+  daytimeTasks: Task[];
   homeTasks: Task[];
   eveningTasks: Task[];
   onSwitchSession: (s: SessionId) => void;
   onBack: () => void;
   onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[]) => void;
   onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[]) => void;
+  customTaskEmojis: string[];
+  onAddCustomTaskEmoji: (emoji: string) => void;
 }) {
   const [filterDow, setFilterDow] = useState<number | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("regular");
 
-  const allTasks = session === "morning" ? morningTasks : session === "home" ? homeTasks : eveningTasks;
+  const tasksBySession: Record<SessionId, Task[]> = {
+    morning: morningTasks,
+    daytime: daytimeTasks,
+    home: homeTasks,
+    evening: eveningTasks,
+  };
+  const allTasks = tasksBySession[session];
   const filteredTasks = allTasks.filter((t) => taskMatchesWeekdayFilter(t, filterDow));
   const editingTask = editingTaskId !== null ? allTasks.find((t) => t.id === editingTaskId) : null;
   const todayVisibleCount = visibleTasks(allTasks).length;
@@ -2054,6 +2472,8 @@ function TaskListScreen({
             initialEmoji="📝"
             saveLabel="追加する"
             showWeekdays={addMode === "regular"}
+            customTaskEmojis={customTaskEmojis}
+            onAddCustomTaskEmoji={onAddCustomTaskEmoji}
             onSave={handleAdd}
             onCancel={() => setIsAdding(false)}
           />
@@ -2099,6 +2519,8 @@ function TaskListScreen({
               showWeekdays={(editingTask.scope ?? "regular") !== "today"}
               saveLabel="保存する"
               autoFocus={false}
+              customTaskEmojis={customTaskEmojis}
+              onAddCustomTaskEmoji={onAddCustomTaskEmoji}
               onSave={(title, emoji, weekdays) => {
                 onEditTask(session, editingTask.id, title, emoji, weekdays);
                 setEditingTaskId(null);
@@ -2117,13 +2539,9 @@ function InAppTabs({
 }: {
   screen: ScreenId; onSwitch: (s: ScreenId) => void; disabled?: boolean;
 }) {
-  const tabs: { id: ScreenId; label: string }[] = [
-    { id: "morning", label: "☀️ 朝" },
-    { id: "home",    label: "🏠 帰宅後" },
-    { id: "evening", label: "🌙 夜" },
-  ];
+  const tabs = getVisibleSessionTabs();
   return (
-    <div style={{ display: "flex", gap: 6, padding: "2px 0 4px", opacity: disabled ? 0.45 : 1 }}>
+    <div style={{ display: "flex", gap: 4, padding: "2px 0 4px", opacity: disabled ? 0.45 : 1 }}>
       {tabs.map((t) => {
         const active = screen === t.id;
         return (
@@ -2135,7 +2553,7 @@ function InAppTabs({
             style={{
               flex: 1, padding: "8px 0", borderRadius: 10, border: "none",
               cursor: disabled ? "default" : "pointer",
-              fontWeight: active ? 800 : 600, fontSize: 12,
+              fontWeight: active ? 800 : 600, fontSize: 11,
               color: active ? "#fff" : theme.text.secondary,
               background: active ? theme.accent.primary : `${theme.accent.primary}18`,
               transition: "all 0.2s",
@@ -2211,6 +2629,7 @@ function WeekdayPicker({
 function TaskEditForm({
   header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, autoFocus = true,
   showWeekdays = false, initialWeekdays,
+  customTaskEmojis, onAddCustomTaskEmoji,
 }: {
   header?: string;
   initialTitle: string;
@@ -2221,18 +2640,40 @@ function TaskEditForm({
   autoFocus?: boolean;
   showWeekdays?: boolean;
   initialWeekdays?: number[];
+  customTaskEmojis: string[];
+  onAddCustomTaskEmoji: (emoji: string) => void;
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [emoji, setEmoji] = useState(initialEmoji);
   const [weekdays, setWeekdays] = useState<number[]>(initialWeekdays ?? ALL_WEEKDAYS);
   const [weekdayError, setWeekdayError] = useState(false);
+  const [customEmojiInput, setCustomEmojiInput] = useState("");
+  const [customEmojiError, setCustomEmojiError] = useState(false);
+
+  const savedCustomEmojis = customTaskEmojis.filter((e) => !QUICK_EMOJIS.includes(e));
+  const showSavedCustom = savedCustomEmojis.length > 0 || (emoji && !QUICK_EMOJIS.includes(emoji) && !savedCustomEmojis.includes(emoji));
+  const extraSelectedEmoji = emoji && !QUICK_EMOJIS.includes(emoji) && !savedCustomEmojis.includes(emoji) ? emoji : null;
 
   useEffect(() => {
     setTitle(initialTitle);
     setEmoji(initialEmoji);
     setWeekdays(initialWeekdays ?? ALL_WEEKDAYS);
     setWeekdayError(false);
+    setCustomEmojiInput("");
+    setCustomEmojiError(false);
   }, [initialTitle, initialEmoji, initialWeekdays]);
+
+  const handleAddCustomEmoji = () => {
+    const picked = extractFirstEmoji(customEmojiInput);
+    if (!picked) {
+      setCustomEmojiError(true);
+      return;
+    }
+    setCustomEmojiError(false);
+    setEmoji(picked);
+    onAddCustomTaskEmoji(picked);
+    setCustomEmojiInput("");
+  };
 
   const handleSave = () => {
     if (!title.trim()) return;
@@ -2241,8 +2682,16 @@ function TaskEditForm({
       return;
     }
     setWeekdayError(false);
+    onAddCustomTaskEmoji(emoji);
     onSave(title, emoji, showWeekdays ? weekdays : undefined);
   };
+
+  const emojiBtnStyle = (selected: boolean): CSSProperties => ({
+    width: 36, height: 36, borderRadius: 8,
+    border: selected ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
+    backgroundColor: selected ? `${theme.accent.primary}18` : theme.fill.secondary,
+    fontSize: 20, cursor: "pointer", padding: 0,
+  });
 
   return (
     <div style={{
@@ -2254,16 +2703,53 @@ function TaskEditForm({
       {header && (
         <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>{header}</div>
       )}
+      <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>おすすめ</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {QUICK_EMOJIS.map((e) => (
-          <button key={e} type="button" onClick={() => setEmoji(e)} style={{
-            width: 36, height: 36, borderRadius: 8,
-            border: emoji === e ? `2px solid ${theme.accent.primary}` : `1px solid ${theme.stroke.secondary}`,
-            backgroundColor: emoji === e ? `${theme.accent.primary}18` : theme.fill.secondary,
-            fontSize: 20, cursor: "pointer", padding: 0,
-          }}>{e}</button>
+          <button key={e} type="button" onClick={() => setEmoji(e)} style={emojiBtnStyle(emoji === e)}>{e}</button>
         ))}
       </div>
+      {showSavedCustom && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>マイ絵文字</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {extraSelectedEmoji && (
+              <button type="button" onClick={() => setEmoji(extraSelectedEmoji)} style={emojiBtnStyle(emoji === extraSelectedEmoji)}>
+                {extraSelectedEmoji}
+              </button>
+            )}
+            {savedCustomEmojis.map((e) => (
+              <button key={e} type="button" onClick={() => setEmoji(e)} style={emojiBtnStyle(emoji === e)}>{e}</button>
+            ))}
+          </div>
+        </>
+      )}
+      <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>自分で追加</div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          value={customEmojiInput}
+          onChange={(e) => { setCustomEmojiInput(e.target.value); setCustomEmojiError(false); }}
+          onKeyDown={(e) => e.key === "Enter" && handleAddCustomEmoji()}
+          placeholder="絵文字を入力..."
+          style={{
+            flex: 1, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${theme.stroke.secondary}`,
+            fontSize: 18, outline: "none", backgroundColor: theme.bg.editor, color: theme.text.primary,
+            fontFamily: "inherit",
+          }}
+        />
+        <button type="button" onClick={handleAddCustomEmoji} style={{
+          padding: "8px 12px", borderRadius: 8, border: "none",
+          backgroundColor: theme.fill.secondary, color: theme.text.secondary,
+          fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+        }}>
+          追加
+        </button>
+      </div>
+      {customEmojiError && (
+        <div style={{ fontSize: 11, color: theme.category.pink, fontWeight: 700 }}>
+          絵文字を1つ入力してね
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 22 }}>{emoji}</span>
         <input
@@ -2380,13 +2866,15 @@ interface TaskScreenProps {
   onCancelTask: () => void;
   onCompleteTask: () => void;
   onClearBestTime: (id: number) => void;
+  customTaskEmojis: string[];
+  onAddCustomTaskEmoji: (emoji: string) => void;
 }
 
 function TaskScreen({
   session, interactionLocked = false, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
-  onClearBestTime,
+  onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
@@ -2507,6 +2995,8 @@ function TaskScreen({
           initialEmoji="📝"
           saveLabel="追加する"
           showWeekdays={addMode === "regular"}
+          customTaskEmojis={customTaskEmojis}
+          onAddCustomTaskEmoji={onAddCustomTaskEmoji}
           onSave={handleAdd}
           onCancel={() => setIsAdding(false)}
         />
@@ -2562,6 +3052,8 @@ function TaskScreen({
               showWeekdays={(editingTask.scope ?? "regular") !== "today"}
               saveLabel="保存する"
               autoFocus={false}
+              customTaskEmojis={customTaskEmojis}
+              onAddCustomTaskEmoji={onAddCustomTaskEmoji}
               onSave={(title, emoji, weekdays) => {
                 onEditTask(editingTask.id, title, emoji, weekdays);
                 setEditingTaskId(null);

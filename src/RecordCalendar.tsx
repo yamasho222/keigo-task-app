@@ -4,11 +4,17 @@ import {
   REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, getAlbumCategoryGroups,
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
+import { RarityBadge } from "./Rewards";
+import {
+  completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
+  requiredSessionCount,
+} from "./japaneseCalendar";
 
-export interface DayHistory { morning: boolean; evening: boolean; home?: boolean; }
+export interface DayHistory { morning: boolean; daytime: boolean; home: boolean; evening: boolean; }
 
 interface SessionFlags {
   morning: boolean;
+  daytime: boolean;
   home: boolean;
   evening: boolean;
 }
@@ -16,14 +22,14 @@ interface SessionFlags {
 function getSessionFlags(day?: DayHistory): SessionFlags {
   return {
     morning: !!day?.morning,
+    daytime: !!day?.daytime,
     home: !!day?.home,
     evening: !!day?.evening,
   };
 }
 
-export function isFullDay(day?: DayHistory): boolean {
-  const f = getSessionFlags(day);
-  return f.morning && f.home && f.evening;
+export function isFullDay(day?: DayHistory, date: Date = new Date()): boolean {
+  return isFullDayForDate(day, date);
 }
 
 function localDateKey(d: Date): string {
@@ -39,14 +45,10 @@ export function getFullDayStreak(history: Record<string, DayHistory>): number {
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    if (isFullDay(history[localDateKey(d)])) streak++;
+    if (isFullDay(history[localDateKey(d)], d)) streak++;
     else break;
   }
   return streak;
-}
-
-function completedCount(flags: SessionFlags): number {
-  return [flags.morning, flags.home, flags.evening].filter(Boolean).length;
 }
 
 export function getStreak(history: Record<string, DayHistory>): number {
@@ -56,7 +58,7 @@ export function getStreak(history: Record<string, DayHistory>): number {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const day = history[localDateKey(d)];
-    if (day && (day.morning || day.evening || day.home)) streak++;
+    if (day && (day.morning || day.daytime || day.evening || day.home)) streak++;
     else break;
   }
   return streak;
@@ -68,8 +70,10 @@ function dateKey(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function cellStyle(flags: SessionFlags, isToday: boolean): CSSProperties {
-  const count = completedCount(flags);
+function cellStyle(flags: SessionFlags, isToday: boolean, date: Date): CSSProperties {
+  const count = completedSessionCount(flags, date);
+  const required = requiredSessionCount(date);
+  const withDaytime = isDaytimeSessionDay(date);
   const base: CSSProperties = {
     aspectRatio: "1",
     borderRadius: 8,
@@ -80,24 +84,34 @@ function cellStyle(flags: SessionFlags, isToday: boolean): CSSProperties {
   if (count === 0) {
     return { ...base, backgroundColor: theme.fill.secondary, color: theme.text.tertiary };
   }
-  if (count === 3) {
+  if (count === required) {
     return { ...base, backgroundColor: theme.category.green, color: "#fff" };
   }
   const m = flags.morning ? theme.category.yellow : theme.fill.secondary;
   const h = flags.home ? theme.category.orange : theme.fill.secondary;
   const e = flags.evening ? `${theme.category.purple}88` : theme.fill.secondary;
+  if (!withDaytime) {
+    return {
+      ...base,
+      background: `linear-gradient(180deg, ${m} 0%, ${m} 33%, ${h} 33%, ${h} 66%, ${e} 66%, ${e} 100%)`,
+      color: theme.text.primary,
+    };
+  }
+  const d = flags.daytime ? theme.category.blue : theme.fill.secondary;
   return {
     ...base,
-    background: `linear-gradient(180deg, ${m} 0%, ${m} 33%, ${h} 33%, ${h} 66%, ${e} 66%, ${e} 100%)`,
+    background: `linear-gradient(180deg, ${m} 0%, ${m} 25%, ${d} 25%, ${d} 50%, ${h} 50%, ${h} 75%, ${e} 75%, ${e} 100%)`,
     color: theme.text.primary,
   };
 }
 
-function cellIcon(flags: SessionFlags, day: number) {
-  const count = completedCount(flags);
-  if (count === 3) return "⭐";
-  if (count === 2) return "✨";
+function cellIcon(flags: SessionFlags, day: number, date: Date) {
+  const count = completedSessionCount(flags, date);
+  const required = requiredSessionCount(date);
+  if (count === required) return "⭐";
+  if (count >= Math.max(2, required - 1)) return "✨";
   if (flags.morning) return "🌅";
+  if (flags.daytime) return "🌤";
   if (flags.home) return "🏠";
   if (flags.evening) return "🌙";
   return <span style={{ fontSize: 11 }}>{day}</span>;
@@ -120,6 +134,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
   const lastDate = new Date(year, month + 1, 0).getDate();
   const startOffset = (firstDay.getDay() + 6) % 7;
   const todayStr = todayKey();
+  const todayRequired = requiredSessionCount(now);
 
   const prevMonth = () => {
     if (month === 0) { setYear((y) => y - 1); setMonth(11); }
@@ -138,7 +153,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
 
   const monthFull = Array.from({ length: lastDate }, (_, i) => {
     const key = dateKey(year, month, i + 1);
-    return isFullDay(history[key]);
+    return isFullDay(history[key], parseDateKey(key));
   }).filter(Boolean).length;
 
   const fullDayStreak = getFullDayStreak(history);
@@ -171,7 +186,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
         </div>
         {fullDayStreak >= 1 && (
           <div style={{ fontSize: 12, color: theme.category.green, marginTop: 6, fontWeight: 700 }}>
-            3つ全部クリア {fullDayStreak}日連続 {fullDayStreak >= 7 ? "🎉" : ""}
+            全部クリア {fullDayStreak}日連続 {fullDayStreak >= 7 ? "🎉" : ""}
           </div>
         )}
       </div>
@@ -193,25 +208,27 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
         {cells.map((day, i) => {
           if (!day) return <div key={`e-${i}`} />;
           const key = dateKey(year, month, day);
+          const cellDate = parseDateKey(key);
           const flags = getSessionFlags(history[key]);
           const isToday = key === todayStr;
           return (
-            <div key={key} style={cellStyle(flags, isToday)}>
-              {cellIcon(flags, day)}
+            <div key={key} style={cellStyle(flags, isToday, cellDate)}>
+              {cellIcon(flags, day, cellDate)}
             </div>
           );
         })}
       </div>
 
       <div style={{ fontSize: 12, color: theme.text.secondary, textAlign: "center" }}>
-        この月 3つともできた日: <strong>{monthFull}</strong>日
+        この月 全部クリアした日: <strong>{monthFull}</strong>日
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", fontSize: 11, color: theme.text.tertiary }}>
         <span>🌅 朝</span>
+        <span>🌤 昼（土日・祝日）</span>
         <span>🏠 帰宅後</span>
         <span>🌙 夜</span>
-        <span>⭐ 3つとも</span>
+        <span>⭐ きょうは{todayRequired}つ全部</span>
       </div>
 
       <div style={{
@@ -332,15 +349,9 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
             <div style={{ fontSize: 20, fontWeight: 900, color: theme.text.primary, marginBottom: 6 }}>
               {previewItem.label}
             </div>
-            {previewItem.rarity === "low" && (
-              <div style={{
-                display: "inline-block", fontSize: 11, fontWeight: 800, color: theme.category.green,
-                backgroundColor: `${theme.category.green}18`, padding: "3px 10px", borderRadius: 8,
-                marginBottom: 12,
-              }}>
-                ノーマル
-              </div>
-            )}
+            <div style={{ marginBottom: 12 }}>
+              <RarityBadge rarity={previewItem.rarity} />
+            </div>
             <button
               type="button"
               onClick={() => setPreviewId(null)}
