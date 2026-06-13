@@ -261,6 +261,10 @@ export function pickFullDayBonusReward(collectedIds: string[]): StickerReward {
   return pickFromStickerTiers(collectedIds, STICKER_TIER_WEIGHTS);
 }
 
+export function pickSpecialMissionReward(collectedIds: string[]): StickerReward {
+  return pickFromStickerTiers(collectedIds, STICKER_TIER_WEIGHTS);
+}
+
 export function pickWeeklyReward(collectedIds: string[]): StickerReward {
   const tier = rollWeightedTier(WEEKLY_HIGH_TIER_WEIGHTS);
   return pickFromStickerTier(collectedIds, tier);
@@ -276,10 +280,11 @@ export function pickDecoyNormalReward(): EmojiReward {
   return pickRandom(DAILY_EMOJI_REWARDS);
 }
 
-export function pickTreatReward(collectedIds: string[], mode: "daily" | "weekly" | "fullDayBonus"): RewardItem {
+export function pickTreatReward(collectedIds: string[], mode: TreatMode): RewardItem {
   if (mode === "fullDayBonus") return pickFullDayBonusReward(collectedIds);
   if (mode === "weekly") return pickWeeklyReward(collectedIds);
+  if (mode === "specialMission") return pickSpecialMissionReward(collectedIds);
   return pickDailyReward(collectedIds);
 }
 
-export type TreatMode = "daily" | "weekly" | "fullDayBonus";
+export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "specialMission";

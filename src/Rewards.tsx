@@ -397,14 +397,60 @@ export function NewRecordOverlay({
   );
 }
 
-function TreasureChest({ opened, size = 80, chestClass = "chest-open" }: {
-  opened: boolean; size?: number; chestClass?: string;
+function TreasureChest({ opened, size = 80, chestClass = "chest-open", variant = "default" }: {
+  opened: boolean; size?: number; chestClass?: string; variant?: "default" | "premium" | "mission";
 }) {
-  return (
-    <div className={opened ? chestClass : "chest-shake"} style={{ fontSize: size, lineHeight: 1 }}>
+  const isPremium = variant === "premium";
+  const isMission = variant === "mission";
+  const isFancy = isPremium || isMission;
+  const closedClass = isFancy ? "chest-shake-premium" : "chest-shake";
+
+  const chest = (
+    <div
+      className={opened ? chestClass : closedClass}
+      style={{
+        fontSize: size,
+        lineHeight: 1,
+        filter: isPremium && !opened
+          ? `drop-shadow(0 0 10px ${theme.category.yellow}) drop-shadow(0 0 22px ${theme.category.orange}99)`
+          : isMission && !opened
+            ? `drop-shadow(0 0 10px ${theme.category.purple}) drop-shadow(0 0 22px ${theme.category.pink}99)`
+            : undefined,
+      }}
+    >
       {opened ? "🎊" : "🎁"}
     </div>
   );
+
+  if (isFancy && !opened) {
+    return (
+      <div className={isMission ? "chest-glow-pulse-mission" : "chest-glow-pulse"} style={{ position: "relative", display: "inline-block" }}>
+        <div style={{
+          position: "absolute", inset: -12, pointerEvents: "none",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {[0, 1, 2, 3].map((i) => (
+            <span
+              key={i}
+              className="chest-sparkle-orbit"
+              style={{
+                position: "absolute",
+                fontSize: 17,
+                "--orbit-r": "54px",
+                "--orbit-dur": `${2.2 + i * 0.35}s`,
+                animationDelay: `${i * 0.55}s`,
+              } as CSSProperties}
+            >
+              ✨
+            </span>
+          ))}
+        </div>
+        {chest}
+      </div>
+    );
+  }
+
+  return chest;
 }
 
 function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
@@ -444,6 +490,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 
 function TreatOverlay({
   mode, collectedIds, onClose, onCollect, devForceTier, devForceTease, devForceTeaseId,
+  missionTitle,
 }: {
   mode: TreatMode;
   collectedIds: string[];
@@ -452,6 +499,7 @@ function TreatOverlay({
   devForceTier?: StickerRarity;
   devForceTease?: boolean;
   devForceTeaseId?: TeaseVariantId;
+  missionTitle?: string;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
   type UpgradeStep = "fakeNormal" | "cutin";
@@ -465,6 +513,7 @@ function TreatOverlay({
   const upgradeTimerRef = useRef<number | null>(null);
   const isWeekly = mode === "weekly";
   const isFullDayBonus = mode === "fullDayBonus";
+  const isSpecialMission = mode === "specialMission";
 
   const clearTimers = () => {
     if (teaseTimerRef.current !== null) {
@@ -528,7 +577,7 @@ function TreatOverlay({
       return;
     }
 
-    if (shouldPlayUpgradeReveal(picked.rarity)) {
+    if (!isSpecialMission && shouldPlayUpgradeReveal(picked.rarity)) {
       startUpgradeReveal(picked);
       return;
     }
@@ -545,19 +594,25 @@ function TreatOverlay({
     ? "🎊 1週間クリア！ 🎊"
     : isFullDayBonus
       ? "🌟 1日全部クリア！ 🌟"
-      : "⭐ きょうのごほうび ⭐";
+      : isSpecialMission
+        ? "⭐ 特別ミッション クリア！ ⭐"
+        : "⭐ きょうのごほうび ⭐";
 
   const subtitle = isWeekly
     ? "7日連続ですべてクリア！スーパーレア以上！"
     : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
-      : "この時間のやること、全部クリア！";
+      : isSpecialMission
+        ? missionTitle ? `${missionTitle} — クリア！` : "ミッション達成！レア以上のシール！"
+        : "この時間のやること、全部クリア！";
 
   const titleColor = isWeekly
     ? theme.category.purple
     : isFullDayBonus
       ? theme.category.orange
-      : theme.category.green;
+      : isSpecialMission
+        ? theme.category.purple
+        : theme.category.green;
 
   return (
     <div
@@ -590,7 +645,7 @@ function TreatOverlay({
         textAlign: "center",
       }}>
         <div style={{
-          fontSize: isWeekly ? 22 : isFullDayBonus ? 20 : 18, fontWeight: 900,
+          fontSize: isWeekly ? 22 : isFullDayBonus || isSpecialMission ? 20 : 18, fontWeight: 900,
           color: isImmersive ? "#fff" : titleColor,
           marginBottom: 8,
           textShadow: isImmersive ? "0 2px 12px rgba(0,0,0,0.65)" : undefined,
@@ -615,9 +670,24 @@ function TreatOverlay({
             <button type="button" onClick={handleOpen} style={{
               background: "none", border: "none", cursor: "pointer", padding: 0,
             }}>
-              <TreasureChest opened={false} size={80} />
-              <div style={{ fontSize: 14, fontWeight: 700, color: theme.accent.primary, marginTop: 8 }}>
-                タップして開ける！
+              <TreasureChest
+                opened={false}
+                size={isFullDayBonus ? 96 : isSpecialMission ? 88 : 80}
+                variant={isFullDayBonus ? "premium" : isSpecialMission ? "mission" : "default"}
+              />
+              <div style={{
+                fontSize: 14, fontWeight: 700, marginTop: 8,
+                color: isFullDayBonus
+                  ? theme.category.orange
+                  : isSpecialMission
+                    ? theme.category.purple
+                    : theme.accent.primary,
+              }}>
+                {isFullDayBonus
+                  ? "特別な宝箱を開ける！"
+                  : isSpecialMission
+                    ? "ミッション宝箱を開ける！"
+                    : "タップして開ける！"}
               </div>
             </button>
           )}

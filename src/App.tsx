@@ -27,11 +27,17 @@ import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum } from "./sticke
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate,
 } from "./japaneseCalendar";
+import {
+  type DailyMission, type FavoriteMission, type MissionStatus, getMissionStatus,
+  MissionCard, MissionConfirmDialog, MissionBriefingOverlay,
+  MissionSetupSheet, ShowParentMissionScreen,
+  isMissionBriefingSeen, markMissionBriefingSeen,
+} from "./missions";
 
 // ── Types & Data ──────────────────────────────────────
 
 type SessionId = "morning" | "daytime" | "home" | "evening";
-type ScreenId  = SessionId | "show_parent" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
+type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type TaskScope = "regular" | "today";
 type SwipeMode = "delete" | "skip";
@@ -216,6 +222,12 @@ interface StoredState {
   lastWeeklyRewardStreak?: number;
   stickerAlbum?: string[];
   customTaskEmojis?: string[];
+  todayMission?: DailyMission | null;
+  favoriteMissions?: FavoriteMission[];
+  specialMissionApproved?: Record<string, boolean>;
+  missionChildClaimed?: boolean;
+  missionHistory?: Record<string, { title: string; emoji: string }>;
+  missionEveningNudgeDate?: string;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -235,17 +247,23 @@ interface PendingTreat {
   devForceTier?: import("./stickerRewards").StickerRarity;
   devForceTease?: boolean;
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
+  missionTitle?: string;
 }
 
 function buildTreatQueue(
   opts: {
     needsDaily: boolean;
+    specialMissionEligible: boolean;
     fullDayBonusEligible: boolean;
     weeklyMilestone: boolean;
+    missionTitle?: string;
   },
 ): PendingTreat[] {
   const queue: PendingTreat[] = [];
   if (opts.needsDaily) queue.push({ mode: "daily" });
+  if (opts.specialMissionEligible) {
+    queue.push({ mode: "specialMission", missionTitle: opts.missionTitle });
+  }
   if (opts.fullDayBonusEligible) queue.push({ mode: "fullDayBonus" });
   if (opts.weeklyMilestone) queue.push({ mode: "weekly" });
   return queue;
@@ -395,6 +413,9 @@ function loadStoredState(): StoredState {
         dailyTreatClaimed: hydrated.dailyTreatClaimed,
         fullDayBonusClaimed: hydrated.fullDayBonusClaimed,
         lastWeeklyRewardStreak: hydrated.lastWeeklyRewardStreak,
+        favoriteMissions: hydrated.favoriteMissions,
+        specialMissionApproved: hydrated.specialMissionApproved,
+        missionHistory: hydrated.missionHistory,
       };
     }
   } catch { /* ignore */ }
@@ -668,6 +689,31 @@ function AnimStyles() {
         50%      { transform: rotate(12deg) scale(1.15); }
         75%      { transform: rotate(-8deg) scale(1.12); }
       }
+      @keyframes chestShakePremium {
+        0%, 100% { transform: rotate(0deg) scale(1); }
+        15%      { transform: rotate(-10deg) scale(1.08); }
+        30%      { transform: rotate(10deg) scale(1.12); }
+        45%      { transform: rotate(-7deg) scale(1.1); }
+        60%      { transform: rotate(7deg) scale(1.11); }
+        75%      { transform: rotate(-4deg) scale(1.07); }
+        90%      { transform: rotate(4deg) scale(1.06); }
+      }
+      @keyframes chestGlowPulse {
+        0%, 100% { box-shadow: 0 0 18px 6px rgba(255,204,0,0.28), 0 0 36px 10px rgba(255,149,0,0.18); border-radius: 50%; }
+        50%      { box-shadow: 0 0 28px 12px rgba(255,204,0,0.5), 0 0 52px 16px rgba(255,149,0,0.32); border-radius: 50%; }
+      }
+      @keyframes chestGlowPulseMission {
+        0%, 100% { box-shadow: 0 0 18px 6px rgba(175,82,222,0.32), 0 0 36px 10px rgba(255,45,85,0.18); border-radius: 50%; }
+        50%      { box-shadow: 0 0 28px 12px rgba(175,82,222,0.52), 0 0 52px 16px rgba(255,45,85,0.28); border-radius: 50%; }
+      }
+      @keyframes missionEveningNudge {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(255,149,0,0.35); }
+      }
+      @keyframes chestSparkleTwinkle {
+        0%, 100% { opacity: 0.45; }
+        50%      { opacity: 1; }
+      }
       @keyframes srMagicSpin {
         from { transform: rotate(0deg) scale(0.75); opacity: 0; }
         25%  { opacity: 1; }
@@ -825,6 +871,14 @@ function AnimStyles() {
       .record-text-pop-delay { animation: recordTextPopDelay 0.5s cubic-bezier(0.34,1.4,0.64,1) 0.25s both; }
       .record-badge-pop   { animation: recordBadgePop 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .chest-shake   { animation: chestShake 0.8s ease-in-out infinite; }
+      .chest-shake-premium { animation: chestShakePremium 1.1s ease-in-out infinite; }
+      .chest-glow-pulse    { animation: chestGlowPulse 1.8s ease-in-out infinite; }
+      .chest-glow-pulse-mission { animation: chestGlowPulseMission 1.8s ease-in-out infinite; }
+      .mission-evening-nudge { animation: missionEveningNudge 1.6s ease-in-out infinite; border-radius: 16px; }
+      .chest-sparkle-orbit {
+        animation: orbitParticle var(--orbit-dur, 2.4s) linear infinite,
+                   chestSparkleTwinkle 1.4s ease-in-out infinite;
+      }
       .chest-open    { animation: chestOpen 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .chest-open-ur { animation: chestOpenUR 0.65s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .treat-reveal      { animation: treatReveal 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; }
@@ -925,6 +979,31 @@ export default function KeigoTaskApp() {
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
   const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
   const [customTaskEmojis, setCustomTaskEmojis] = useState<string[]>(stored.customTaskEmojis ?? []);
+  const [todayMission, setTodayMission] = useState<DailyMission | null>(() => {
+    const m = stored.todayMission;
+    if (m && m.dateKey === taskDayKey()) return m;
+    return null;
+  });
+  const [favoriteMissions, setFavoriteMissions] = useState<FavoriteMission[]>(stored.favoriteMissions ?? []);
+  const [specialMissionApproved, setSpecialMissionApproved] = useState<Record<string, boolean>>(
+    stored.specialMissionApproved ?? {},
+  );
+  const [missionChildClaimed, setMissionChildClaimed] = useState(() => {
+    const m = stored.todayMission;
+    if (!m || m.dateKey !== taskDayKey()) return false;
+    return stored.missionChildClaimed ?? false;
+  });
+  const [missionHistory, setMissionHistory] = useState<Record<string, { title: string; emoji: string }>>(
+    stored.missionHistory ?? {},
+  );
+  const [missionEveningNudgeDate, setMissionEveningNudgeDate] = useState<string | undefined>(
+    stored.missionEveningNudgeDate,
+  );
+  const [showMissionSetup, setShowMissionSetup] = useState(false);
+  const [showMissionConfirm, setShowMissionConfirm] = useState(false);
+  const [showMissionBriefing, setShowMissionBriefing] = useState(false);
+  const [missionParentApproved, setMissionParentApproved] = useState(false);
+  const [missionCompletedAt, setMissionCompletedAt] = useState("");
 
   const addCustomTaskEmoji = (emoji: string) => {
     setCustomTaskEmojis((prev) => rememberCustomTaskEmoji(prev, emoji));
@@ -1053,6 +1132,12 @@ export default function KeigoTaskApp() {
       lastWeeklyRewardStreak,
       stickerAlbum,
       customTaskEmojis,
+      todayMission,
+      favoriteMissions,
+      specialMissionApproved,
+      missionChildClaimed,
+      missionHistory,
+      missionEveningNudgeDate,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1063,7 +1148,8 @@ export default function KeigoTaskApp() {
     morningTasks, daytimeTasks, eveningTasks, homeTasks,
     history, bestTimes,
     dailyTreatClaimed, fullDayBonusClaimed, lastWeeklyRewardStreak, stickerAlbum,
-    customTaskEmojis,
+    customTaskEmojis, todayMission, favoriteMissions, specialMissionApproved,
+    missionChildClaimed, missionHistory, missionEveningNudgeDate,
   ]);
 
   useEffect(() => {
@@ -1163,6 +1249,12 @@ export default function KeigoTaskApp() {
       setJustChecked(null);
       setNewRecordCelebration(null);
       setStampVisible(false);
+      setTodayMission(null);
+      setMissionChildClaimed(false);
+      setMissionParentApproved(false);
+      setMissionEveningNudgeDate(undefined);
+      setShowMissionBriefing(false);
+      setShowMissionConfirm(false);
       if (screenRef.current === "daytime" && !isDaytimeSessionDay()) {
         setScreen(getSessionScreen());
       }
@@ -1430,6 +1522,110 @@ export default function KeigoTaskApp() {
     });
   };
 
+  const currentTaskDay = taskDayKey();
+  const currentTodayKey = todayKey();
+  const activeMissionStatus = getMissionStatus(
+    todayMission,
+    currentTaskDay,
+    missionChildClaimed,
+    specialMissionApproved,
+  );
+
+  const saveTodayMission = (
+    partial: Omit<DailyMission, "dateKey">,
+    addToFavorites: boolean,
+  ) => {
+    const mission: DailyMission = { ...partial, dateKey: currentTaskDay };
+    setTodayMission(mission);
+    setMissionChildClaimed(false);
+    setMissionParentApproved(false);
+    if (addToFavorites) {
+      const fav: FavoriteMission = {
+        id: `${Date.now()}-${partial.title}`,
+        title: partial.title,
+        emoji: partial.emoji,
+        createdAt: new Date().toISOString(),
+      };
+      setFavoriteMissions((prev) => {
+        const exists = prev.some((f) => f.title === fav.title && f.emoji === fav.emoji);
+        if (exists) return prev;
+        return [fav, ...prev].slice(0, 20);
+      });
+    }
+    setShowMissionSetup(false);
+  };
+
+  const clearTodayMission = () => {
+    setTodayMission(null);
+    setMissionChildClaimed(false);
+    setMissionParentApproved(false);
+    setShowMissionSetup(false);
+  };
+
+  const fireMissionCelebration = () => {
+    setAnticipating(false);
+    setStampVisible(false);
+    setMissionCompletedAt(fmtTime(new Date()));
+    setMissionParentApproved(false);
+    setCelebKey((k) => k + 1);
+    setCelebType("burst");
+    setTimeout(() => {
+      setCelebType(null);
+      const s = screenRef.current;
+      if (isSessionScreen(s)) setPrevScreen(s);
+      setScreen("show_parent_mission");
+    }, 3000);
+  };
+
+  const confirmMissionDone = () => {
+    setShowMissionConfirm(false);
+    setMissionChildClaimed(true);
+    fireMissionCelebration();
+  };
+
+  const handleMissionApprove = () => {
+    if (missionParentApproved || !todayMission) return;
+    const today = currentTodayKey;
+    setMissionParentApproved(true);
+    setSpecialMissionApproved((c) => ({ ...c, [today]: true }));
+    setMissionHistory((h) => ({
+      ...h,
+      [today]: { title: todayMission.title, emoji: todayMission.emoji },
+    }));
+    triggerStamp();
+    setTimeout(() => {
+      openTreatQueue([{
+        mode: "specialMission",
+        missionTitle: `${todayMission.emoji} ${todayMission.title}`,
+      }]);
+    }, 950);
+  };
+
+  const resetMissionApproval = () => {
+    setMissionParentApproved(false);
+    setMissionChildClaimed(false);
+    setStampVisible(false);
+  };
+
+  useEffect(() => {
+    if (!todayMission || activeMissionStatus !== "pending") return;
+    if (isMissionBriefingSeen(currentTaskDay)) return;
+    if (!isSessionScreen(screen)) return;
+    setShowMissionBriefing(true);
+  }, [todayMission, activeMissionStatus, currentTaskDay, screen]);
+
+  useEffect(() => {
+    if (screen !== "evening") return;
+    if (activeMissionStatus !== "pending") return;
+    if (missionEveningNudgeDate === currentTaskDay) return;
+    setMissionEveningNudgeDate(currentTaskDay);
+  }, [screen, activeMissionStatus, currentTaskDay, missionEveningNudgeDate]);
+
+  const showEveningMissionNudge =
+    screen === "evening"
+    && activeMissionStatus === "pending"
+    && missionEveningNudgeDate === currentTaskDay;
+
   const handleApprove = () => {
     if (approved) return;
     const today = todayKey();
@@ -1449,7 +1645,12 @@ export default function KeigoTaskApp() {
       && fullDayStreak % 7 === 0
       && fullDayStreak > lastWeeklyRewardStreak;
 
-    const treatQueueToOpen = buildTreatQueue({ needsDaily, fullDayBonusEligible, weeklyMilestone });
+    const treatQueueToOpen = buildTreatQueue({
+      needsDaily,
+      specialMissionEligible: false,
+      fullDayBonusEligible,
+      weeklyMilestone,
+    });
 
     setTimeout(() => {
       if (treatQueueToOpen.length > 0) {
@@ -1630,9 +1831,39 @@ export default function KeigoTaskApp() {
           devForceTier={pendingTreat.devForceTier}
           devForceTease={pendingTreat.devForceTease}
           devForceTeaseId={pendingTreat.devForceTeaseId}
+          missionTitle={pendingTreat.missionTitle}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
           onCollect={collectSticker}
+        />
+      )}
+
+      {showMissionConfirm && todayMission && (
+        <MissionConfirmDialog
+          mission={todayMission}
+          onConfirm={confirmMissionDone}
+          onCancel={() => setShowMissionConfirm(false)}
+        />
+      )}
+
+      {showMissionBriefing && todayMission && (
+        <MissionBriefingOverlay
+          mission={todayMission}
+          onDismiss={() => {
+            markMissionBriefingSeen(currentTaskDay);
+            setShowMissionBriefing(false);
+          }}
+        />
+      )}
+
+      {showMissionSetup && (
+        <MissionSetupSheet
+          favorites={favoriteMissions}
+          currentMission={todayMission}
+          customTaskEmojis={customTaskEmojis}
+          onSave={saveTodayMission}
+          onClear={clearTodayMission}
+          onClose={() => setShowMissionSetup(false)}
         />
       )}
       {stampVisible && screen === "show_parent" && (
@@ -1725,6 +1956,10 @@ export default function KeigoTaskApp() {
                 { icon: "🎁", label: "通常ごほうびテスト", action: () => { openTreatQueue([{ mode: "daily" }]); setShowMenu(false); } },
                 { icon: "🌟", label: "1日ボーナステスト", action: () => {
                   openTreatQueue([{ mode: "fullDayBonus" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "⭐", label: "ミッションごほうびテスト", action: () => {
+                  openTreatQueue([{ mode: "specialMission", missionTitle: "📚 テストミッション" }]);
                   setShowMenu(false);
                 } },
                 { icon: "🎊", label: "週間ごほうびテスト", action: () => { openTreatQueue([{ mode: "weekly" }]); setShowMenu(false); } },
@@ -1901,9 +2136,25 @@ export default function KeigoTaskApp() {
                 onClearBestTime={(id) => clearBestTime(sid, id)}
                 customTaskEmojis={customTaskEmojis}
                 onAddCustomTaskEmoji={addCustomTaskEmoji}
+                todayMission={todayMission}
+                missionStatus={activeMissionStatus}
+                showEveningMissionNudge={showEveningMissionNudge}
+                onMissionDone={() => setShowMissionConfirm(true)}
+                onMissionSetup={() => setShowMissionSetup(true)}
               />
             ))}
           </>
+        )}
+
+        {screen === "show_parent_mission" && todayMission && (
+          <ShowParentMissionScreen
+            mission={todayMission}
+            completedAt={missionCompletedAt}
+            approved={missionParentApproved}
+            onApprove={handleMissionApprove}
+            onReset={resetMissionApproval}
+            onHome={goHome}
+          />
         )}
 
         {screen === "show_parent" && (
@@ -1961,8 +2212,12 @@ export default function KeigoTaskApp() {
             onBack={goHome}
             onAddTask={(title, emoji, scope, weekdays) => addTask(taskListSession, title, emoji, scope, weekdays)}
             onEditTask={(sess, id, title, emoji, weekdays) => updateTask(sess, id, title, emoji, weekdays)}
+            onDeleteTask={(sess, id) => deleteTask(sess, id)}
             customTaskEmojis={customTaskEmojis}
             onAddCustomTaskEmoji={addCustomTaskEmoji}
+            todayMission={todayMission}
+            onOpenMissionSetup={() => setShowMissionSetup(true)}
+            onClearMission={clearTodayMission}
           />
         )}
 
@@ -2389,10 +2644,228 @@ function WeekdayFilterBar({
   );
 }
 
+const LIST_SWIPE_DELETE_WIDTH = 72;
+const LIST_GESTURE_SLOP = 10;
+
+function TaskListSwipeRow({
+  task,
+  showRestBadge,
+  filterDow,
+  swipeOpen,
+  onSwipeOpen,
+  onSwipeClose,
+  onSelect,
+  onDelete,
+}: {
+  task: Task;
+  showRestBadge: boolean;
+  filterDow: number | null;
+  swipeOpen: boolean;
+  onSwipeOpen: () => void;
+  onSwipeClose: () => void;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const swipeRef = useRef<HTMLDivElement>(null);
+  const gestureSurfaceRef = useRef<HTMLDivElement>(null);
+  const gesture = useRef<GestureState>(emptyGesture());
+  const suppressClickRef = useRef(false);
+  const [offsetX, setOffsetX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const snapOffset = swipeOpen ? -LIST_SWIPE_DELETE_WIDTH : 0;
+  const displayX = dragging ? offsetX : snapOffset;
+  const scheduleBadge = taskScheduleBadgeStyle(task);
+  const visibleToday = isTaskVisibleToday(task);
+
+  const clampOffset = (v: number) => Math.min(0, Math.max(-LIST_SWIPE_DELETE_WIDTH, v));
+
+  const resetGesture = () => {
+    gesture.current = emptyGesture();
+    setDragging(false);
+  };
+
+  const releaseCapture = () => {
+    const el = gestureSurfaceRef.current;
+    const { pointerId, phase } = gesture.current;
+    if (el && phase === "swiping" && pointerId >= 0) {
+      try {
+        if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+      } catch { /* ignore */ }
+    }
+  };
+
+  useEffect(() => {
+    const el = swipeRef.current;
+    if (!el) return;
+    const blockScroll = (e: TouchEvent) => {
+      if (gesture.current.phase === "swiping") e.preventDefault();
+    };
+    el.addEventListener("touchmove", blockScroll, { passive: false });
+    return () => el.removeEventListener("touchmove", blockScroll);
+  }, []);
+
+  const beginGesture = (clientX: number, clientY: number, pointerId: number) => {
+    const startOffset = swipeOpen ? -LIST_SWIPE_DELETE_WIDTH : 0;
+    gesture.current = {
+      phase: "pending",
+      startX: clientX,
+      startY: clientY,
+      startOffset,
+      moved: false,
+      lastOffset: startOffset,
+      pointerId,
+    };
+  };
+
+  const moveGesture = (clientX: number, clientY: number, target: HTMLElement) => {
+    const g = gesture.current;
+    if (g.phase === "idle") return;
+
+    const dx = clientX - g.startX;
+    const dy = clientY - g.startY;
+
+    if (g.phase === "pending") {
+      if (Math.abs(dx) > LIST_GESTURE_SLOP || Math.abs(dy) > LIST_GESTURE_SLOP) {
+        if (Math.abs(dy) > LIST_GESTURE_SLOP && Math.abs(dy) >= Math.abs(dx)) {
+          resetGesture();
+          return;
+        }
+        if (Math.abs(dx) > LIST_GESTURE_SLOP && Math.abs(dx) > Math.abs(dy)) {
+          g.phase = "swiping";
+          try {
+            target.setPointerCapture(g.pointerId);
+          } catch { /* ignore */ }
+          setDragging(true);
+          setOffsetX(g.startOffset);
+        }
+      }
+    }
+
+    if (g.phase !== "swiping") return;
+
+    if (Math.abs(dx) > LIST_GESTURE_SLOP) g.moved = true;
+    g.lastOffset = clampOffset(g.startOffset + dx);
+    setOffsetX(g.lastOffset);
+  };
+
+  const endGesture = () => {
+    const g = gesture.current;
+    if (g.phase === "swiping") {
+      if (g.moved) suppressClickRef.current = true;
+      if (g.lastOffset < -LIST_SWIPE_DELETE_WIDTH / 2) onSwipeOpen();
+      else onSwipeClose();
+    }
+    releaseCapture();
+    resetGesture();
+  };
+
+  const handleSelect = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (gesture.current.moved) {
+      gesture.current.moved = false;
+      return;
+    }
+    if (swipeOpen) {
+      onSwipeClose();
+      return;
+    }
+    onSelect();
+  };
+
+  return (
+    <div
+      ref={swipeRef}
+      style={{ position: "relative", overflow: "hidden", borderRadius: 14, touchAction: "pan-y" }}
+    >
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        aria-label="タスクを削除"
+        style={{
+          position: "absolute", right: 0, top: 0, bottom: 0, width: LIST_SWIPE_DELETE_WIDTH,
+          border: "none", cursor: "pointer",
+          backgroundColor: theme.category.pink,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22, padding: 0,
+        }}
+      >
+        🗑️
+      </button>
+      <div
+        ref={gestureSurfaceRef}
+        style={{
+          transform: `translateX(${displayX}px)`,
+          transition: dragging ? "none" : "transform 0.22s ease-out",
+          backgroundColor: theme.bg.editor,
+          position: "relative", zIndex: 1,
+          touchAction: "pan-y",
+        }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          beginGesture(e.clientX, e.clientY, e.pointerId);
+        }}
+        onPointerMove={(e) => moveGesture(e.clientX, e.clientY, e.currentTarget)}
+        onPointerUp={() => endGesture()}
+        onPointerCancel={() => endGesture()}
+      >
+        <button
+          type="button"
+          onClick={handleSelect}
+          style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "13px 14px", borderRadius: 14, border: `1.5px solid ${theme.stroke.tertiary}`,
+            backgroundColor: theme.fill.quaternary, cursor: "pointer",
+            textAlign: "left", width: "100%", fontFamily: "inherit",
+            opacity: showRestBadge ? 0.55 : 1,
+          }}
+        >
+          <span style={{ fontSize: 22, flexShrink: 0 }}>{task.emoji}</span>
+          <span style={{ fontSize: 15, fontWeight: 600, flex: 1, color: theme.text.primary }}>
+            {task.title}
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, flexShrink: 0,
+            color: scheduleBadge.color,
+            backgroundColor: scheduleBadge.backgroundColor,
+            padding: "2px 6px", borderRadius: 6,
+          }}>
+            {scheduleBadge.label}
+          </span>
+          {filterDow === null && visibleToday && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, flexShrink: 0,
+              color: theme.category.green,
+              backgroundColor: `${theme.category.green}18`,
+              padding: "2px 6px", borderRadius: 6,
+            }}>
+              きょう
+            </span>
+          )}
+          {showRestBadge && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, flexShrink: 0,
+              color: theme.text.tertiary,
+              backgroundColor: theme.fill.secondary,
+              padding: "2px 6px", borderRadius: 6,
+            }}>
+              お休み
+            </span>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TaskListScreen({
   session, morningTasks, daytimeTasks, homeTasks, eveningTasks,
-  onSwitchSession, onBack, onAddTask, onEditTask,
+  onSwitchSession, onBack, onAddTask, onEditTask, onDeleteTask,
   customTaskEmojis, onAddCustomTaskEmoji,
+  todayMission, onOpenMissionSetup, onClearMission,
 }: {
   session: SessionId;
   morningTasks: Task[];
@@ -2403,11 +2876,16 @@ function TaskListScreen({
   onBack: () => void;
   onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[]) => void;
   onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[]) => void;
+  onDeleteTask: (session: SessionId, id: number) => void;
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
+  todayMission: DailyMission | null;
+  onOpenMissionSetup: () => void;
+  onClearMission: () => void;
 }) {
   const [filterDow, setFilterDow] = useState<number | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [openSwipeId, setOpenSwipeId] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("regular");
 
@@ -2436,12 +2914,60 @@ function TaskListScreen({
     setIsAdding(true);
   };
 
+  const handleDeleteTask = (taskId: number) => {
+    onDeleteTask(session, taskId);
+    setOpenSwipeId(null);
+    if (editingTaskId === taskId) setEditingTaskId(null);
+  };
+
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: "80vh" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <BackLink onBack={onBack} />
           <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>タスク一覧</div>
+        </div>
+
+        <div style={{
+          padding: "14px 16px", borderRadius: 14,
+          border: `1.5px solid ${theme.category.purple}44`,
+          backgroundColor: `${theme.category.purple}08`,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: theme.category.purple, marginBottom: 6 }}>
+            きょうの特別ミッション
+          </div>
+          <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 10 }}>
+            親と一緒に決めよう
+          </div>
+          {todayMission ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span style={{ fontSize: 28 }}>{todayMission.emoji}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: theme.text.primary }}>{todayMission.title}</span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: theme.text.secondary, marginBottom: 10 }}>
+              まだ設定されていません
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={onOpenMissionSetup} style={{
+              flex: 1, padding: "10px", borderRadius: 10, border: "none",
+              backgroundColor: theme.category.purple, color: "#fff",
+              fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}>
+              {todayMission ? "変更する" : "設定する"}
+            </button>
+            {todayMission && (
+              <button type="button" onClick={onClearMission} style={{
+                padding: "10px 14px", borderRadius: 10,
+                border: `1px solid ${theme.stroke.secondary}`,
+                backgroundColor: "transparent", color: theme.text.tertiary,
+                fontSize: 13, cursor: "pointer",
+              }}>
+                なし
+              </button>
+            )}
+          </div>
         </div>
 
         <SessionTabs session={session} onSwitch={onSwitchSession} />
@@ -2472,57 +2998,19 @@ function TaskListScreen({
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {filteredTasks.map((task) => {
-              const visibleToday = isTaskVisibleToday(task);
-              const showRestBadge = filterDow === null && !visibleToday;
-              const scheduleBadge = taskScheduleBadgeStyle(task);
+              const showRestBadge = filterDow === null && !isTaskVisibleToday(task);
               return (
-                <button
+                <TaskListSwipeRow
                   key={task.id}
-                  type="button"
-                  onClick={() => setEditingTaskId(task.id)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 12,
-                    padding: "13px 14px", borderRadius: 14, border: `1.5px solid ${theme.stroke.tertiary}`,
-                    backgroundColor: theme.fill.quaternary, cursor: "pointer",
-                    textAlign: "left", width: "100%", fontFamily: "inherit",
-                    opacity: showRestBadge ? 0.55 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 22, flexShrink: 0 }}>{task.emoji}</span>
-                  <span style={{
-                    fontSize: 15, fontWeight: 600, flex: 1, color: theme.text.primary,
-                  }}>
-                    {task.title}
-                  </span>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, flexShrink: 0,
-                    color: scheduleBadge.color,
-                    backgroundColor: scheduleBadge.backgroundColor,
-                    padding: "2px 6px", borderRadius: 6,
-                  }}>
-                    {scheduleBadge.label}
-                  </span>
-                  {filterDow === null && visibleToday && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, flexShrink: 0,
-                      color: theme.category.green,
-                      backgroundColor: `${theme.category.green}18`,
-                      padding: "2px 6px", borderRadius: 6,
-                    }}>
-                      きょう
-                    </span>
-                  )}
-                  {showRestBadge && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, flexShrink: 0,
-                      color: theme.text.tertiary,
-                      backgroundColor: theme.fill.secondary,
-                      padding: "2px 6px", borderRadius: 6,
-                    }}>
-                      お休み
-                    </span>
-                  )}
-                </button>
+                  task={task}
+                  showRestBadge={showRestBadge}
+                  filterDow={filterDow}
+                  swipeOpen={openSwipeId === task.id}
+                  onSwipeOpen={() => setOpenSwipeId(task.id)}
+                  onSwipeClose={() => setOpenSwipeId(null)}
+                  onSelect={() => setEditingTaskId(task.id)}
+                  onDelete={() => handleDeleteTask(task.id)}
+                />
               );
             })}
           </div>
@@ -2590,6 +3078,7 @@ function TaskListScreen({
                 setEditingTaskId(null);
               }}
               onCancel={() => setEditingTaskId(null)}
+              onDelete={() => handleDeleteTask(editingTask.id)}
             />
           </div>
         </div>
@@ -2691,7 +3180,7 @@ function WeekdayPicker({
 }
 
 function TaskEditForm({
-  header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, autoFocus = true,
+  header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, onDelete, autoFocus = true,
   showWeekdays = false, initialWeekdays,
   customTaskEmojis, onAddCustomTaskEmoji,
 }: {
@@ -2701,6 +3190,7 @@ function TaskEditForm({
   saveLabel: string;
   onSave: (title: string, emoji: string, weekdays?: number[]) => void;
   onCancel: () => void;
+  onDelete?: () => void;
   autoFocus?: boolean;
   showWeekdays?: boolean;
   initialWeekdays?: number[];
@@ -2849,6 +3339,16 @@ function TaskEditForm({
           backgroundColor: "transparent", color: theme.text.tertiary, fontSize: 13, cursor: "pointer",
         }}>キャンセル</button>
       </div>
+      {onDelete && (
+        <button type="button" onClick={onDelete} style={{
+          width: "100%", padding: "10px", borderRadius: 10,
+          border: `1.5px solid ${theme.category.pink}55`,
+          backgroundColor: `${theme.category.pink}10`, color: theme.category.pink,
+          fontSize: 14, fontWeight: 700, cursor: "pointer",
+        }}>
+          削除する
+        </button>
+      )}
     </div>
   );
 }
@@ -2932,6 +3432,11 @@ interface TaskScreenProps {
   onClearBestTime: (id: number) => void;
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
+  todayMission: DailyMission | null;
+  missionStatus: MissionStatus | null;
+  showEveningMissionNudge: boolean;
+  onMissionDone: () => void;
+  onMissionSetup: () => void;
 }
 
 function TaskScreen({
@@ -2939,6 +3444,7 @@ function TaskScreen({
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
+  todayMission, missionStatus, showEveningMissionNudge, onMissionDone, onMissionSetup,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
@@ -2994,6 +3500,16 @@ function TaskScreen({
           {label}
         </div>
       </div>
+
+      {todayMission && missionStatus && (
+        <MissionCard
+          mission={todayMission}
+          status={missionStatus}
+          showEveningNudge={showEveningMissionNudge}
+          onDone={onMissionDone}
+          onLongPressSetup={onMissionSetup}
+        />
+      )}
 
       <StepProgress tasks={shownTasks} done={done} skipped={skipped} justChecked={justChecked} />
       <BestTimeSummary session={session} tasks={shownTasks} bestTimes={bestTimes} />
