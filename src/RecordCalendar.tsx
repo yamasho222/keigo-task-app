@@ -4,7 +4,7 @@ import {
   REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, getAlbumCategoryGroups,
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
-import { RarityBadge } from "./Rewards";
+import { RarityBadge, StickerFrameWithBadge } from "./Rewards";
 import {
   completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
   requiredSessionCount,
@@ -263,19 +263,29 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
                           ...albumCellStyle,
                           backgroundColor: theme.fill.secondary,
                           border: `1px solid ${theme.stroke.secondary}`,
-                          fontSize: item.emoji ? 26 : undefined,
                           cursor: "pointer",
+                          padding: 0,
                         }}
                       >
-                        {item.emoji ? (
-                          item.emoji
-                        ) : (
-                          <img
-                            src={item.image}
-                            alt={item.label}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
-                          />
-                        )}
+                        <StickerFrameWithBadge
+                          rarity={item.rarity}
+                          compact
+                          style={{
+                            width: "100%", height: "100%",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: item.emoji ? 26 : undefined,
+                          }}
+                        >
+                          {item.emoji ? (
+                            item.emoji
+                          ) : (
+                            <img
+                              src={item.image}
+                              alt={item.label}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
+                            />
+                          )}
+                        </StickerFrameWithBadge>
                       </button>
                     );
                   }
@@ -325,17 +335,20 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
               textAlign: "center",
             }}
           >
-            <div style={{
-              width: 220, height: 220, margin: "0 auto 16px", borderRadius: 20,
-              backgroundColor: previewItem.emoji ? `${theme.category.green}14` : theme.fill.secondary,
-              border: previewItem.emoji
-                ? `3px solid ${theme.category.green}55`
-                : `3px solid ${theme.accent.primary}44`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              overflow: "hidden",
-              fontSize: previewItem.emoji ? 100 : undefined,
-              boxShadow: `0 8px 32px ${theme.accent.primary}22`,
-            }}>
+            <StickerFrameWithBadge
+              rarity={previewItem.rarity}
+              style={{
+                width: 220, height: 220, margin: "0 auto 16px", borderRadius: 20,
+                backgroundColor: previewItem.emoji ? `${theme.category.green}14` : theme.fill.secondary,
+                border: previewItem.emoji
+                  ? `3px solid ${theme.category.green}55`
+                  : `3px solid ${theme.accent.primary}44`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                overflow: "hidden",
+                fontSize: previewItem.emoji ? 100 : undefined,
+                boxShadow: `0 8px 32px ${theme.accent.primary}22`,
+              }}
+            >
               {previewItem.emoji ? (
                 previewItem.emoji
               ) : (
@@ -345,7 +358,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
               )}
-            </div>
+            </StickerFrameWithBadge>
             <div style={{ fontSize: 20, fontWeight: 900, color: theme.text.primary, marginBottom: 6 }}>
               {previewItem.label}
             </div>

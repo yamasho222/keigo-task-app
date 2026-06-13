@@ -760,6 +760,53 @@ function AnimStyles() {
         25%  { opacity: 1; }
         100% { transform: translateY(76vh) scale(1); opacity: 0; }
       }
+      @keyframes cutinFakeCrush {
+        0%   { transform: scale(1) rotate(0deg); opacity: 1; filter: brightness(1); }
+        35%  { transform: scale(1.08) rotate(-6deg); opacity: 1; filter: brightness(1.4); }
+        100% { transform: scale(0.15) rotate(18deg); opacity: 0; filter: brightness(2); }
+      }
+      @keyframes cutinSpeedLine {
+        0%   { transform: rotate(var(--line-rot, 0deg)) scaleX(0.08); opacity: 0; }
+        20%  { opacity: 0.95; }
+        100% { transform: rotate(var(--line-rot, 0deg)) scaleX(1.35); opacity: 0; }
+      }
+      @keyframes cutinTextSlam {
+        0%   { transform: translateX(-50%) scale(2.8); opacity: 0; }
+        35%  { transform: translateX(-50%) scale(0.92); opacity: 1; }
+        55%  { transform: translateX(-50%) scale(1.05); opacity: 1; }
+        100% { transform: translateX(-50%) scale(1); opacity: 0.92; }
+      }
+      @keyframes cutinTextSlamUr {
+        0%   { transform: translateX(-50%) scale(3.2); opacity: 0; }
+        28%  { transform: translateX(-50%) scale(0.88); opacity: 1; }
+        48%  { transform: translateX(-50%) scale(1.12); opacity: 1; }
+        100% { transform: translateX(-50%) scale(1); opacity: 1; }
+      }
+      @keyframes cutinFreezeDim {
+        0%   { opacity: 0; }
+        25%  { opacity: 0.72; }
+        100% { opacity: 0.45; }
+      }
+      @keyframes cutinShockRing {
+        0%   { transform: scale(0.15); opacity: 0.95; }
+        100% { transform: scale(4.5); opacity: 0; }
+      }
+      @keyframes cutinTierBurst {
+        0%   { opacity: 0; transform: scale(0.85); }
+        30%  { opacity: 0.85; }
+        100% { opacity: 0; transform: scale(1.15); }
+      }
+      @keyframes cutinMorphFlash {
+        0%   { opacity: 0; }
+        35%  { opacity: 0.95; }
+        100% { opacity: 0; }
+      }
+      @keyframes cutinMorphFlashUr {
+        0%   { opacity: 0; }
+        30%  { opacity: 1; }
+        70%  { opacity: 0.55; }
+        100% { opacity: 0; }
+      }
       .check-pop   { animation: checkPop   0.42s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .ring-out    { animation: ringOut    0.5s  ease-out forwards; }
       .row-glow    { animation: rowGlow    0.5s  ease-out; }
@@ -817,6 +864,15 @@ function AnimStyles() {
       .ur-whiteout-max   { animation: urWhiteoutMax 0.95s ease-out forwards; background: rgba(255,255,255,0.96); }
       .ur-blackout       { animation: urBlackout 0.65s ease-out forwards; }
       .ur-stardust-fall  { animation: urStarDustFall 0.9s ease-in forwards; }
+      .cutin-fake-crush  { animation: cutinFakeCrush 0.55s ease-in forwards; }
+      .cutin-speed-line  { animation: cutinSpeedLine 0.65s ease-out forwards; }
+      .cutin-text-slam   { animation: cutinTextSlam 0.75s cubic-bezier(0.34,1.4,0.64,1) forwards; }
+      .cutin-text-slam-ur { animation: cutinTextSlamUr 0.85s cubic-bezier(0.34,1.4,0.64,1) forwards; }
+      .cutin-freeze-dim  { animation: cutinFreezeDim 0.5s ease-out forwards; background: rgba(0,0,0,0.55); position: absolute; inset: 0; }
+      .cutin-shock-ring  { animation: cutinShockRing 0.85s ease-out forwards; }
+      .cutin-tier-burst  { animation: cutinTierBurst 1.1s ease-out forwards; }
+      .cutin-morph-flash { animation: cutinMorphFlash 0.45s ease-out forwards; }
+      .cutin-morph-flash-ur { animation: cutinMorphFlashUr 0.55s ease-out forwards; }
     `}</style>
   );
 }
@@ -1709,6 +1765,14 @@ export default function KeigoTaskApp() {
                 } },
                 { icon: "💥", label: "UR演出: 超新星Max", action: () => {
                   openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceTease: true, devForceTeaseId: "ur-supernova" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🎭", label: "SR: カットイン昇格", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🎭", label: "UR: カットイン昇格", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare" }]);
                   setShowMenu(false);
                 } },
               ] : []),

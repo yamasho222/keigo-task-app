@@ -3,7 +3,7 @@ import { theme } from "./theme";
 import type { RewardRarity } from "./stickerRewards";
 
 export const TEASE_DURATION_MS = 2000;
-export const TEASE_TRIGGER_CHANCE = { superRare: 0.25, ultraRare: 0.50 } as const;
+export const TEASE_TRIGGER_CHANCE = { superRare: 1, ultraRare: 1 } as const;
 
 export type TeaseVariantId =
   | "sr-orbit" | "sr-ripple" | "sr-glimmer"

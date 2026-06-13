@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
-import { pickTreatReward, pickStickerByTier, RARITY_LABELS, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
+import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
 import {
   pickTeaseVariant, shouldPlayTease,
   type TeaseVariant, type TeaseVariantId,
 } from "./treatTease";
+import {
+  CUTIN_VIBRATE, getCutinDuration, shouldPlayUpgradeReveal, UpgradeCutinScene,
+  UPGRADE_FAKE_NORMAL_MS,
+} from "./treatCutin";
 export type { RewardItem, StickerReward, TreatMode, RewardRarity };
 export {
   REWARD_LOOKUP, STICKER_REWARDS, DAILY_EMOJI_REWARDS, ALL_REWARDS, TOTAL_REWARD_COUNT, RARITY_LABELS,
@@ -145,6 +149,50 @@ export function RarityBadge({ rarity, className = "" }: { rarity: RewardRarity; 
       backgroundColor: badge.backgroundColor, padding: "2px 8px", borderRadius: 6,
     }}>
       {badge.label}
+    </div>
+  );
+}
+
+const COMPACT_RARITY_LABELS: Record<RewardRarity, string> = {
+  normal: "N",
+  rare: "レア",
+  superRare: "SR",
+  ultraRare: "UR",
+};
+
+export function RarityBadgeCorner({
+  rarity, compact = false,
+}: {
+  rarity: RewardRarity;
+  compact?: boolean;
+}) {
+  const badge = getRarityBadgeStyle(rarity);
+  return (
+    <div style={{
+      position: "absolute", top: compact ? 3 : 8, left: compact ? 3 : 8,
+      zIndex: 2, fontSize: compact ? 7 : 10, fontWeight: 800,
+      color: badge.color, backgroundColor: badge.backgroundColor,
+      padding: compact ? "1px 4px" : "2px 8px", borderRadius: compact ? 4 : 6,
+      boxShadow: "0 1px 6px rgba(0,0,0,0.28)",
+      lineHeight: 1.2, pointerEvents: "none",
+    }}>
+      {compact ? COMPACT_RARITY_LABELS[rarity] : badge.label}
+    </div>
+  );
+}
+
+export function StickerFrameWithBadge({
+  rarity, compact = false, children, style,
+}: {
+  rarity: RewardRarity;
+  compact?: boolean;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
+  return (
+    <div style={{ position: "relative", ...style }}>
+      {children}
+      <RarityBadgeCorner rarity={rarity} compact={compact} />
     </div>
   );
 }
@@ -405,25 +453,62 @@ function TreatOverlay({
   devForceTease?: boolean;
   devForceTeaseId?: TeaseVariantId;
 }) {
-  type TreatPhase = "closed" | "teasing" | "revealed";
+  type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
+  type UpgradeStep = "fakeNormal" | "cutin";
+
   const [phase, setPhase] = useState<TreatPhase>("closed");
+  const [upgradeStep, setUpgradeStep] = useState<UpgradeStep | null>(null);
   const [reward, setReward] = useState<RewardItem | null>(null);
+  const [decoy, setDecoy] = useState<EmojiReward | null>(null);
   const [activeTease, setActiveTease] = useState<TeaseVariant | null>(null);
   const teaseTimerRef = useRef<number | null>(null);
+  const upgradeTimerRef = useRef<number | null>(null);
   const isWeekly = mode === "weekly";
   const isFullDayBonus = mode === "fullDayBonus";
 
-  useEffect(() => () => {
-    if (teaseTimerRef.current !== null) window.clearTimeout(teaseTimerRef.current);
-  }, []);
+  const clearTimers = () => {
+    if (teaseTimerRef.current !== null) {
+      window.clearTimeout(teaseTimerRef.current);
+      teaseTimerRef.current = null;
+    }
+    if (upgradeTimerRef.current !== null) {
+      window.clearTimeout(upgradeTimerRef.current);
+      upgradeTimerRef.current = null;
+    }
+  };
 
-  const finishTease = (picked: RewardItem) => {
+  useEffect(() => () => clearTimers(), []);
+
+  const finishReveal = (picked: RewardItem) => {
     setPhase("revealed");
+    setUpgradeStep(null);
+    setDecoy(null);
     setActiveTease(null);
     onCollect(picked.id);
     window.setTimeout(() => {
       vibrateTreat(getRarityRevealConfig(picked.rarity).vibratePattern);
     }, 200);
+  };
+
+  const startUpgradeReveal = (picked: RewardItem) => {
+    setReward(picked);
+    setDecoy(pickDecoyNormalReward());
+    setUpgradeStep("fakeNormal");
+    setPhase("upgrading");
+    upgradeTimerRef.current = window.setTimeout(() => {
+      setUpgradeStep("cutin");
+      if (shouldPlayUpgradeReveal(picked.rarity)) {
+        vibrateTreat(CUTIN_VIBRATE[picked.rarity]);
+      }
+      upgradeTimerRef.current = window.setTimeout(() => {
+        finishReveal(picked);
+      }, getCutinDuration(picked.rarity as "superRare" | "ultraRare"));
+    }, UPGRADE_FAKE_NORMAL_MS);
+  };
+
+  const finishTease = (picked: RewardItem) => {
+    setActiveTease(null);
+    finishReveal(picked);
   };
 
   const handleOpen = () => {
@@ -432,7 +517,8 @@ function TreatOverlay({
       ? pickStickerByTier(collectedIds, devForceTier)
       : pickTreatReward(collectedIds, mode);
 
-    if (shouldPlayTease(picked.rarity, devForceTease)) {
+    // DEV: 開封前teaseの単体プレビュー（本番SR/URフローとは別）
+    if (devForceTease && shouldPlayTease(picked.rarity, true)) {
       const tease = pickTeaseVariant(picked.rarity, devForceTeaseId);
       setReward(picked);
       setActiveTease(tease);
@@ -442,14 +528,19 @@ function TreatOverlay({
       return;
     }
 
+    if (shouldPlayUpgradeReveal(picked.rarity)) {
+      startUpgradeReveal(picked);
+      return;
+    }
+
     setReward(picked);
-    setPhase("revealed");
-    onCollect(picked.id);
-    vibrateTreat(getRarityRevealConfig(picked.rarity).vibratePattern);
+    finishReveal(picked);
   };
 
   const fxConfig = phase === "revealed" && reward ? getRarityRevealConfig(reward.rarity) : null;
-  const isBusy = phase === "teasing";
+  const isImmersive = phase === "teasing" || phase === "upgrading";
+  const isBusy = isImmersive;
+  const normalBadge = getRarityBadgeStyle("normal");
   const title = isWeekly
     ? "🎊 1週間クリア！ 🎊"
     : isFullDayBonus
@@ -483,34 +574,41 @@ function TreatOverlay({
         const TeaseScene = activeTease.Component;
         return <TeaseScene key={activeTease.id} />;
       })()}
+      {phase === "upgrading" && upgradeStep === "cutin" && reward && shouldPlayUpgradeReveal(reward.rarity) && decoy && (
+        <UpgradeCutinScene
+          key={`cutin-${reward.id}`}
+          tier={reward.rarity}
+          decoyEmoji={decoy.emoji}
+        />
+      )}
       {phase === "revealed" && fxConfig && <TreatFxLayer config={fxConfig} />}
       <div style={{
         position: "relative", zIndex: 2,
         width: "100%", maxWidth: 340, borderRadius: 24, padding: "28px 24px",
-        backgroundColor: phase === "teasing" ? "transparent" : theme.bg.editor,
-        boxShadow: phase === "teasing" ? "none" : "0 12px 48px rgba(0,0,0,0.25)",
+        backgroundColor: isImmersive ? "transparent" : theme.bg.editor,
+        boxShadow: isImmersive ? "none" : "0 12px 48px rgba(0,0,0,0.25)",
         textAlign: "center",
       }}>
         <div style={{
           fontSize: isWeekly ? 22 : isFullDayBonus ? 20 : 18, fontWeight: 900,
-          color: phase === "teasing" ? "#fff" : titleColor,
+          color: isImmersive ? "#fff" : titleColor,
           marginBottom: 8,
-          textShadow: phase === "teasing" ? "0 2px 12px rgba(0,0,0,0.65)" : undefined,
+          textShadow: isImmersive ? "0 2px 12px rgba(0,0,0,0.65)" : undefined,
         }}>
           {title}
         </div>
         <div style={{
           fontSize: 14,
-          color: phase === "teasing" ? "rgba(255,255,255,0.85)" : theme.text.secondary,
-          marginBottom: phase === "teasing" ? 12 : 20,
-          textShadow: phase === "teasing" ? "0 1px 8px rgba(0,0,0,0.55)" : undefined,
+          color: isImmersive ? "rgba(255,255,255,0.85)" : theme.text.secondary,
+          marginBottom: isImmersive ? 12 : 20,
+          textShadow: isImmersive ? "0 1px 8px rgba(0,0,0,0.55)" : undefined,
         }}>
           {subtitle}
         </div>
 
         <div style={{
-          marginBottom: phase === "teasing" ? 12 : 20,
-          minHeight: phase === "teasing" ? 0 : 180,
+          marginBottom: isImmersive ? 12 : 20,
+          minHeight: isImmersive ? 0 : 180,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
           {phase === "closed" && (
@@ -522,6 +620,24 @@ function TreatOverlay({
                 タップして開ける！
               </div>
             </button>
+          )}
+          {phase === "upgrading" && upgradeStep === "fakeNormal" && decoy && (
+            <div className="treat-reveal" style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+            }}>
+              <RewardReveal
+                reward={decoy}
+                size={160}
+                borderGlow={normalBadge.color}
+              />
+              <RarityBadge rarity="normal" />
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}>
+                {decoy.label}
+              </div>
+              <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}>
+                {decoy.message}
+              </div>
+            </div>
           )}
           {phase === "revealed" && reward && fxConfig && (            <div className={fxConfig.revealClass} style={{
               position: "relative",
@@ -556,17 +672,17 @@ function TreatOverlay({
 
         <button type="button" onClick={onClose} disabled={isBusy} style={{
           width: "100%", padding: "14px", borderRadius: 12,
-          border: phase === "teasing" ? "1px solid rgba(255,255,255,0.28)" : "none",
-          marginTop: phase === "teasing" ? 176 : 0,
+          border: isImmersive ? "1px solid rgba(255,255,255,0.28)" : "none",
+          marginTop: isImmersive ? 176 : 0,
           backgroundColor: phase === "revealed"
             ? theme.accent.primary
-            : phase === "teasing"
+            : isImmersive
               ? "rgba(0,0,0,0.38)"
               : theme.fill.secondary,
-          color: phase === "revealed" ? "#fff" : phase === "teasing" ? "#fff" : theme.text.tertiary,
+          color: phase === "revealed" ? "#fff" : isImmersive ? "#fff" : theme.text.tertiary,
           fontSize: 15, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer",
           opacity: isBusy ? 0.75 : 1,
-          boxShadow: phase === "teasing" ? "0 4px 16px rgba(0,0,0,0.35)" : undefined,
+          boxShadow: isImmersive ? "0 4px 16px rgba(0,0,0,0.35)" : undefined,
         }}>
           {phase === "revealed" ? "やったー！" : isBusy ? "開けてる…" : "あとで"}
         </button>      </div>

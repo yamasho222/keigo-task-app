@@ -96,6 +96,7 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "nobita", label: "のびた", message: "のびたくん！", image: "/stickers/nobita.png", category: "doraemon", rarity: "rare" },
   { kind: "sticker", id: "suneo", label: "スネ夫", message: "スネ夫ゲット！", image: "/stickers/suneo.png", category: "doraemon", rarity: "rare" },
   { kind: "sticker", id: "gian", label: "ジャイアン", message: "歌のジャイアン！", image: "/stickers/gian.png", category: "doraemon", rarity: "rare" },
+  { kind: "sticker", id: "shizuka", label: "しずかちゃん", message: "しずかちゃんだ！", image: "/stickers/shizuka.png", category: "doraemon", rarity: "rare" },
   { kind: "sticker", id: "wood-log", label: "トゥントゥントゥンサフール", message: "トゥントゥントゥンサフール！", image: "/stickers/wood-log.png", category: "brainrot", rarity: "superRare" },
   { kind: "sticker", id: "shark-legs", label: "トララレロ・トラララ", message: "トララレロ・トラララ！", image: "/stickers/shark-legs.png", category: "brainrot", rarity: "rare" },
   { kind: "sticker", id: "monkey-banana", label: "チンパンジーニ・バナニーニ", message: "チンパンジーニ・バナニーニ！", image: "/stickers/monkey-banana.png", category: "brainrot", rarity: "rare" },
@@ -268,6 +269,11 @@ export function pickWeeklyReward(collectedIds: string[]): StickerReward {
 /** DEV: 指定ティアから1枚抽選 */
 export function pickStickerByTier(collectedIds: string[], tier: StickerRarity): StickerReward {
   return pickFromStickerTier(collectedIds, tier);
+}
+
+/** カットイン昇格演出用の偽ノーマル絵文字 */
+export function pickDecoyNormalReward(): EmojiReward {
+  return pickRandom(DAILY_EMOJI_REWARDS);
 }
 
 export function pickTreatReward(collectedIds: string[], mode: "daily" | "weekly" | "fullDayBonus"): RewardItem {
