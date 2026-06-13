@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type CSSProperties } from "react";
+import { useState, useRef, useEffect, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -503,6 +503,18 @@ function loadStoredState(): StoredState {
 
 function getVisibleSessionTabs(d = new Date()) {
   return SESSION_TABS.filter((t) => isSessionActiveOnDate(t.id, d));
+}
+
+function getAdjacentSession(
+  current: SessionId,
+  direction: "next" | "prev",
+  d = new Date(),
+): SessionId | null {
+  const tabs = getVisibleSessionTabs(d).map((t) => t.id);
+  const idx = tabs.indexOf(current);
+  if (idx < 0) return null;
+  if (direction === "next") return idx < tabs.length - 1 ? tabs[idx + 1] : null;
+  return idx > 0 ? tabs[idx - 1] : null;
 }
 
 function getSessionScreen(now = new Date()): SessionId {
@@ -2585,7 +2597,11 @@ export default function KeigoTaskApp() {
         }}
       >
         {isSessionScreen(screen) && activeSessionIds.includes(screen) && (
-          <>
+          <SessionPhaseSwipe
+            session={screen}
+            onSwitch={goToScreen}
+            disabled={isWorkTimerLocked || anticipating || !!celebType}
+          >
             <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} />
             {activeSessionIds.map((sid) => screen === sid && (
               <TaskScreen
@@ -2674,7 +2690,7 @@ export default function KeigoTaskApp() {
                 gamePlaySec={gamePlayTimes[gamePlayKey(todayKey(), sid)]}
               />
             ))}
-          </>
+          </SessionPhaseSwipe>
         )}
 
         {screen === "show_parent_mission" && todayMission && missionParentPhase && (
@@ -3657,6 +3673,85 @@ function TaskListScreen({
   );
 }
 
+function SessionPhaseSwipe({
+  session, onSwitch, disabled = false, children,
+}: {
+  session: SessionId;
+  onSwitch: (id: ScreenId) => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const gesture = useRef<{ startX: number; startY: number; tracking: boolean; decided: boolean }>({
+    startX: 0, startY: 0, tracking: false, decided: false,
+  });
+  const PHASE_SWIPE_MIN = 72;
+  const SLOP = 14;
+
+  const isBlockedTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return true;
+    return !!target.closest(
+      "[data-task-swipe], [data-dnd-handle], [data-no-phase-swipe], button, input, textarea, select, [data-modal-overlay]",
+    );
+  };
+
+  const reset = () => {
+    gesture.current = { startX: 0, startY: 0, tracking: false, decided: false };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (disabled || e.button !== 0 || isBlockedTarget(e.target)) return;
+    gesture.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      tracking: true,
+      decided: false,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g.tracking || g.decided) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+    if (Math.abs(dy) >= Math.abs(dx)) {
+      reset();
+      return;
+    }
+    g.decided = true;
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g.tracking) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    reset();
+    if (!g.decided) return;
+    if (Math.abs(dx) < PHASE_SWIPE_MIN || Math.abs(dy) >= Math.abs(dx)) return;
+
+    const next = dx < 0
+      ? getAdjacentSession(session, "next")
+      : getAdjacentSession(session, "prev");
+    if (next) {
+      navigator.vibrate?.(8);
+      onSwitch(next);
+    }
+  };
+
+  return (
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 14, touchAction: "pan-y" }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={reset}
+    >
+      {children}
+    </div>
+  );
+}
+
 function InAppTabs({
   screen, onSwitch, disabled = false,
 }: {
@@ -4586,6 +4681,7 @@ function SortableTaskRow(props: TaskRowProps) {
       }}
     >
       <div
+        data-dnd-handle
         {...(interactionLocked ? {} : { ...attributes, ...listeners })}
         style={{
           flexShrink: 0, width: 22, display: "flex", justifyContent: "center", alignItems: "center",
@@ -4599,6 +4695,7 @@ function SortableTaskRow(props: TaskRowProps) {
       </div>
       <div
         ref={swipeRef}
+        data-task-swipe
         style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 14, touchAction: "pan-y" }}
       >
         <button
