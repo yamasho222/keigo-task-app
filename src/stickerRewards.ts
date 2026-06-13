@@ -48,7 +48,7 @@ export const DAILY_EMOJI_REWARDS: EmojiReward[] = [
   { kind: "emoji", id: "fire", emoji: "🔥", label: "ファイヤー", message: "メラメラパワー全開！", category: "daily", rarity: "low" },
 ];
 
-/** ごほうびシール（53枚・高レアリティ・個人利用） */
+/** ごほうびシール（54枚・高レアリティ・個人利用） */
 export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "warrior-baby", label: "ミスター赤ちゃん", message: "ミスター赤ちゃんゲット！", image: "/stickers/warrior-baby.png", category: "sumanai", rarity: "high" },
   { kind: "sticker", id: "blue-fist", label: "ミスター・ブルー", message: "ミスター・ブルー登場！", image: "/stickers/blue-fist.png", category: "sumanai", rarity: "high" },
@@ -103,6 +103,7 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "chocolatini-panchonchoni", label: "チョコラティーニ・パンチョンチョーニ", message: "チョコラティーニ・パンチョンチョーニ！", image: "/stickers/chocolatini-panchonchoni.png", category: "brainrot", rarity: "high" },
   { kind: "sticker", id: "bombaclot-crococlot", label: "ボンバクロット・クロコクロット", message: "ボンバクロット・クロコクロット！", image: "/stickers/bombaclot-crococlot.png", category: "brainrot", rarity: "high" },
   { kind: "sticker", id: "meowl", label: "ミャウル", message: "ミャウル！", image: "/stickers/meowl.png", category: "brainrot", rarity: "high" },
+  { kind: "sticker", id: "ryukku-nyukku-ryuuku", label: "リュック・ニュック・リューク", message: "リュック・ニュック・リューク！", image: "/stickers/ryukku-nyukku-ryuuku.png", category: "brainrot", rarity: "high" },
 ];
 
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
