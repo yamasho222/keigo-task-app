@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { theme } from "./theme";
 import { MISSION_EMOJIS, MISSION_TEMPLATES, type MissionTemplate } from "./missionTemplates";
+import { SESSION_SHORT_LABELS, type SessionId } from "./sharedTasks";
+import {
+  type MissionCardStatus,
+  type MissionOverallStatus,
+  countParentApprovedPhases,
+} from "./missionProgress";
 
 export interface DailyMission {
   dateKey: string;
@@ -16,19 +22,10 @@ export interface FavoriteMission {
   createdAt: string;
 }
 
-export type MissionStatus = "pending" | "awaiting_parent" | "done";
+/** @deprecated use MissionOverallStatus from missionProgress */
+export type MissionStatus = MissionOverallStatus;
 
-export function getMissionStatus(
-  mission: DailyMission | null,
-  todayKey: string,
-  childClaimed: boolean,
-  approved: Record<string, boolean>,
-): MissionStatus | null {
-  if (!mission || mission.dateKey !== todayKey) return null;
-  if (approved[todayKey]) return "done";
-  if (childClaimed) return "awaiting_parent";
-  return "pending";
-}
+export type { MissionCardStatus, MissionOverallStatus };
 
 const MISSION_BRIEFING_KEY = "keigo-mission-briefing-v1";
 
@@ -56,106 +53,331 @@ export function markMissionBriefingSeen(dateKey: string): void {
 export function MissionCard({
   mission,
   status,
+  currentSession,
+  activeSessions,
+  doneSessions,
+  approvedSessions,
   showEveningNudge = false,
+  alignWithTaskRows = false,
   onDone,
+  onUndoSession,
+  onOpenReward,
   onLongPressSetup,
 }: {
   mission: DailyMission;
-  status: MissionStatus;
+  status: MissionCardStatus;
+  currentSession: SessionId;
+  activeSessions: SessionId[];
+  doneSessions: SessionId[];
+  approvedSessions: SessionId[];
   showEveningNudge?: boolean;
+  alignWithTaskRows?: boolean;
   onDone: () => void;
+  onUndoSession?: () => void;
+  onOpenReward?: () => void;
   onLongPressSetup?: () => void;
 }) {
   const isDone = status === "done";
-  const isAwaiting = status === "awaiting_parent";
+  const isAwaitingReward = status === "awaiting_reward";
+  const isSessionAwaitingParent = status === "session_awaiting_parent";
+  const isSessionComplete = status === "session_complete";
+  const doneSet = new Set(doneSessions);
+  const approvedSet = new Set(approvedSessions);
+  const { approved, required: requiredParent } = countParentApprovedPhases(approvedSessions);
+
   const borderColor = isDone
-    ? theme.stroke.secondary
-    : isAwaiting
-      ? theme.category.yellow
-      : theme.category.purple;
+    ? `${theme.category.green}44`
+    : isAwaitingReward
+      ? `${theme.category.orange}55`
+      : isSessionAwaitingParent
+        ? `${theme.category.orange}44`
+        : `${theme.category.purple}44`;
   const bgColor = isDone
-    ? theme.fill.quaternary
-    : isAwaiting
-      ? `${theme.category.yellow}12`
-      : `${theme.category.purple}10`;
+    ? `${theme.category.green}16`
+    : isAwaitingReward
+      ? `${theme.category.orange}14`
+      : isSessionAwaitingParent
+        ? `${theme.category.orange}10`
+        : `${theme.category.purple}10`;
 
-  const statusIcon = isDone ? "⭐" : isAwaiting ? "⏳" : "🎯";
-  const statusLabel = isDone ? "クリア！" : isAwaiting ? "確認してね" : "チャレンジ中";
+  const attachLongPress = (el: HTMLElement) => {
+    if (!onLongPressSetup) return;
+    const timer = window.setTimeout(() => onLongPressSetup(), 600);
+    const clear = () => window.clearTimeout(timer);
+    el.addEventListener("touchend", clear, { once: true });
+    el.addEventListener("touchmove", clear, { once: true });
+  };
 
-  return (
+  const row = (
     <div
-      className={showEveningNudge && status === "pending" ? "mission-evening-nudge" : undefined}
+      className={showEveningNudge && !isDone && !isAwaitingReward ? "mission-evening-nudge" : undefined}
       onContextMenu={(e) => e.preventDefault()}
       style={{
-        borderRadius: 16,
-        border: `2px solid ${borderColor}`,
+        flex: 1,
+        borderRadius: 14,
+        border: `1.5px solid ${borderColor}`,
         backgroundColor: bgColor,
-        padding: "14px 16px",
+        padding: "13px 14px",
         opacity: isDone ? 0.72 : 1,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: theme.category.purple }}>⭐ とくべつミッション</span>
-        <span style={{
-          fontSize: 11, fontWeight: 700,
-          color: isDone ? theme.category.green : isAwaiting ? theme.category.orange : theme.category.purple,
-          backgroundColor: isDone ? `${theme.category.green}18` : isAwaiting ? `${theme.category.orange}18` : `${theme.category.purple}18`,
-          padding: "2px 8px", borderRadius: 8,
-        }}>
-          {statusIcon} {statusLabel}
-        </span>
-      </div>
-
       <div
-        style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}
-        onTouchStart={(e) => {
-          if (!onLongPressSetup) return;
-          const timer = window.setTimeout(() => onLongPressSetup(), 600);
-          const clear = () => window.clearTimeout(timer);
-          e.currentTarget.addEventListener("touchend", clear, { once: true });
-          e.currentTarget.addEventListener("touchmove", clear, { once: true });
-        }}
+        style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}
+        onTouchStart={(e) => attachLongPress(e.currentTarget)}
       >
-        <span style={{ fontSize: 36, lineHeight: 1 }}>{mission.emoji}</span>
-        <span style={{ fontSize: 17, fontWeight: 800, color: theme.text.primary, lineHeight: 1.3 }}>
+        <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1, filter: isDone ? "grayscale(40%)" : "none" }}>
+          {mission.emoji}
+        </span>
+        <span style={{
+          fontSize: 15,
+          fontWeight: isDone ? 400 : 600,
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          color: isDone ? theme.text.tertiary : theme.text.primary,
+          textDecoration: isDone ? "line-through" : "none",
+        }}>
           {mission.title}
         </span>
+        {!isDone && !isAwaitingReward && (
+          <span style={{
+            flexShrink: 0,
+            fontSize: 10,
+            fontWeight: 700,
+            color: isSessionAwaitingParent ? theme.category.orange : theme.category.purple,
+            backgroundColor: isSessionAwaitingParent ? `${theme.category.orange}18` : `${theme.category.purple}18`,
+            padding: "2px 6px",
+            borderRadius: 6,
+            whiteSpace: "nowrap",
+          }}>
+            {isSessionAwaitingParent ? "親待ち" : `${approved}/${requiredParent}`}
+          </span>
+        )}
+        {status === "pending" && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onDone(); }}
+            style={{
+              flexShrink: 0,
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: theme.category.purple,
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            できた！
+          </button>
+        )}
+        {isSessionAwaitingParent && (
+          <span style={{
+            flexShrink: 0,
+            fontSize: 11,
+            fontWeight: 700,
+            color: theme.category.orange,
+            whiteSpace: "nowrap",
+          }}>
+            親チェック待ち
+          </span>
+        )}
+        {isSessionComplete && onUndoSession && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onUndoSession(); }}
+            aria-label="この時間帯の完了を取り消す"
+            title="取り消す"
+            style={{
+              flexShrink: 0,
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              border: "none",
+              padding: 0,
+              backgroundColor: theme.category.green,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
+              <path d="M1.5 6L5.5 10L12.5 1.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+        {isAwaitingReward && onOpenReward && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenReward(); }}
+            style={{
+              flexShrink: 0,
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: theme.category.orange,
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            ごほうび！
+          </button>
+        )}
+        {isDone && (
+          <div style={{
+            flexShrink: 0,
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            backgroundColor: theme.category.green,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}>
+            <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
+              <path d="M1.5 6L5.5 10L12.5 1.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        )}
       </div>
-
       <div style={{
-        height: 1, backgroundColor: `${borderColor}44`, marginBottom: 10,
-      }} />
-
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: status === "pending" ? 12 : 0 }}>
-        <span style={{ fontSize: 16 }}>🎁</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>レア以上のシール</span>
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 4,
+        marginTop: 8,
+        paddingLeft: 34,
+      }}>
+        {activeSessions.map((sid) => {
+          const parentDone = approvedSet.has(sid);
+          const childDone = doneSet.has(sid);
+          const isCurrent = sid === currentSession;
+          const label = SESSION_SHORT_LABELS[sid];
+          if (parentDone) {
+            return (
+              <span
+                key={sid}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  whiteSpace: "nowrap",
+                  color: theme.category.green,
+                  backgroundColor: `${theme.category.green}20`,
+                  border: `1px solid ${theme.category.green}55`,
+                }}
+              >
+                ✓ {label}
+              </span>
+            );
+          }
+          if (childDone) {
+            return (
+              <span
+                key={sid}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  whiteSpace: "nowrap",
+                  color: theme.category.orange,
+                  backgroundColor: `${theme.category.orange}15`,
+                  border: `1px solid ${theme.category.orange}55`,
+                }}
+              >
+                ⏳ {label}
+              </span>
+            );
+          }
+          if (isCurrent) {
+            return (
+              <span
+                key={sid}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  whiteSpace: "nowrap",
+                  color: theme.category.purple,
+                  backgroundColor: `${theme.category.purple}12`,
+                  border: `1.5px solid ${theme.category.purple}66`,
+                }}
+              >
+                {label} ←いま
+              </span>
+            );
+          }
+          return (
+            <span
+              key={sid}
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "3px 8px",
+                borderRadius: 6,
+                whiteSpace: "nowrap",
+                color: theme.text.tertiary,
+                backgroundColor: theme.fill.secondary,
+                border: `1px solid ${theme.stroke.tertiary}`,
+              }}
+            >
+              {label}
+            </span>
+          );
+        })}
       </div>
-
-      {showEveningNudge && status === "pending" && (
-        <div style={{ fontSize: 12, fontWeight: 700, color: theme.category.orange, marginBottom: 10, marginTop: 8 }}>
+      {isAwaitingReward && (
+        <div style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: theme.category.orange,
+          marginTop: 6,
+          paddingLeft: 34,
+        }}>
+          全部の親チェック完了！ごほうびを開けよう
+        </div>
+      )}
+      {showEveningNudge && !isDone && !isAwaitingReward && (
+        <div style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: theme.category.orange,
+          marginTop: 6,
+          paddingLeft: 34,
+        }}>
           まだ間に合うよ！
         </div>
       )}
+    </div>
+  );
 
-      {status === "pending" && (
-        <button type="button" onClick={onDone} style={{
-          width: "100%", padding: "12px", borderRadius: 12, border: "none",
-          backgroundColor: theme.category.purple, color: "#fff",
-          fontSize: 15, fontWeight: 800, cursor: "pointer",
-        }}>
-          できた！
-        </button>
-      )}
+  if (!alignWithTaskRows) return row;
+
+  return (
+    <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+      <div style={{ flexShrink: 0, width: 22 }} aria-hidden />
+      {row}
     </div>
   );
 }
 
 export function MissionConfirmDialog({
   mission,
+  sessionLabel,
   onConfirm,
   onCancel,
 }: {
   mission: DailyMission;
+  sessionLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -172,10 +394,15 @@ export function MissionConfirmDialog({
       }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>{mission.emoji}</div>
         <div style={{ fontSize: 16, fontWeight: 800, color: theme.text.primary, marginBottom: 6 }}>
-          本当にできた？
+          {sessionLabel ? `${sessionLabel}のチャレンジ、できた？` : "本当にできた？"}
         </div>
-        <div style={{ fontSize: 14, color: theme.text.secondary, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, color: theme.text.secondary, marginBottom: 20 }}>
           {mission.title}
+          {sessionLabel && (
+            <span style={{ display: "block", marginTop: 6, fontSize: 12 }}>
+              親がハンコを押したら、次の時間帯もチャレンジしよう
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button type="button" onClick={onCancel} style={{
@@ -225,7 +452,7 @@ export function MissionBriefingOverlay({
           {mission.title}
         </div>
         <div style={{ fontSize: 14, color: theme.text.secondary, marginBottom: 24 }}>
-          がんばったら レア以上の シール！
+          すべての時間（朝・帰宅・夜など）で親のハンコがそろったら、レア以上のごほうび！
         </div>
         <button type="button" onClick={onDismiss} style={{
           width: "100%", padding: "14px", borderRadius: 12, border: "none",
@@ -403,19 +630,34 @@ export function MissionSetupSheet({
 
 export function ShowParentMissionScreen({
   mission,
+  phaseSession,
+  phaseLabel,
   completedAt,
-  approved,
+  phaseApproved,
+  activeSessions,
+  doneSessions,
+  approvedSessions,
   onApprove,
   onReset,
   onHome,
 }: {
   mission: DailyMission;
+  phaseSession: SessionId;
+  phaseLabel: string;
   completedAt: string;
-  approved: boolean;
+  phaseApproved: boolean;
+  activeSessions: SessionId[];
+  doneSessions: SessionId[];
+  approvedSessions: SessionId[];
   onApprove: () => void;
   onReset: () => void;
   onHome: () => void;
 }) {
+  const doneSet = new Set(doneSessions);
+  const approvedSet = new Set(approvedSessions);
+  const childDoneThisPhase = doneSet.has(phaseSession);
+  const canApprove = childDoneThisPhase && !phaseApproved;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -435,13 +677,13 @@ export function ShowParentMissionScreen({
 
       <div style={{ textAlign: "center", paddingTop: 4 }}>
         <div style={{ fontSize: 21, fontWeight: 800, color: theme.text.primary }}>
-          特別ミッション できたよ！
+          {phaseLabel}の特別ミッション
         </div>
         <div style={{
           display: "inline-flex", marginTop: 6, padding: "3px 12px", borderRadius: 100,
           backgroundColor: `${theme.category.purple}18`,
         }}>
-          <span style={{ fontSize: 12, color: theme.category.purple, fontWeight: 700 }}>とくべつミッション</span>
+          <span style={{ fontSize: 12, color: theme.category.purple, fontWeight: 700 }}>親チェック</span>
         </div>
       </div>
 
@@ -454,7 +696,30 @@ export function ShowParentMissionScreen({
         <span style={{ fontSize: 16, fontWeight: 700, color: theme.text.primary }}>{mission.title}</span>
       </div>
 
-      {approved && (
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center",
+        padding: "10px 12px", borderRadius: 12,
+        backgroundColor: theme.fill.quaternary,
+        border: `1px solid ${theme.stroke.tertiary}`,
+      }}>
+        {activeSessions.map((sid) => {
+          const parentDone = approvedSet.has(sid);
+          const childDone = doneSet.has(sid);
+          const isThis = sid === phaseSession;
+          return (
+            <span key={sid} style={{
+              fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 8,
+              color: parentDone ? theme.category.green : childDone ? theme.category.orange : theme.text.tertiary,
+              backgroundColor: parentDone ? `${theme.category.green}18` : childDone ? `${theme.category.orange}15` : theme.fill.secondary,
+              border: `1px solid ${parentDone ? `${theme.category.green}55` : isThis ? `${theme.category.purple}66` : theme.stroke.tertiary}`,
+            }}>
+              {parentDone ? "✓ " : childDone ? "⏳ " : ""}{SESSION_SHORT_LABELS[sid]}
+            </span>
+          );
+        })}
+      </div>
+
+      {phaseApproved && (
         <div className="approved-in" style={{
           padding: "11px 16px", borderRadius: 12,
           backgroundColor: `${theme.category.green}20`, border: `2px solid ${theme.category.green}66`,
@@ -465,20 +730,25 @@ export function ShowParentMissionScreen({
               <path d="M1.5 5L5 8.5L11.5 1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 700, color: theme.category.green }}>親がかくにんしたよ！</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: theme.category.green }}>{phaseLabel}のハンコ OK！</span>
         </div>
       )}
 
       <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
-        <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, textAlign: "center" }}>ここは親がかくにんするところ</div>
+        <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, textAlign: "center" }}>
+          {phaseLabel}のチャレンジを親がかくにん
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <div onClick={onApprove} style={{
+          <div
+            onClick={canApprove ? onApprove : undefined}
+            style={{
             flex: 2, padding: "12px", borderRadius: 10, textAlign: "center",
-            backgroundColor: approved ? `${theme.category.green}33` : theme.category.green,
-            color: approved ? theme.category.green : "#fff",
-            fontSize: 14, fontWeight: 800, cursor: approved ? "default" : "pointer",
+            backgroundColor: phaseApproved ? `${theme.category.green}33` : canApprove ? theme.category.green : theme.fill.secondary,
+            color: phaseApproved ? theme.category.green : canApprove ? "#fff" : theme.text.tertiary,
+            fontSize: 14, fontWeight: 800, cursor: canApprove ? "pointer" : "default",
+            opacity: canApprove || phaseApproved ? 1 : 0.7,
           }}>
-            {approved ? "✓ 承認ずみ" : "はんこを押す！"}
+            {phaseApproved ? "✓ 承認ずみ" : canApprove ? "はんこを押す！" : "まだ承認できません"}
           </div>
           <div onClick={onReset} style={{
             flex: 1, padding: "12px", borderRadius: 10, textAlign: "center",

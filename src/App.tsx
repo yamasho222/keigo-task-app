@@ -28,11 +28,17 @@ import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate,
 } from "./japaneseCalendar";
 import {
-  type DailyMission, type FavoriteMission, type MissionStatus, getMissionStatus,
+  type DailyMission, type FavoriteMission, type MissionCardStatus,
   MissionCard, MissionConfirmDialog, MissionBriefingOverlay,
   MissionSetupSheet, ShowParentMissionScreen,
   isMissionBriefingSeen, markMissionBriefingSeen,
 } from "./missions";
+import {
+  getMissionOverallStatus,
+  getMissionCardStatus,
+  isAllMissionPhasesParentApproved,
+  getActiveMissionSessions,
+} from "./missionProgress";
 import {
   type Task, type SessionId, type AllSessionTasks, type TaskScope,
   SESSION_IDS, SESSION_SHORT_LABELS,
@@ -245,14 +251,17 @@ interface StoredState {
   history: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
   dailyTreatClaimed?: Record<string, boolean>;
+  dailyTreatPending?: Record<string, boolean>;
   fullDayBonusClaimed?: Record<string, boolean>;
   lastWeeklyRewardStreak?: number;
   stickerAlbum?: string[];
   customTaskEmojis?: string[];
   todayMission?: DailyMission | null;
   favoriteMissions?: FavoriteMission[];
-  specialMissionApproved?: Record<string, boolean>;
-  missionChildClaimed?: boolean;
+  missionDoneSessions?: SessionId[];
+  missionApprovedSessions?: SessionId[];
+  specialMissionRewardClaimed?: Record<string, boolean>;
+  specialMissionTreatPending?: Record<string, boolean>;
   missionHistory?: Record<string, { title: string; emoji: string }>;
   missionEveningNudgeDate?: string;
 }
@@ -271,6 +280,7 @@ function isSessionTreatClaimed(claimed: Record<string, boolean>, date: string, s
 
 interface PendingTreat {
   mode: TreatMode;
+  session?: SessionId;
   devForceTier?: import("./stickerRewards").StickerRarity;
   devForceTease?: boolean;
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
@@ -280,6 +290,7 @@ interface PendingTreat {
 function buildTreatQueue(
   opts: {
     needsDaily: boolean;
+    dailySession?: SessionId;
     specialMissionEligible: boolean;
     fullDayBonusEligible: boolean;
     weeklyMilestone: boolean;
@@ -287,7 +298,9 @@ function buildTreatQueue(
   },
 ): PendingTreat[] {
   const queue: PendingTreat[] = [];
-  if (opts.needsDaily) queue.push({ mode: "daily" });
+  if (opts.needsDaily && opts.dailySession) {
+    queue.push({ mode: "daily", session: opts.dailySession });
+  }
   if (opts.specialMissionEligible) {
     queue.push({ mode: "specialMission", missionTitle: opts.missionTitle });
   }
@@ -306,8 +319,10 @@ function isTaskResolved(done: Set<number>, skipped: Set<number>, id: number) {
 
 function isAllResolved(session: SessionId, allSessions: AllSessionTasks) {
   const visible = visibleTasksForSession(session, allSessions);
-  const { done, skipped } = allSessions[session];
-  return visible.length > 0 && visible.every((t) => isTaskResolved(done, skipped, t.id));
+  const { tasks, done, skipped } = allSessions[session];
+  // 表示タスクがなければ、このセッションではやることがない（共有完了で全非表示など）
+  if (visible.length === 0) return tasks.length > 0;
+  return visible.every((t) => isTaskResolved(done, skipped, t.id));
 }
 
 function fmtTaskTime(totalSec: number) {
@@ -456,7 +471,6 @@ function loadStoredState(): StoredState {
         fullDayBonusClaimed: hydrated.fullDayBonusClaimed,
         lastWeeklyRewardStreak: hydrated.lastWeeklyRewardStreak,
         favoriteMissions: hydrated.favoriteMissions,
-        specialMissionApproved: hydrated.specialMissionApproved,
         missionHistory: hydrated.missionHistory,
       };
     }
@@ -916,7 +930,7 @@ function AnimStyles() {
       .chest-shake-premium { animation: chestShakePremium 1.1s ease-in-out infinite; }
       .chest-glow-pulse    { animation: chestGlowPulse 1.8s ease-in-out infinite; }
       .chest-glow-pulse-mission { animation: chestGlowPulseMission 1.8s ease-in-out infinite; }
-      .mission-evening-nudge { animation: missionEveningNudge 1.6s ease-in-out infinite; border-radius: 16px; }
+      .mission-evening-nudge { animation: missionEveningNudge 1.6s ease-in-out infinite; border-radius: 14px; }
       .chest-sparkle-orbit {
         animation: orbitParticle var(--orbit-dur, 2.4s) linear infinite,
                    chestSparkleTwinkle 1.4s ease-in-out infinite;
@@ -1027,14 +1041,22 @@ export default function KeigoTaskApp() {
     return null;
   });
   const [favoriteMissions, setFavoriteMissions] = useState<FavoriteMission[]>(stored.favoriteMissions ?? []);
-  const [specialMissionApproved, setSpecialMissionApproved] = useState<Record<string, boolean>>(
-    stored.specialMissionApproved ?? {},
-  );
-  const [missionChildClaimed, setMissionChildClaimed] = useState(() => {
+  const [missionDoneSessions, setMissionDoneSessions] = useState<SessionId[]>(() => {
     const m = stored.todayMission;
-    if (!m || m.dateKey !== taskDayKey()) return false;
-    return stored.missionChildClaimed ?? false;
+    if (!m || m.dateKey !== taskDayKey()) return [];
+    return stored.missionDoneSessions ?? [];
   });
+  const [missionApprovedSessions, setMissionApprovedSessions] = useState<SessionId[]>(() => {
+    const m = stored.todayMission;
+    if (!m || m.dateKey !== taskDayKey()) return [];
+    return stored.missionApprovedSessions ?? [];
+  });
+  const [specialMissionRewardClaimed, setSpecialMissionRewardClaimed] = useState<Record<string, boolean>>(
+    stored.specialMissionRewardClaimed ?? {},
+  );
+  const [specialMissionTreatPending, setSpecialMissionTreatPending] = useState<Record<string, boolean>>(
+    stored.specialMissionTreatPending ?? {},
+  );
   const [missionHistory, setMissionHistory] = useState<Record<string, { title: string; emoji: string }>>(
     stored.missionHistory ?? {},
   );
@@ -1043,8 +1065,9 @@ export default function KeigoTaskApp() {
   );
   const [showMissionSetup, setShowMissionSetup] = useState(false);
   const [showMissionConfirm, setShowMissionConfirm] = useState(false);
+  const [missionConfirmSession, setMissionConfirmSession] = useState<SessionId | null>(null);
   const [showMissionBriefing, setShowMissionBriefing] = useState(false);
-  const [missionParentApproved, setMissionParentApproved] = useState(false);
+  const [missionParentPhase, setMissionParentPhase] = useState<SessionId | null>(null);
   const [missionCompletedAt, setMissionCompletedAt] = useState("");
 
   const addCustomTaskEmoji = (emoji: string) => {
@@ -1060,6 +1083,7 @@ export default function KeigoTaskApp() {
   const [newRecordCelebration, setNewRecordCelebration] = useState<NewRecordCelebration | null>(null);
   const [newRecordCelebKey, setNewRecordCelebKey] = useState(0);
   const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
+  const [dailyTreatPending, setDailyTreatPending] = useState<Record<string, boolean>>(stored.dailyTreatPending ?? {});
   const [fullDayBonusClaimed, setFullDayBonusClaimed] = useState<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
   const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
   const [pendingTreat, setPendingTreat] = useState<PendingTreat | null>(null);
@@ -1071,6 +1095,8 @@ export default function KeigoTaskApp() {
   });
   const taskDayRef = useRef(stored.date);
   const screenRef = useRef<ScreenId>(getInitialScreen());
+  const specialMissionCollectedRef = useRef(false);
+  const dailyTreatCollectedRef = useRef(false);
   const workTimerBaseRef = useRef(0);
   const workTimerStartRef = useRef<number | null>(null);
 
@@ -1108,6 +1134,37 @@ export default function KeigoTaskApp() {
   useEffect(() => { screenRef.current = screen; }, [screen]);
 
   const activeSessionIds = getActiveSessionIds();
+
+  useEffect(() => {
+    const today = todayKey();
+    if (localStorage.getItem("keigo-daily-treat-pending-migration") === today) return;
+
+    const approvedBySession: Record<SessionId, boolean> = {
+      morning: morningApproved,
+      daytime: daytimeApproved,
+      home: homeApproved,
+      evening: eveningApproved,
+    };
+
+    let nextPending = { ...dailyTreatPending };
+    let nextClaimed = { ...dailyTreatClaimed };
+    let changed = false;
+
+    for (const sid of SESSION_IDS) {
+      const key = sessionTreatKey(today, sid);
+      if (approvedBySession[sid] && nextClaimed[key] && !nextPending[key]) {
+        nextPending[key] = true;
+        delete nextClaimed[key];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setDailyTreatPending(nextPending);
+      setDailyTreatClaimed(nextClaimed);
+    }
+    localStorage.setItem("keigo-daily-treat-pending-migration", today);
+  }, [morningApproved, daytimeApproved, homeApproved, eveningApproved, dailyTreatClaimed, dailyTreatPending]);
 
   const sessionState = {
     morning: {
@@ -1186,14 +1243,17 @@ export default function KeigoTaskApp() {
       history,
       bestTimes,
       dailyTreatClaimed,
+      dailyTreatPending,
       fullDayBonusClaimed,
       lastWeeklyRewardStreak,
       stickerAlbum,
       customTaskEmojis,
       todayMission,
       favoriteMissions,
-      specialMissionApproved,
-      missionChildClaimed,
+      missionDoneSessions,
+      missionApprovedSessions,
+      specialMissionRewardClaimed,
+      specialMissionTreatPending,
       missionHistory,
       missionEveningNudgeDate,
     };
@@ -1205,9 +1265,10 @@ export default function KeigoTaskApp() {
     morningApproved, daytimeApproved, eveningApproved, homeApproved,
     morningTasks, daytimeTasks, eveningTasks, homeTasks,
     history, bestTimes,
-    dailyTreatClaimed, fullDayBonusClaimed, lastWeeklyRewardStreak, stickerAlbum,
-    customTaskEmojis, todayMission, favoriteMissions, specialMissionApproved,
-    missionChildClaimed, missionHistory, missionEveningNudgeDate,
+    dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, lastWeeklyRewardStreak, stickerAlbum,
+    customTaskEmojis, todayMission, favoriteMissions,
+    missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
+    missionHistory, missionEveningNudgeDate,
   ]);
 
   useEffect(() => {
@@ -1308,8 +1369,9 @@ export default function KeigoTaskApp() {
       setNewRecordCelebration(null);
       setStampVisible(false);
       setTodayMission(null);
-      setMissionChildClaimed(false);
-      setMissionParentApproved(false);
+      setMissionDoneSessions([]);
+      setMissionApprovedSessions([]);
+      setMissionParentPhase(null);
       setMissionEveningNudgeDate(undefined);
       setShowMissionBriefing(false);
       setShowMissionConfirm(false);
@@ -1352,6 +1414,19 @@ export default function KeigoTaskApp() {
     sessionState[session].setApproved(false);
     const updatedDay = { ...prev, [session]: false };
     setHistory({ ...history, [today]: updatedDay });
+    const treatKey = sessionTreatKey(today, session);
+    setDailyTreatPending((p) => {
+      if (!p[treatKey]) return p;
+      const next = { ...p };
+      delete next[treatKey];
+      return next;
+    });
+    setDailyTreatClaimed((c) => {
+      if (!c[treatKey]) return c;
+      const next = { ...c };
+      delete next[treatKey];
+      return next;
+    });
     if (!isFullDay(updatedDay, new Date())) {
       setFullDayBonusClaimed((claimed) => {
         if (!claimed[today]) return claimed;
@@ -1364,9 +1439,23 @@ export default function KeigoTaskApp() {
   };
 
   const closeTreatOverlay = () => {
+    setPendingTreat((closing) => {
+      if (closing?.mode === "specialMission" && !specialMissionCollectedRef.current) {
+        setSpecialMissionTreatPending((p) => ({ ...p, [currentTaskDay]: true }));
+      }
+      if (closing?.mode === "daily" && closing.session && !dailyTreatCollectedRef.current) {
+        const treatSession = closing.session;
+        setDailyTreatPending((p) => ({
+          ...p,
+          [sessionTreatKey(todayKey(), treatSession)]: true,
+        }));
+      }
+      specialMissionCollectedRef.current = false;
+      dailyTreatCollectedRef.current = false;
+      return null;
+    });
     setTreatQueue((queue) => {
       if (queue.length === 0) {
-        setPendingTreat(null);
         return [];
       }
       const [next, ...rest] = queue;
@@ -1580,13 +1669,68 @@ export default function KeigoTaskApp() {
     });
   };
 
+  const handleTreatCollect = (rewardId: string) => {
+    collectSticker(rewardId);
+    setPendingTreat((treat) => {
+      if (treat?.mode === "specialMission") {
+        specialMissionCollectedRef.current = true;
+        setSpecialMissionRewardClaimed((c) => ({ ...c, [currentTaskDay]: true }));
+        setSpecialMissionTreatPending((p) => {
+          if (!p[currentTaskDay]) return p;
+          const next = { ...p };
+          delete next[currentTaskDay];
+          return next;
+        });
+      }
+      if (treat?.mode === "daily" && treat.session) {
+        dailyTreatCollectedRef.current = true;
+        const key = sessionTreatKey(todayKey(), treat.session);
+        setDailyTreatClaimed((c) => ({ ...c, [key]: true }));
+        setDailyTreatPending((p) => {
+          if (!p[key]) return p;
+          const next = { ...p };
+          delete next[key];
+          return next;
+        });
+      }
+      return treat;
+    });
+  };
+
+  const openSessionDailyReward = (session: SessionId) => {
+    dailyTreatCollectedRef.current = false;
+    const key = sessionTreatKey(todayKey(), session);
+    setDailyTreatClaimed((c) => {
+      if (!c[key]) return c;
+      const next = { ...c };
+      delete next[key];
+      return next;
+    });
+    setDailyTreatPending((p) => {
+      if (!p[key]) return p;
+      const next = { ...p };
+      delete next[key];
+      return next;
+    });
+    openTreatQueue([{ mode: "daily", session }]);
+  };
+
+  const hasUnclaimedSessionDailyReward = (session: SessionId) => {
+    if (!sessionState[session].approved) return false;
+    const key = sessionTreatKey(todayKey(), session);
+    if (dailyTreatPending[key]) return true;
+    return !isSessionTreatClaimed(dailyTreatClaimed, todayKey(), session);
+  };
+
   const currentTaskDay = taskDayKey();
   const currentTodayKey = todayKey();
-  const activeMissionStatus = getMissionStatus(
+  const activeMissionSessions = getActiveMissionSessions();
+  const missionRewardClaimedToday = !!specialMissionRewardClaimed[currentTaskDay];
+  const activeMissionOverall = getMissionOverallStatus(
     todayMission,
     currentTaskDay,
-    missionChildClaimed,
-    specialMissionApproved,
+    missionApprovedSessions,
+    missionRewardClaimedToday,
   );
 
   const saveTodayMission = (
@@ -1595,8 +1739,9 @@ export default function KeigoTaskApp() {
   ) => {
     const mission: DailyMission = { ...partial, dateKey: currentTaskDay };
     setTodayMission(mission);
-    setMissionChildClaimed(false);
-    setMissionParentApproved(false);
+    setMissionDoneSessions([]);
+    setMissionApprovedSessions([]);
+    setMissionParentPhase(null);
     if (addToFavorites) {
       const fav: FavoriteMission = {
         id: `${Date.now()}-${partial.title}`,
@@ -1615,16 +1760,17 @@ export default function KeigoTaskApp() {
 
   const clearTodayMission = () => {
     setTodayMission(null);
-    setMissionChildClaimed(false);
-    setMissionParentApproved(false);
+    setMissionDoneSessions([]);
+    setMissionApprovedSessions([]);
+    setMissionParentPhase(null);
     setShowMissionSetup(false);
   };
 
-  const fireMissionCelebration = () => {
+  const fireMissionCelebration = (phase: SessionId) => {
+    setMissionParentPhase(phase);
     setAnticipating(false);
     setStampVisible(false);
     setMissionCompletedAt(fmtTime(new Date()));
-    setMissionParentApproved(false);
     setCelebKey((k) => k + 1);
     setCelebType("burst");
     setTimeout(() => {
@@ -1636,52 +1782,89 @@ export default function KeigoTaskApp() {
   };
 
   const confirmMissionDone = () => {
+    if (!missionConfirmSession) return;
     setShowMissionConfirm(false);
-    setMissionChildClaimed(true);
-    fireMissionCelebration();
+    const sid = missionConfirmSession;
+    setMissionConfirmSession(null);
+    const next = missionDoneSessions.includes(sid)
+      ? missionDoneSessions
+      : [...missionDoneSessions, sid];
+    setMissionDoneSessions(next);
+    fireMissionCelebration(sid);
+  };
+
+  const openMissionReward = () => {
+    if (!todayMission) return;
+    if (!isAllMissionPhasesParentApproved(missionApprovedSessions)) return;
+    specialMissionCollectedRef.current = false;
+    setSpecialMissionTreatPending((p) => {
+      if (!p[currentTaskDay]) return p;
+      const next = { ...p };
+      delete next[currentTaskDay];
+      return next;
+    });
+    openTreatQueue([{
+      mode: "specialMission",
+      missionTitle: `${todayMission.emoji} ${todayMission.title}`,
+    }]);
   };
 
   const handleMissionApprove = () => {
-    if (missionParentApproved || !todayMission) return;
-    const today = currentTodayKey;
-    setMissionParentApproved(true);
-    setSpecialMissionApproved((c) => ({ ...c, [today]: true }));
-    setMissionHistory((h) => ({
-      ...h,
-      [today]: { title: todayMission.title, emoji: todayMission.emoji },
-    }));
+    if (!todayMission || !missionParentPhase) return;
+    if (missionApprovedSessions.includes(missionParentPhase)) return;
+    if (!missionDoneSessions.includes(missionParentPhase)) return;
+    const nextApproved = [...missionApprovedSessions, missionParentPhase];
+    setMissionApprovedSessions(nextApproved);
     triggerStamp();
-    setTimeout(() => {
-      openTreatQueue([{
-        mode: "specialMission",
-        missionTitle: `${todayMission.emoji} ${todayMission.title}`,
-      }]);
-    }, 950);
+    if (isAllMissionPhasesParentApproved(nextApproved)) {
+      setMissionHistory((h) => ({
+        ...h,
+        [currentTodayKey]: { title: todayMission.title, emoji: todayMission.emoji },
+      }));
+      setTimeout(() => openMissionReward(), 950);
+    }
+  };
+
+  const undoMissionSession = (session: SessionId) => {
+    setMissionDoneSessions((prev) => prev.filter((s) => s !== session));
+    setMissionApprovedSessions((prev) => prev.filter((s) => s !== session));
+    setSpecialMissionRewardClaimed((c) => {
+      if (!c[currentTaskDay]) return c;
+      const next = { ...c };
+      delete next[currentTaskDay];
+      return next;
+    });
+    setSpecialMissionTreatPending((p) => {
+      if (!p[currentTaskDay]) return p;
+      const next = { ...p };
+      delete next[currentTaskDay];
+      return next;
+    });
   };
 
   const resetMissionApproval = () => {
-    setMissionParentApproved(false);
-    setMissionChildClaimed(false);
+    if (!missionParentPhase) return;
+    setMissionApprovedSessions((prev) => prev.filter((s) => s !== missionParentPhase));
     setStampVisible(false);
   };
 
   useEffect(() => {
-    if (!todayMission || activeMissionStatus !== "pending") return;
+    if (!todayMission || activeMissionOverall !== "pending") return;
     if (isMissionBriefingSeen(currentTaskDay)) return;
     if (!isSessionScreen(screen)) return;
     setShowMissionBriefing(true);
-  }, [todayMission, activeMissionStatus, currentTaskDay, screen]);
+  }, [todayMission, activeMissionOverall, currentTaskDay, screen]);
 
   useEffect(() => {
     if (screen !== "evening") return;
-    if (activeMissionStatus !== "pending") return;
+    if (activeMissionOverall !== "pending") return;
     if (missionEveningNudgeDate === currentTaskDay) return;
     setMissionEveningNudgeDate(currentTaskDay);
-  }, [screen, activeMissionStatus, currentTaskDay, missionEveningNudgeDate]);
+  }, [screen, activeMissionOverall, currentTaskDay, missionEveningNudgeDate]);
 
   const showEveningMissionNudge =
     screen === "evening"
-    && activeMissionStatus === "pending"
+    && activeMissionOverall === "pending"
     && missionEveningNudgeDate === currentTaskDay;
 
   const handleApprove = () => {
@@ -1705,6 +1888,7 @@ export default function KeigoTaskApp() {
 
     const treatQueueToOpen = buildTreatQueue({
       needsDaily,
+      dailySession: parentSession,
       specialMissionEligible: false,
       fullDayBonusEligible,
       weeklyMilestone,
@@ -1713,9 +1897,6 @@ export default function KeigoTaskApp() {
     setTimeout(() => {
       if (treatQueueToOpen.length > 0) {
         openTreatQueue(treatQueueToOpen);
-      }
-      if (needsDaily) {
-        setDailyTreatClaimed((c) => ({ ...c, [sessionTreatKey(today, parentSession)]: true }));
       }
       if (fullDayBonusEligible) {
         setFullDayBonusClaimed((c) => ({ ...c, [today]: true }));
@@ -2006,15 +2187,19 @@ export default function KeigoTaskApp() {
           missionTitle={pendingTreat.missionTitle}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
-          onCollect={collectSticker}
+          onCollect={handleTreatCollect}
         />
       )}
 
-      {showMissionConfirm && todayMission && (
+      {showMissionConfirm && todayMission && missionConfirmSession && (
         <MissionConfirmDialog
           mission={todayMission}
+          sessionLabel={SESSION_SHORT_LABELS[missionConfirmSession]}
           onConfirm={confirmMissionDone}
-          onCancel={() => setShowMissionConfirm(false)}
+          onCancel={() => {
+            setShowMissionConfirm(false);
+            setMissionConfirmSession(null);
+          }}
         />
       )}
 
@@ -2310,20 +2495,42 @@ export default function KeigoTaskApp() {
                 customTaskEmojis={customTaskEmojis}
                 onAddCustomTaskEmoji={addCustomTaskEmoji}
                 todayMission={todayMission}
-                missionStatus={activeMissionStatus}
+                missionCardStatus={getMissionCardStatus(
+                  todayMission,
+                  currentTaskDay,
+                  missionDoneSessions,
+                  missionApprovedSessions,
+                  missionRewardClaimedToday,
+                  sid,
+                )}
+                activeMissionSessions={activeMissionSessions}
+                missionDoneSessions={missionDoneSessions}
+                missionApprovedSessions={missionApprovedSessions}
                 showEveningMissionNudge={showEveningMissionNudge}
-                onMissionDone={() => setShowMissionConfirm(true)}
+                onMissionDone={() => {
+                  setMissionConfirmSession(sid);
+                  setShowMissionConfirm(true);
+                }}
+                onMissionUndo={() => undoMissionSession(sid)}
                 onMissionSetup={() => setShowMissionSetup(true)}
+                onOpenMissionReward={openMissionReward}
+                showDailyRewardButton={hasUnclaimedSessionDailyReward(sid)}
+                onOpenDailyReward={() => openSessionDailyReward(sid)}
               />
             ))}
           </>
         )}
 
-        {screen === "show_parent_mission" && todayMission && (
+        {screen === "show_parent_mission" && todayMission && missionParentPhase && (
           <ShowParentMissionScreen
             mission={todayMission}
+            phaseSession={missionParentPhase}
+            phaseLabel={SESSION_META[missionParentPhase].label}
             completedAt={missionCompletedAt}
-            approved={missionParentApproved}
+            phaseApproved={missionApprovedSessions.includes(missionParentPhase)}
+            activeSessions={activeMissionSessions}
+            doneSessions={missionDoneSessions}
+            approvedSessions={missionApprovedSessions}
             onApprove={handleMissionApprove}
             onReset={resetMissionApproval}
             onHome={goHome}
@@ -3684,10 +3891,17 @@ interface TaskScreenProps {
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
   todayMission: DailyMission | null;
-  missionStatus: MissionStatus | null;
+  missionCardStatus: MissionCardStatus | null;
+  activeMissionSessions: SessionId[];
+  missionDoneSessions: SessionId[];
+  missionApprovedSessions: SessionId[];
   showEveningMissionNudge: boolean;
   onMissionDone: () => void;
+  onMissionUndo: () => void;
   onMissionSetup: () => void;
+  onOpenMissionReward: () => void;
+  showDailyRewardButton: boolean;
+  onOpenDailyReward: () => void;
 }
 
 function TaskScreen({
@@ -3695,7 +3909,9 @@ function TaskScreen({
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
-  todayMission, missionStatus, showEveningMissionNudge, onMissionDone, onMissionSetup,
+  todayMission, missionCardStatus, activeMissionSessions, missionDoneSessions, missionApprovedSessions,
+  showEveningMissionNudge, onMissionDone, onMissionUndo, onMissionSetup, onOpenMissionReward,
+  showDailyRewardButton, onOpenDailyReward,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
@@ -3765,16 +3981,6 @@ function TaskScreen({
         </div>
       </div>
 
-      {todayMission && missionStatus && (
-        <MissionCard
-          mission={todayMission}
-          status={missionStatus}
-          showEveningNudge={showEveningMissionNudge}
-          onDone={onMissionDone}
-          onLongPressSetup={onMissionSetup}
-        />
-      )}
-
       <StepProgress tasks={shownTasks} done={done} skipped={skipped} justChecked={justChecked} />
       <BestTimeSummary session={session} tasks={shownTasks} bestTimes={bestTimes} />
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
@@ -3829,6 +4035,62 @@ function TaskScreen({
           </div>
         </SortableContext>
       </DndContext>
+
+      {showDailyRewardButton && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.green}55`,
+          backgroundColor: `${theme.category.green}12`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>🎁</span>
+            <span style={{
+              fontSize: 15,
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              color: theme.text.primary,
+            }}>
+              きょうのごほうび
+            </span>
+            <button
+              type="button"
+              onClick={onOpenDailyReward}
+              style={{
+                flexShrink: 0,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: theme.category.green,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              ごほうび！
+            </button>
+          </div>
+        </div>
+      )}
+
+      {todayMission && missionCardStatus && (
+        <MissionCard
+          mission={todayMission}
+          status={missionCardStatus}
+          currentSession={session}
+          activeSessions={activeMissionSessions}
+          doneSessions={missionDoneSessions}
+          approvedSessions={missionApprovedSessions}
+          showEveningNudge={showEveningMissionNudge}
+          alignWithTaskRows
+          onDone={onMissionDone}
+          onUndoSession={missionCardStatus === "session_complete" ? onMissionUndo : undefined}
+          onOpenReward={onOpenMissionReward}
+          onLongPressSetup={onMissionSetup}
+        />
+      )}
 
       {/* タスク追加エリア */}
       {isAdding ? (
