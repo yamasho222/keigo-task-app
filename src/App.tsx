@@ -130,6 +130,13 @@ function taskSharedBadgeStyle(task: Task): { label: string; color: string; backg
   };
 }
 
+function confirmSharedTaskComplete(task: Task): boolean {
+  if (!task.sharedKey || !task.sharedSessions || task.sharedSessions.length < 2) return true;
+  return window.confirm(
+    `「${task.emoji} ${task.title}」は ${sharedSessionsLabel(task.sharedSessions)} でも同じタスクです。\n全部終わりましたか？`,
+  );
+}
+
 function reorderVisibleInAll(
   session: SessionId,
   allTasks: Task[],
@@ -1538,12 +1545,42 @@ export default function KeigoTaskApp() {
     const visible = visibleTasksForSession(session, allSessions);
     if (isAllResolved(session, allSessions)) {
       const names = visible.map((t) => {
-        if (skipped.has(t.id)) return `${t.title}（保留）`;
+        if (skipped.has(t.id)) return `${t.title}（あとで）`;
         return t.title;
       });
       setAnticipating(true);
       setTimeout(() => fireCelebration({ label, taskNames: names }, session), 750);
     }
+  };
+
+  const applyTaskDone = (
+    session: SessionId,
+    taskId: number,
+    done: Set<number>,
+    skipped: Set<number>,
+    setDone: (s: Set<number>) => void,
+    setSkipped: (s: Set<number>) => void,
+    label: string,
+  ) => {
+    let nextDone = done;
+    let nextSkipped = skipped;
+
+    if (!done.has(taskId)) {
+      nextDone = new Set(done);
+      nextDone.add(taskId);
+      setDone(nextDone);
+      setFloatColor(FLOAT_COLORS[Math.floor(Math.random() * FLOAT_COLORS.length)]);
+      setJustChecked(taskId);
+      setTimeout(() => setJustChecked(null), 1350);
+    }
+
+    if (skipped.has(taskId)) {
+      nextSkipped = new Set(skipped);
+      nextSkipped.delete(taskId);
+      setSkipped(nextSkipped);
+    }
+
+    maybeCelebrate(session, nextDone, nextSkipped, label);
   };
 
   const completeWorkTask = (
@@ -1552,6 +1589,7 @@ export default function KeigoTaskApp() {
     done: Set<number>,
     skipped: Set<number>,
     setDone: (s: Set<number>) => void,
+    setSkipped: (s: Set<number>) => void,
     label: string,
   ) => {
     if (!activeWorkTask || activeWorkTask.session !== session) return;
@@ -1561,6 +1599,8 @@ export default function KeigoTaskApp() {
 
     const { taskId } = activeWorkTask;
     const task = tasks.find((t) => t.id === taskId);
+    if (task?.sharedKey && !confirmSharedTaskComplete(task)) return;
+
     const key = resolveTaskTimeKey(task, session, taskId);
     const prevBest = bestTimes[key];
     if (prevBest === undefined || totalSec < prevBest) {
@@ -1576,17 +1616,31 @@ export default function KeigoTaskApp() {
       }
     }
 
-    if (!done.has(taskId) && !skipped.has(taskId)) {
-      const next = new Set(done);
-      next.add(taskId);
-      setDone(next);
-      setFloatColor(FLOAT_COLORS[Math.floor(Math.random() * FLOAT_COLORS.length)]);
-      setJustChecked(taskId);
-      setTimeout(() => setJustChecked(null), 1350);
-      maybeCelebrate(session, next, skipped, label);
-    }
+    applyTaskDone(session, taskId, done, skipped, setDone, setSkipped, label);
     resetWorkTimer();
     setActiveWorkTask(null);
+  };
+
+  const quickCompleteTask = (
+    session: SessionId,
+    taskId: number,
+    tasks: Task[],
+    done: Set<number>,
+    skipped: Set<number>,
+    setDone: (s: Set<number>) => void,
+    setSkipped: (s: Set<number>) => void,
+    label: string,
+  ) => {
+    if (celebType || anticipating) return;
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || isGameTask(task) || done.has(taskId)) return;
+    if (task.sharedKey && !confirmSharedTaskComplete(task)) return;
+
+    if (activeWorkTask?.session === session && activeWorkTask.taskId === taskId) {
+      cancelWorkTask();
+    }
+
+    applyTaskDone(session, taskId, done, skipped, setDone, setSkipped, label);
   };
 
   // ── ゲームタイマー（カウントダウン後は超過時間も計測）──
@@ -2573,12 +2627,22 @@ export default function KeigoTaskApp() {
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
                 onCancelTask={cancelWorkTask}
+                onQuickCompleteTask={(id) => quickCompleteTask(
+                  sid, id,
+                  sessionState[sid].tasks,
+                  sessionState[sid].done,
+                  sessionState[sid].skipped,
+                  sessionState[sid].setDone,
+                  sessionState[sid].setSkipped,
+                  SESSION_META[sid].label,
+                )}
                 onCompleteTask={() => completeWorkTask(
                   sid,
                   sessionState[sid].tasks,
                   sessionState[sid].done,
                   sessionState[sid].skipped,
                   sessionState[sid].setDone,
+                  sessionState[sid].setSkipped,
                   SESSION_META[sid].label,
                 )}
                 onClearBestTime={(id) => clearBestTime(sid, id)}
@@ -3983,6 +4047,7 @@ interface TaskScreenProps {
   onEditTask: (id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[]) => void;
   onDeleteTask: (id: number) => void;
   onSkipTask: (id: number) => void;
+  onQuickCompleteTask: (id: number) => void;
   onSelectTask: (id: number) => void;
   onStartTimer: () => void;
   onPauseTimer: () => void;
@@ -4010,7 +4075,7 @@ interface TaskScreenProps {
 function TaskScreen({
   session, allSessionTasks, interactionLocked = false, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
   bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
-  onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
+  onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onQuickCompleteTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
   todayMission, missionCardStatus, activeMissionSessions, missionDoneSessions, missionApprovedSessions,
   showEveningMissionNudge, onMissionDone, onMissionUndo, onMissionSetup, onOpenMissionReward,
@@ -4121,6 +4186,7 @@ function TaskScreen({
                   onSelect={() => onSelectTask(task.id)}
                   onDelete={() => { handleDeleteTask(task.id); setOpenSwipe(null); }}
                   onSkip={() => { onSkipTask(task.id); setOpenSwipe(null); }}
+                  onQuickComplete={() => { onQuickCompleteTask(task.id); setOpenSwipe(null); }}
                   onStartTimer={onStartTimer}
                   onPauseTimer={onPauseTimer}
                   onCancelTask={onCancelTask}
@@ -4312,7 +4378,9 @@ function TaskScreen({
 // ── Sortable Task Row ─────────────────────────────────
 
 const SWIPE_DELETE_WIDTH = 72;
-const SWIPE_SKIP_WIDTH = 80;
+const SWIPE_LATER_WIDTH = 58;
+const SWIPE_DONE_WIDTH = 62;
+const SWIPE_ACTION_WIDTH = SWIPE_LATER_WIDTH + SWIPE_DONE_WIDTH;
 const LONG_PRESS_MS = 500;
 const GESTURE_SLOP = 10;
 
@@ -4351,7 +4419,7 @@ interface TaskRowProps {
   task: Task; isDone: boolean; isSkipped: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
   floatColor: string; bestTime?: number; liveElapsed?: number; gamePlaySec?: number; isGameRow?: boolean;
   timerRunning: boolean; interactionLocked?: boolean;
-  onSelect: () => void; onDelete: () => void; onSkip: () => void; onLongPress: () => void;
+  onSelect: () => void; onDelete: () => void; onSkip: () => void; onQuickComplete: () => void; onLongPress: () => void;
   swipeMode: SwipeMode | null; onSwipeOpen: (mode: SwipeMode) => void; onSwipeClose: () => void;
   onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
   confirmDeleteTime: boolean;
@@ -4360,13 +4428,13 @@ interface TaskRowProps {
 
 function swipeSnapOffset(mode: SwipeMode | null) {
   if (mode === "delete") return -SWIPE_DELETE_WIDTH;
-  if (mode === "skip") return SWIPE_SKIP_WIDTH;
+  if (mode === "skip") return SWIPE_ACTION_WIDTH;
   return 0;
 }
 
 function SortableTaskRow(props: TaskRowProps) {
   const {
-    swipeMode, onSwipeOpen, onSwipeClose, onSelect, onDelete, onSkip, onLongPress, isSkipped,
+    swipeMode, onSwipeOpen, onSwipeClose, onSelect, onDelete, onSkip, onQuickComplete, onLongPress, isSkipped,
     onStartTimer, onPauseTimer, onCancelTask, onCompleteTask, isActive, liveElapsed, timerRunning,
     interactionLocked = false,
     confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
@@ -4384,7 +4452,7 @@ function SortableTaskRow(props: TaskRowProps) {
   const snapOffset = swipeSnapOffset(swipeMode);
   const displayX = dragging ? offsetX : snapOffset;
 
-  const clampOffset = (v: number) => Math.min(SWIPE_SKIP_WIDTH, Math.max(-SWIPE_DELETE_WIDTH, v));
+  const clampOffset = (v: number) => Math.min(SWIPE_ACTION_WIDTH, Math.max(-SWIPE_DELETE_WIDTH, v));
 
   const clearLongPressTimer = () => {
     if (longPressTimer.current) {
@@ -4481,7 +4549,7 @@ function SortableTaskRow(props: TaskRowProps) {
     const g = gesture.current;
     if (g.phase === "swiping") {
       if (g.moved) suppressClickRef.current = true;
-      if (g.lastOffset > SWIPE_SKIP_WIDTH / 2) onSwipeOpen("skip");
+      if (g.lastOffset > SWIPE_ACTION_WIDTH / 2) onSwipeOpen("skip");
       else if (g.lastOffset < -SWIPE_DELETE_WIDTH / 2) onSwipeOpen("delete");
       else onSwipeClose();
     }
@@ -4536,18 +4604,35 @@ function SortableTaskRow(props: TaskRowProps) {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onSkip(); }}
-          aria-label={isSkipped ? "保留をもどす" : "タスクを保留"}
+          aria-label={isSkipped ? "あとでをもどす" : "タスクをあとで"}
           style={{
-            position: "absolute", left: 0, top: 0, bottom: 0, width: SWIPE_SKIP_WIDTH,
+            position: "absolute", left: 0, top: 0, bottom: 0, width: SWIPE_LATER_WIDTH,
             border: "none", cursor: "pointer",
             backgroundColor: theme.category.orange,
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            gap: 2, padding: 0, color: "#fff", fontSize: 11, fontWeight: 800,
+            gap: 2, padding: 0, color: "#fff", fontSize: 10, fontWeight: 800,
           }}
         >
           <span style={{ fontSize: 18 }}>{isSkipped ? "↩" : "⏭"}</span>
-          {isSkipped ? "もどす" : "保留"}
+          {isSkipped ? "もどす" : "あとで"}
         </button>
+        {!props.isDone && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onQuickComplete(); }}
+            aria-label="タスクを完了"
+            style={{
+              position: "absolute", left: SWIPE_LATER_WIDTH, top: 0, bottom: 0, width: SWIPE_DONE_WIDTH,
+              border: "none", cursor: "pointer",
+              backgroundColor: theme.category.green,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 2, padding: 0, color: "#fff", fontSize: 10, fontWeight: 800,
+            }}
+          >
+            <span style={{ fontSize: 18 }}>✓</span>
+            完了
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -4789,7 +4874,7 @@ function TaskRow({
             marginLeft: 6, fontSize: 10, fontWeight: 700, color: theme.category.orange,
             backgroundColor: `${theme.category.orange}22`, padding: "2px 6px", borderRadius: 6,
           }}>
-            保留
+            あとで
           </span>
         )}
         {task.scope === "today" && (
