@@ -63,6 +63,17 @@ export function getMissionOverallStatus(
   return "pending";
 }
 
+export function getFirstMissionPhaseAwaitingParent(
+  doneSessions: PhaseSessionId[],
+  approvedSessions: PhaseSessionId[],
+  now = new Date(),
+): PhaseSessionId | null {
+  for (const sid of getActiveSessionIds(now)) {
+    if (doneSessions.includes(sid) && !approvedSessions.includes(sid)) return sid;
+  }
+  return null;
+}
+
 export function getMissionCardStatus(
   mission: MissionLike | null,
   todayKey: string,

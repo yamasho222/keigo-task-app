@@ -62,6 +62,7 @@ export function MissionCard({
   onDone,
   onUndoSession,
   onOpenReward,
+  onOpenParentCheck,
   onLongPressSetup,
 }: {
   mission: DailyMission;
@@ -75,6 +76,7 @@ export function MissionCard({
   onDone: () => void;
   onUndoSession?: () => void;
   onOpenReward?: () => void;
+  onOpenParentCheck?: () => void;
   onLongPressSetup?: () => void;
 }) {
   const isDone = status === "done";
@@ -174,7 +176,26 @@ export function MissionCard({
             できた！
           </button>
         )}
-        {isSessionAwaitingParent && (
+        {isSessionAwaitingParent && onOpenParentCheck && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenParentCheck(); }}
+            style={{
+              flexShrink: 0,
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "none",
+              backgroundColor: theme.category.orange,
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            親チェック
+          </button>
+        )}
+        {isSessionAwaitingParent && !onOpenParentCheck && (
           <span style={{
             flexShrink: 0,
             fontSize: 11,

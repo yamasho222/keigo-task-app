@@ -37,6 +37,7 @@ import {
   getMissionOverallStatus,
   getMissionCardStatus,
   isAllMissionPhasesParentApproved,
+  getFirstMissionPhaseAwaitingParent,
   getActiveMissionSessions,
 } from "./missionProgress";
 import {
@@ -44,6 +45,7 @@ import {
   SESSION_IDS, SESSION_SHORT_LABELS,
   DEFAULT_HOMEWORK_SHARED_KEY,
   isTaskVisibleToday, isTaskVisibleInSession, visibleTasksForSession,
+  isGameTask, ensureGameTaskInList, gamePlayKey, tasksForProgress, createGameTask,
   resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
   maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
@@ -165,6 +167,7 @@ const MORNING_TASKS_DEFAULT: Task[] = [
   { id: 6, title: "水筒の準備",             emoji: "🧴" },
   { id: 7, title: "体操服をカバンに入れる", emoji: "👟" },
   { id: 8, title: "上履きをカバンに入れる", emoji: "🥿" },
+  createGameTask(),
 ];
 
 const EVENING_TASKS_DEFAULT: Task[] = [
@@ -173,6 +176,7 @@ const EVENING_TASKS_DEFAULT: Task[] = [
   { id: 3, title: "お風呂",         emoji: "🛁" },
   { id: 4, title: "頭を乾かす",     emoji: "💨" },
   { id: 5, title: "パジャマを着る", emoji: "😴" },
+  createGameTask(),
 ];
 
 const HOME_TASKS_DEFAULT: Task[] = [
@@ -180,11 +184,13 @@ const HOME_TASKS_DEFAULT: Task[] = [
   { id: 2, title: "宿題",                       emoji: "📖", ...HOMEWORK_SHARED_META },
   { id: 3, title: "水筒をキッチンに出す",       emoji: "🧴" },
   { id: 4, title: "洗濯物の片付け",             emoji: "👕" },
+  createGameTask(),
 ];
 
 const DAYTIME_TASKS_DEFAULT: Task[] = [
   { id: 1, title: "お弁当",     emoji: "🍱" },
   { id: 2, title: "水筒を飲む", emoji: "💧" },
+  createGameTask(),
 ];
 
 const SESSION_TABS: { id: SessionId; label: string }[] = [
@@ -250,6 +256,7 @@ interface StoredState {
   homeTasks: Task[];
   history: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
+  gamePlayTimes?: Record<string, number>;
   dailyTreatClaimed?: Record<string, boolean>;
   dailyTreatPending?: Record<string, boolean>;
   fullDayBonusClaimed?: Record<string, boolean>;
@@ -318,7 +325,7 @@ function isTaskResolved(done: Set<number>, skipped: Set<number>, id: number) {
 }
 
 function isAllResolved(session: SessionId, allSessions: AllSessionTasks) {
-  const visible = visibleTasksForSession(session, allSessions);
+  const visible = tasksForProgress(visibleTasksForSession(session, allSessions));
   const { tasks, done, skipped } = allSessions[session];
   // 表示タスクがなければ、このセッションではやることがない（共有完了で全非表示など）
   if (visible.length === 0) return tasks.length > 0;
@@ -416,10 +423,10 @@ function normalizeAllTaskLists(stored: StoredState): Pick<StoredState, "morningT
   };
   const migrated = applyHomeworkMigrationToState(raw);
   return {
-    morningTasks: migrated.morning,
-    daytimeTasks: migrated.daytime,
-    eveningTasks: migrated.evening,
-    homeTasks: migrated.home,
+    morningTasks: ensureGameTaskInList(migrated.morning),
+    daytimeTasks: ensureGameTaskInList(migrated.daytime),
+    eveningTasks: ensureGameTaskInList(migrated.evening),
+    homeTasks: ensureGameTaskInList(migrated.home),
   };
 }
 
@@ -471,6 +478,7 @@ function loadStoredState(): StoredState {
         fullDayBonusClaimed: hydrated.fullDayBonusClaimed,
         lastWeeklyRewardStreak: hydrated.lastWeeklyRewardStreak,
         favoriteMissions: hydrated.favoriteMissions,
+        gamePlayTimes: hydrated.gamePlayTimes,
         missionHistory: hydrated.missionHistory,
       };
     }
@@ -1034,6 +1042,7 @@ export default function KeigoTaskApp() {
   const [homeApproved,    setHomeApproved]    = useState(stored.homeApproved);
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
   const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
+  const [gamePlayTimes,  setGamePlayTimes]  = useState<Record<string, number>>(stored.gamePlayTimes ?? {});
   const [customTaskEmojis, setCustomTaskEmojis] = useState<string[]>(stored.customTaskEmojis ?? []);
   const [todayMission, setTodayMission] = useState<DailyMission | null>(() => {
     const m = stored.todayMission;
@@ -1097,6 +1106,11 @@ export default function KeigoTaskApp() {
   const screenRef = useRef<ScreenId>(getInitialScreen());
   const specialMissionCollectedRef = useRef(false);
   const dailyTreatCollectedRef = useRef(false);
+  const gameTimerStartRef = useRef<number | null>(null);
+  const gameTimerPausedTotalRef = useRef(0);
+  const gameTimerPauseStartRef = useRef<number | null>(null);
+  const [gameTimerOvertime, setGameTimerOvertime] = useState(false);
+  const [gameTimerElapsedSec, setGameTimerElapsedSec] = useState(0);
   const workTimerBaseRef = useRef(0);
   const workTimerStartRef = useRef<number | null>(null);
 
@@ -1242,6 +1256,7 @@ export default function KeigoTaskApp() {
       homeTasks,
       history,
       bestTimes,
+      gamePlayTimes,
       dailyTreatClaimed,
       dailyTreatPending,
       fullDayBonusClaimed,
@@ -1264,7 +1279,7 @@ export default function KeigoTaskApp() {
     morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
     morningApproved, daytimeApproved, eveningApproved, homeApproved,
     morningTasks, daytimeTasks, eveningTasks, homeTasks,
-    history, bestTimes,
+    history, bestTimes, gamePlayTimes,
     dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, lastWeeklyRewardStreak, stickerAlbum,
     customTaskEmojis, todayMission, favoriteMissions,
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
@@ -1306,7 +1321,7 @@ export default function KeigoTaskApp() {
   const triggerTimerEndAlarm = () => {
     void (async () => {
       await unlockAudio();
-      startAlarm(alarmSettingsRef.current, () => setAlarmRinging(false));
+      startAlarm(alarmSettingsRef.current, () => setAlarmRinging(false), { loud: true });
       setAlarmRinging(true);
     })();
   };
@@ -1494,6 +1509,8 @@ export default function KeigoTaskApp() {
     setDone: (s: Set<number>) => void,
   ) => {
     if (isWorkTimerLocked) return;
+    const task = sessionState[session].tasks.find((t) => t.id === taskId);
+    if (task && isGameTask(task)) return;
     if (skipped.has(taskId) || celebType || anticipating) return;
     if (done.has(taskId)) {
       redoTask(session, taskId, done, setDone);
@@ -1572,16 +1589,28 @@ export default function KeigoTaskApp() {
     setActiveWorkTask(null);
   };
 
-  // ── background timer（画面移動しても継続・一時停止対応）──
+  // ── ゲームタイマー（カウントダウン後は超過時間も計測）──
   useEffect(() => {
+    if (!timerRunning) return;
     const id = setInterval(() => {
-      if (!timerEndRef.current || timerPaused) return;
-      const rem = Math.ceil((timerEndRef.current - Date.now()) / 1000);
+      if (!gameTimerStartRef.current) return;
+
+      let pausedTotal = gameTimerPausedTotalRef.current;
+      if (timerPaused && gameTimerPauseStartRef.current) {
+        pausedTotal += Date.now() - gameTimerPauseStartRef.current;
+      }
+      const elapsed = Math.max(0, Math.floor((Date.now() - gameTimerStartRef.current - pausedTotal) / 1000));
+      setGameTimerElapsedSec(elapsed);
+
+      if (timerPaused) return;
+
+      if (gameTimerOvertime) return;
+
+      const rem = timerSessionTotal - elapsed;
       if (rem <= 0) {
         timerEndRef.current = null;
         setTimerSecondsLeft(0);
-        setTimerPaused(false);
-        setTimerRunning(false);
+        setGameTimerOvertime(true);
         triggerTimerEndAlarm();
         setScreen((s) => (s === "timer" ? "timer_end" : s));
       } else {
@@ -1589,39 +1618,80 @@ export default function KeigoTaskApp() {
       }
     }, 500);
     return () => clearInterval(id);
-  }, [timerPaused]);
+  }, [timerRunning, timerPaused, timerSessionTotal, gameTimerOvertime]);
 
   const startTimer = (minutes: number) => {
     void unlockAudio();
     const secs = minutes * 60;
+    gameTimerStartRef.current = Date.now();
+    gameTimerPausedTotalRef.current = 0;
+    gameTimerPauseStartRef.current = null;
     timerEndRef.current = Date.now() + secs * 1000;
     setTimerSecondsLeft(secs);
     setTimerSessionTotal(secs);
     setTimerDuration(minutes);
     setTimerPaused(false);
     setTimerRunning(true);
+    setGameTimerOvertime(false);
+    setGameTimerElapsedSec(0);
   };
 
   const pauseTimer = () => {
-    if (!timerEndRef.current) return;
-    const rem = Math.max(0, Math.ceil((timerEndRef.current - Date.now()) / 1000));
-    timerEndRef.current = null;
-    setTimerSecondsLeft(rem);
+    if (!timerRunning || timerPaused) return;
+    gameTimerPauseStartRef.current = Date.now();
+    if (timerEndRef.current) {
+      const rem = Math.max(0, Math.ceil((timerEndRef.current - Date.now()) / 1000));
+      timerEndRef.current = null;
+      setTimerSecondsLeft(rem);
+    }
     setTimerPaused(true);
   };
 
   const resumeTimer = () => {
-    if (!timerPaused || timerSecondsLeft <= 0) return;
-    timerEndRef.current = Date.now() + timerSecondsLeft * 1000;
+    if (!timerPaused || !timerRunning) return;
+    if (gameTimerPauseStartRef.current) {
+      gameTimerPausedTotalRef.current += Date.now() - gameTimerPauseStartRef.current;
+      gameTimerPauseStartRef.current = null;
+    }
+    if (!gameTimerOvertime) {
+      timerEndRef.current = Date.now() + timerSecondsLeft * 1000;
+    }
     setTimerPaused(false);
   };
 
-  const cancelTimer = () => {
+  const resetGameTimerState = () => {
     timerEndRef.current = null;
+    gameTimerStartRef.current = null;
+    gameTimerPausedTotalRef.current = 0;
+    gameTimerPauseStartRef.current = null;
+    setGameTimerOvertime(false);
+    setGameTimerElapsedSec(0);
     setTimerPaused(false);
     setTimerRunning(false);
     setTimerSecondsLeft(timerDuration * 60);
     setTimerSessionTotal(timerDuration * 60);
+  };
+
+  const cancelTimer = () => {
+    resetGameTimerState();
+  };
+
+  const finishGameSession = () => {
+    if (!gameTimerStartRef.current) {
+      resetGameTimerState();
+      goHome();
+      return;
+    }
+    let pausedTotal = gameTimerPausedTotalRef.current;
+    if (timerPaused && gameTimerPauseStartRef.current) {
+      pausedTotal += Date.now() - gameTimerPauseStartRef.current;
+    }
+    const totalSec = Math.max(1, Math.floor((Date.now() - gameTimerStartRef.current - pausedTotal) / 1000));
+    const key = gamePlayKey(todayKey(), parentSession);
+    setGamePlayTimes((prev) => ({ ...prev, [key]: totalSec }));
+    stopAlarmNow();
+    resetGameTimerState();
+    goHome();
   };
 
   const setTimerDurationOnly = (minutes: number) => {
@@ -1793,6 +1863,17 @@ export default function KeigoTaskApp() {
     fireMissionCelebration(sid);
   };
 
+  const openMissionParentCheck = (phase: SessionId) => {
+    if (!todayMission) return;
+    if (!missionDoneSessions.includes(phase)) return;
+    if (missionApprovedSessions.includes(phase)) return;
+    setMissionParentPhase(phase);
+    setMissionCompletedAt((prev) => prev || fmtTime(new Date()));
+    const s = screenRef.current;
+    if (isSessionScreen(s)) setPrevScreen(s);
+    setScreen("show_parent_mission");
+  };
+
   const openMissionReward = () => {
     if (!todayMission) return;
     if (!isAllMissionPhasesParentApproved(missionApprovedSessions)) return;
@@ -1861,6 +1942,10 @@ export default function KeigoTaskApp() {
     if (missionEveningNudgeDate === currentTaskDay) return;
     setMissionEveningNudgeDate(currentTaskDay);
   }, [screen, activeMissionOverall, currentTaskDay, missionEveningNudgeDate]);
+
+  const missionPhaseAwaitingParent = todayMission
+    ? getFirstMissionPhaseAwaitingParent(missionDoneSessions, missionApprovedSessions)
+    : null;
 
   const showEveningMissionNudge =
     screen === "evening"
@@ -2024,7 +2109,7 @@ export default function KeigoTaskApp() {
   ) => {
     if (!title.trim()) return;
     const existing = sessionState[session].tasks.find((t) => t.id === id);
-    if (!existing) return;
+    if (!existing || isGameTask(existing)) return;
 
     const scope = existing.scope ?? "regular";
     const normalizedWeekdays = scope === "regular"
@@ -2111,7 +2196,7 @@ export default function KeigoTaskApp() {
 
   const deleteTask = (session: SessionId, id: number) => {
     const task = sessionState[session].tasks.find((t) => t.id === id);
-    if (!task) return;
+    if (!task || isGameTask(task)) return;
 
     if (task.sharedKey) {
       for (const sid of SESSION_IDS) {
@@ -2296,10 +2381,15 @@ export default function KeigoTaskApp() {
               })),
               { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(getSessionScreen()); navigateToScreen("task_list"); setShowMenu(false); } },
               { icon: "✅", label: "親チェック画面", action: () => { navigateToScreen("show_parent"); setShowMenu(false); } },
+              ...(missionPhaseAwaitingParent ? [{
+                icon: "⭐",
+                label: "ミッション親チェック",
+                action: () => { openMissionParentCheck(missionPhaseAwaitingParent); setShowMenu(false); },
+              }] : []),
               { icon: "⏱", label: "タイマー",
                 action: () => {
                   if (approved) {
-                    if (timerRunning) navigateToScreen("timer");
+                    if (timerRunning) navigateToScreen(gameTimerOvertime ? "timer_end" : "timer");
                     else goToTimer();
                   } else {
                     navigateToScreen("show_parent");
@@ -2514,8 +2604,10 @@ export default function KeigoTaskApp() {
                 onMissionUndo={() => undoMissionSession(sid)}
                 onMissionSetup={() => setShowMissionSetup(true)}
                 onOpenMissionReward={openMissionReward}
+                onOpenMissionParentCheck={() => openMissionParentCheck(sid)}
                 showDailyRewardButton={hasUnclaimedSessionDailyReward(sid)}
                 onOpenDailyReward={() => openSessionDailyReward(sid)}
+                gamePlaySec={gamePlayTimes[gamePlayKey(todayKey(), sid)]}
               />
             ))}
           </>
@@ -2554,6 +2646,8 @@ export default function KeigoTaskApp() {
           <TimerScreen
             secondsLeft={timerSecondsLeft}
             totalSeconds={timerSessionTotal}
+            elapsedSec={gameTimerElapsedSec}
+            overtime={gameTimerOvertime}
             paused={timerPaused}
             timerRunning={timerRunning}
             timerDuration={timerDuration}
@@ -2562,6 +2656,7 @@ export default function KeigoTaskApp() {
             onPause={pauseTimer}
             onResume={resumeTimer}
             onCancel={cancelTimer}
+            onFinish={finishGameSession}
             onBack={() => setScreen(prevScreen)}
             onHome={goHome}
           />
@@ -2570,9 +2665,15 @@ export default function KeigoTaskApp() {
         {screen === "timer_end" && (
           <TimerEndScreen
             streak={streak}
+            elapsedSec={gameTimerElapsedSec}
+            plannedSec={timerSessionTotal}
+            paused={timerPaused}
             alarmRinging={alarmRinging}
+            onPause={pauseTimer}
+            onResume={resumeTimer}
             onStopAlarm={stopAlarmNow}
-            onBack={() => setScreen(prevScreen)}
+            onFinish={finishGameSession}
+            onBack={() => setScreen("timer")}
             onHome={goHome}
           />
         )}
@@ -3900,8 +4001,10 @@ interface TaskScreenProps {
   onMissionUndo: () => void;
   onMissionSetup: () => void;
   onOpenMissionReward: () => void;
+  onOpenMissionParentCheck: () => void;
   showDailyRewardButton: boolean;
   onOpenDailyReward: () => void;
+  gamePlaySec?: number;
 }
 
 function TaskScreen({
@@ -3911,7 +4014,8 @@ function TaskScreen({
   onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
   todayMission, missionCardStatus, activeMissionSessions, missionDoneSessions, missionApprovedSessions,
   showEveningMissionNudge, onMissionDone, onMissionUndo, onMissionSetup, onOpenMissionReward,
-  showDailyRewardButton, onOpenDailyReward,
+  showDailyRewardButton, onOpenDailyReward, onOpenMissionParentCheck,
+  gamePlaySec,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
@@ -3929,15 +4033,17 @@ function TaskScreen({
   );
 
   const shownTasks = visibleTasksForSession(session, allSessionTasks);
+  const progressTasks = tasksForProgress(shownTasks);
+  const gameTask = shownTasks.find(isGameTask);
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (interactionLocked) return;
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIdx = shownTasks.findIndex((t) => t.id === active.id);
-      const newIdx = shownTasks.findIndex((t) => t.id === over.id);
+      const oldIdx = progressTasks.findIndex((t) => t.id === active.id);
+      const newIdx = progressTasks.findIndex((t) => t.id === over.id);
       if (oldIdx < 0 || newIdx < 0) return;
-      onReorder(reorderVisibleInAll(session, tasks, arrayMove(shownTasks, oldIdx, newIdx), allSessionTasks));
+      onReorder(reorderVisibleInAll(session, tasks, arrayMove(progressTasks, oldIdx, newIdx), allSessionTasks));
     }
   };
 
@@ -3981,14 +4087,14 @@ function TaskScreen({
         </div>
       </div>
 
-      <StepProgress tasks={shownTasks} done={done} skipped={skipped} justChecked={justChecked} />
-      <BestTimeSummary session={session} tasks={shownTasks} bestTimes={bestTimes} />
+      <StepProgress tasks={progressTasks} done={done} skipped={skipped} justChecked={justChecked} />
+      <BestTimeSummary session={session} tasks={progressTasks} bestTimes={bestTimes} />
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={shownTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={progressTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {shownTasks.map((task) => {
+            {progressTasks.map((task) => {
               const isActive = activeWorkTask?.session === session && activeWorkTask.taskId === task.id;
               const isSkipped = skipped.has(task.id);
               const swipeMode = openSwipe?.id === task.id ? openSwipe.mode : null;
@@ -4035,6 +4141,26 @@ function TaskScreen({
           </div>
         </SortableContext>
       </DndContext>
+
+      {gameTask && (
+        <TaskRow
+          task={gameTask}
+          isDone={false}
+          isSkipped={false}
+          isJustChecked={false}
+          isActive={false}
+          isNewRecord={false}
+          floatColor={floatColor}
+          isGameRow
+          gamePlaySec={gamePlaySec}
+          interactionLocked={interactionLocked}
+          confirmDeleteTime={false}
+          onSelect={() => {}}
+          onTimeBadgeTap={() => {}}
+          onConfirmDeleteTime={() => {}}
+          onCancelDeleteTime={() => {}}
+        />
+      )}
 
       {showDailyRewardButton && (
         <div style={{
@@ -4088,6 +4214,9 @@ function TaskScreen({
           onDone={onMissionDone}
           onUndoSession={missionCardStatus === "session_complete" ? onMissionUndo : undefined}
           onOpenReward={onOpenMissionReward}
+          onOpenParentCheck={
+            missionCardStatus === "session_awaiting_parent" ? onOpenMissionParentCheck : undefined
+          }
           onLongPressSetup={onMissionSetup}
         />
       )}
@@ -4220,7 +4349,8 @@ const addBtnStyle: CSSProperties = {
 
 interface TaskRowProps {
   task: Task; isDone: boolean; isSkipped: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
-  floatColor: string; bestTime?: number; liveElapsed?: number; timerRunning: boolean; interactionLocked?: boolean;
+  floatColor: string; bestTime?: number; liveElapsed?: number; gamePlaySec?: number; isGameRow?: boolean;
+  timerRunning: boolean; interactionLocked?: boolean;
   onSelect: () => void; onDelete: () => void; onSkip: () => void; onLongPress: () => void;
   swipeMode: SwipeMode | null; onSwipeOpen: (mode: SwipeMode) => void; onSwipeClose: () => void;
   onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
@@ -4551,12 +4681,46 @@ function TaskTimerPanel({
 }
 
 function TaskRow({
-  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, interactionLocked = false, onSelect,
+  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, gamePlaySec,
+  isGameRow = false, interactionLocked = false, onSelect,
   confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
-}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "interactionLocked" | "confirmDeleteTime"> & {
+}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "gamePlaySec" | "isGameRow" | "interactionLocked" | "confirmDeleteTime"> & {
   onSelect: () => void;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }) {
+  if (isGameRow) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "13px 14px", borderRadius: 14,
+        backgroundColor: gamePlaySec ? `${theme.category.purple}12` : theme.fill.quaternary,
+        border: `1.5px solid ${gamePlaySec ? `${theme.category.purple}44` : theme.stroke.tertiary}`,
+      }}>
+        <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>{task.emoji}</span>
+        <span style={{
+          fontSize: 15, fontWeight: 600, flex: 1, color: theme.text.primary,
+        }}>
+          {task.title}
+        </span>
+        {gamePlaySec !== undefined ? (
+          <span style={{
+            flexShrink: 0, fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums",
+            color: theme.category.purple, padding: "4px 10px", borderRadius: 8,
+            backgroundColor: `${theme.category.purple}18`,
+          }}>
+            ⏱ {fmtTaskTime(gamePlaySec)}
+          </span>
+        ) : (
+          <span style={{
+            flexShrink: 0, fontSize: 11, fontWeight: 700, color: theme.text.tertiary,
+          }}>
+            まだ記録なし
+          </span>
+        )}
+      </div>
+    );
+  }
+
   const resolved = isDone || isSkipped;
   const canTap = !isSkipped && !interactionLocked;
 
@@ -4877,11 +5041,13 @@ function ShowParentScreen({
 // ── Timer Screen ──────────────────────────────────────
 
 function TimerScreen({
-  secondsLeft, totalSeconds, paused, timerRunning, timerDuration,
-  onSetDuration, onStart, onPause, onResume, onCancel, onBack, onHome,
+  secondsLeft, totalSeconds, elapsedSec, overtime, paused, timerRunning, timerDuration,
+  onSetDuration, onStart, onPause, onResume, onCancel, onFinish, onBack, onHome,
 }: {
   secondsLeft: number;
   totalSeconds: number;
+  elapsedSec: number;
+  overtime: boolean;
   paused: boolean;
   timerRunning: boolean;
   timerDuration: number;
@@ -4890,9 +5056,72 @@ function TimerScreen({
   onPause: () => void;
   onResume: () => void;
   onCancel: () => void;
+  onFinish: () => void;
   onBack: () => void;
   onHome: () => void;
 }) {
+  if (overtime && timerRunning) {
+    const overtimeSec = Math.max(0, elapsedSec - totalSeconds);
+    const minutes = Math.floor(elapsedSec / 60);
+    const secs = elapsedSec % 60;
+    const overMin = Math.floor(overtimeSec / 60);
+    const overSec = overtimeSec % 60;
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <ScrollSafeBackButton onBack={onBack} />
+          <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            ホーム
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, flex: 1, justifyContent: "center" }}>
+          <div style={{ fontSize: 13, color: theme.category.orange, letterSpacing: 1, fontWeight: 700 }}>
+            時間オーバー{paused ? "（とまってる）" : ""}
+          </div>
+          <div style={{ fontSize: 66, fontWeight: 900, color: theme.category.orange, fontVariantNumeric: "tabular-nums", letterSpacing: -3, lineHeight: 1 }}>
+            {String(minutes).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+          </div>
+          {overtimeSec > 0 && (
+            <div style={{
+              fontSize: 15, fontWeight: 800, color: theme.category.orange,
+              padding: "8px 14px", borderRadius: 10, backgroundColor: `${theme.category.orange}18`,
+            }}>
+              +{overMin}:{String(overSec).padStart(2, "0")} オーバー
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: theme.text.tertiary, textAlign: "center", lineHeight: 1.6 }}>
+            終わったら「終了して記録」をおしてね
+          </div>
+          <div style={{ display: "flex", gap: 10, width: "100%" }}>
+            <button
+              type="button"
+              onClick={paused ? onResume : onPause}
+              style={{
+                flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
+              }}
+            >
+              {paused ? "再開 ▶" : "一時停止 ⏸"}
+            </button>
+            <button
+              type="button"
+              onClick={onFinish}
+              style={{
+                flex: 1, padding: "12px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                backgroundColor: theme.category.green, color: "#fff", fontSize: 15, fontWeight: 800,
+              }}
+            >
+              終了して記録
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const displaySeconds = timerRunning ? secondsLeft : timerDuration * 60;
   const displayTotal   = timerRunning ? totalSeconds : timerDuration * 60;
   const progress   = displayTotal > 0 ? displaySeconds / displayTotal : 0;
@@ -4988,11 +5217,27 @@ function TimerScreen({
 // ── Timer End Screen ──────────────────────────────────
 
 function TimerEndScreen({
-  streak, alarmRinging, onStopAlarm, onBack, onHome,
+  streak, elapsedSec, plannedSec, paused, alarmRinging,
+  onPause, onResume, onStopAlarm, onFinish, onBack, onHome,
 }: {
-  streak: number; alarmRinging: boolean;
-  onStopAlarm: () => void; onBack: () => void; onHome: () => void;
+  streak: number;
+  elapsedSec: number;
+  plannedSec: number;
+  paused: boolean;
+  alarmRinging: boolean;
+  onPause: () => void;
+  onResume: () => void;
+  onStopAlarm: () => void;
+  onFinish: () => void;
+  onBack: () => void;
+  onHome: () => void;
 }) {
+  const overtimeSec = Math.max(0, elapsedSec - plannedSec);
+  const minutes = Math.floor(elapsedSec / 60);
+  const secs = elapsedSec % 60;
+  const overMin = Math.floor(overtimeSec / 60);
+  const overSec = overtimeSec % 60;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 20, textAlign: "center", position: "relative" }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -5003,17 +5248,27 @@ function TimerEndScreen({
         </div>
       </div>
 
-      <div style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: theme.fill.secondary, border: `3px solid ${theme.stroke.primary}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
-          <rect x="9" y="7" width="4" height="16" rx="2" fill={theme.text.secondary} />
-          <rect x="17" y="7" width="4" height="16" rx="2" fill={theme.text.secondary} />
-        </svg>
+      <div style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: `${theme.category.orange}18`, border: `3px solid ${theme.category.orange}55`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 36 }}>⏰</span>
       </div>
 
       <div>
-        <div style={{ fontSize: 24, fontWeight: 800, color: theme.text.primary, marginBottom: 6 }}>おわったよ！</div>
-        <div style={{ fontSize: 14, color: theme.text.secondary }}>きょうもよくがんばった</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: theme.text.primary, marginBottom: 6 }}>時間が来たよ！</div>
+        <div style={{ fontSize: 14, color: theme.text.secondary }}>遊んでいても時間はカウント中</div>
       </div>
+
+      <div style={{ fontSize: 56, fontWeight: 900, color: theme.category.orange, fontVariantNumeric: "tabular-nums", letterSpacing: -2 }}>
+        {String(minutes).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+      </div>
+
+      {overtimeSec > 0 && (
+        <div style={{
+          fontSize: 15, fontWeight: 800, color: theme.category.orange,
+          padding: "8px 14px", borderRadius: 10, backgroundColor: `${theme.category.orange}18`,
+        }}>
+          +{overMin}:{String(overSec).padStart(2, "0")} オーバー
+        </div>
+      )}
 
       {alarmRinging && (
         <button
@@ -5028,6 +5283,29 @@ function TimerEndScreen({
           🔕 アラームをとめる
         </button>
       )}
+
+      <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 320 }}>
+        <button
+          type="button"
+          onClick={paused ? onResume : onPause}
+          style={{
+            flex: 1, padding: "14px 0", borderRadius: 12, border: "none", cursor: "pointer",
+            backgroundColor: theme.accent.primary, color: "#fff", fontSize: 15, fontWeight: 700,
+          }}
+        >
+          {paused ? "再開 ▶" : "一時停止 ⏸"}
+        </button>
+        <button
+          type="button"
+          onClick={onFinish}
+          style={{
+            flex: 1, padding: "14px 0", borderRadius: 12, border: "none", cursor: "pointer",
+            backgroundColor: theme.category.green, color: "#fff", fontSize: 15, fontWeight: 800,
+          }}
+        >
+          終了して記録
+        </button>
+      </div>
 
       <div style={{ width: "80%", height: 1, backgroundColor: theme.stroke.tertiary }} />
 

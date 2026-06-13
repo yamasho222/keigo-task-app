@@ -22,9 +22,9 @@ export const ALARM_SOUND_OPTIONS: {
   { id: "duck",    label: "あひる",       emoji: "🦆", desc: "がーがー！" },
   { id: "robot",   label: "ロボット",     emoji: "🤖", desc: "ピコピコ話す" },
   { id: "fanfare", label: "ファンファーレ", emoji: "🏆", desc: "できた！の音" },
-  { id: "siren",   label: "サイレン",     emoji: "🚨", desc: "くらい目立つ" },
+  { id: "siren",   label: "サイレン",     emoji: "🚨", desc: "いちばん大きい！" },
   { id: "bell",    label: "ベル",         emoji: "🔔", desc: "リンリン" },
-  { id: "urgent",  label: "もうすぐ！",   emoji: "⏰", desc: "はやい連打" },
+  { id: "urgent",  label: "もうすぐ！",   emoji: "⏰", desc: "はやい連打・大きめ" },
 ];
 
 const ALARM_SETTINGS_KEY = "keigo-alarm-settings-v1";
@@ -37,11 +37,42 @@ const DEFAULT_SETTINGS: AlarmSettings = {
 
 let alarmActive = false;
 let soundBlocked = false;
+let alarmLoudMode = false;
 let activeSoundType: AlarmSoundType = DEFAULT_SETTINGS.soundType;
 let stopTimeout: ReturnType<typeof setTimeout> | null = null;
 let beepInterval: ReturnType<typeof setInterval> | null = null;
 let audioCtx: AudioContext | null = null;
+let masterGain: GainNode | null = null;
 let onSoundBlockedChange: ((blocked: boolean) => void) | null = null;
+
+const LOUD_VOLUME_SCALE = 1.35;
+const LOUD_INTERVAL_FACTOR = 0.55;
+
+export interface AlarmStartOptions {
+  /** ゲームタイマー終了など、できるだけ大きく鳴らす */
+  loud?: boolean;
+}
+
+function alarmVol(base: number) {
+  const scaled = base * (alarmLoudMode ? LOUD_VOLUME_SCALE : 1);
+  return Math.min(1, scaled);
+}
+
+function getOutputNode(ctx: AudioContext): AudioNode {
+  if (!masterGain || masterGain.context !== ctx) {
+    masterGain = ctx.createGain();
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.setValueAtTime(-28, ctx.currentTime);
+    compressor.knee.setValueAtTime(24, ctx.currentTime);
+    compressor.ratio.setValueAtTime(8, ctx.currentTime);
+    compressor.attack.setValueAtTime(0.002, ctx.currentTime);
+    compressor.release.setValueAtTime(0.2, ctx.currentTime);
+    masterGain.connect(compressor);
+    compressor.connect(ctx.destination);
+  }
+  masterGain.gain.setValueAtTime(alarmLoudMode ? 1 : 0.92, ctx.currentTime);
+  return masterGain;
+}
 
 function isValidSoundType(v: unknown): v is AlarmSoundType {
   return ALARM_SOUND_OPTIONS.some((o) => o.id === v);
@@ -138,10 +169,10 @@ function tone(
   osc.type = wave;
   osc.frequency.value = freq;
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getOutputNode(ctx));
   const s = t + delay;
   gain.gain.setValueAtTime(0.0001, s);
-  gain.gain.exponentialRampToValueAtTime(vol, s + 0.012);
+  gain.gain.exponentialRampToValueAtTime(Math.max(alarmVol(vol), 0.0001), s + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, s + dur);
   osc.start(s);
   osc.stop(s + dur + 0.02);
@@ -157,9 +188,9 @@ function sweep(
   osc.frequency.setValueAtTime(Math.max(f0, 1), t);
   osc.frequency.exponentialRampToValueAtTime(Math.max(f1, 1), t + dur);
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getOutputNode(ctx));
   gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  gain.gain.exponentialRampToValueAtTime(Math.max(alarmVol(vol), 0.0001), t + 0.02);
   gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   osc.start(t);
   osc.stop(t + dur + 0.02);
@@ -174,9 +205,9 @@ function boingSpring(ctx: AudioContext, t: number, delay = 0) {
   osc.frequency.exponentialRampToValueAtTime(920, s + 0.12);
   osc.frequency.exponentialRampToValueAtTime(220, s + 0.42);
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getOutputNode(ctx));
   gain.gain.setValueAtTime(0.0001, s);
-  gain.gain.exponentialRampToValueAtTime(0.85, s + 0.04);
+  gain.gain.exponentialRampToValueAtTime(Math.max(alarmVol(0.85), 0.0001), s + 0.04);
   gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.45);
   osc.start(s);
   osc.stop(s + 0.48);
@@ -196,8 +227,8 @@ function noiseBurst(ctx: AudioContext, t: number, dur: number, vol: number, lowH
   const gain = ctx.createGain();
   src.connect(filt);
   filt.connect(gain);
-  gain.connect(ctx.destination);
-  gain.gain.setValueAtTime(vol, s);
+  gain.connect(getOutputNode(ctx));
+  gain.gain.setValueAtTime(alarmVol(vol), s);
   gain.gain.exponentialRampToValueAtTime(0.0001, s + dur);
   src.start(s);
   src.stop(s + dur + 0.01);
@@ -274,9 +305,14 @@ function playAlarmSound(type: AlarmSoundType) {
       [0, 0.1, 0.2, 0.3, 0.4, 0.5].forEach((d) => tone(ctx, t, 1680, "square", 0.85, 0.08, d));
       break;
   }
+
+  if (alarmLoudMode) {
+    [0, 0.07, 0.14].forEach((d) => tone(ctx, t, 960, "square", 0.95, 0.1, d));
+  }
 }
 
 function soundIntervalMs(type: AlarmSoundType) {
+  const base = (() => {
   switch (type) {
     case "fart":    return 1300;
     case "party":   return 950;
@@ -288,6 +324,10 @@ function soundIntervalMs(type: AlarmSoundType) {
     case "bell":    return 900;
     case "siren":   return 1050;
   }
+  })();
+  return alarmLoudMode
+    ? Math.max(380, Math.round(base * LOUD_INTERVAL_FACTOR))
+    : base;
 }
 
 function startSoundLoop(type: AlarmSoundType) {
@@ -326,12 +366,21 @@ export async function retryAlarmSound() {
   return true;
 }
 
-export function startAlarm(settings: AlarmSettings, onStop?: () => void) {
+export function startAlarm(
+  settings: AlarmSettings,
+  onStop?: () => void,
+  options?: AlarmStartOptions,
+) {
   stopAlarm();
   alarmActive = true;
+  alarmLoudMode = options?.loud ?? false;
   activeSoundType = settings.soundType;
 
   if (settings.soundEnabled) startSoundLoop(settings.soundType);
+
+  if (alarmLoudMode && typeof navigator !== "undefined" && navigator.vibrate) {
+    navigator.vibrate([400, 120, 400, 120, 400]);
+  }
 
   stopTimeout = setTimeout(() => {
     stopAlarm();
@@ -341,6 +390,7 @@ export function startAlarm(settings: AlarmSettings, onStop?: () => void) {
 
 export function stopAlarm() {
   alarmActive = false;
+  alarmLoudMode = false;
   setSoundBlocked(false);
   if (stopTimeout) { clearTimeout(stopTimeout); stopTimeout = null; }
   if (beepInterval) { clearInterval(beepInterval); beepInterval = null; }

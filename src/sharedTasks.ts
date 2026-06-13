@@ -31,6 +31,31 @@ export const SESSION_SHORT_LABELS: Record<SessionId, string> = {
 
 export const DEFAULT_HOMEWORK_SHARED_KEY = "default-homework";
 
+export const GAME_TASK_ID = 9001;
+export const GAME_TASK_TITLE = "ゲーム・youtube";
+export const GAME_TASK_EMOJI = "🎮";
+
+export function isGameTask(task: Task): boolean {
+  return task.id === GAME_TASK_ID || task.title === GAME_TASK_TITLE;
+}
+
+export function createGameTask(): Task {
+  return { id: GAME_TASK_ID, title: GAME_TASK_TITLE, emoji: GAME_TASK_EMOJI, scope: "regular" };
+}
+
+export function ensureGameTaskInList(tasks: Task[]): Task[] {
+  if (tasks.some(isGameTask)) return tasks;
+  return [...tasks, createGameTask()];
+}
+
+export function gamePlayKey(date: string, session: SessionId): string {
+  return `${date}:${session}`;
+}
+
+export function tasksForProgress(tasks: Task[]): Task[] {
+  return tasks.filter((t) => !isGameTask(t));
+}
+
 export function isTaskVisibleToday(task: Task, now = new Date()): boolean {
   if (task.scope === "today") return true;
   if (!task.weekdays?.length) return true;
