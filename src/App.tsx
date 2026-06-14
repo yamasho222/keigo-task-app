@@ -145,8 +145,9 @@ function reorderVisibleInAll(
 ): Task[] {
   let vi = 0;
   return allTasks.map((t) => {
-    if (!isTaskVisibleInSession(t, session, allSessions)) return t;
-    return reorderedVisible[vi++];
+    if (!isTaskVisibleInSession(t, session, allSessions) || isGameTask(t)) return t;
+    const next = reorderedVisible[vi++];
+    return next ?? t;
   });
 }
 
