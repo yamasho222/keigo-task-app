@@ -1,7 +1,7 @@
-export type StickerCategory = "sumanai" | "hikakin" | "orochinyu" | "kimitsu" | "doraemon" | "brainrot";
+export type StickerCategory = "sumanai" | "youtube" | "kimitsu" | "doraemon" | "brainrot" | "saikyoou" | "minecraft";
 export type RewardCategory = "daily" | StickerCategory;
 export type RewardRarity = "normal" | "rare" | "superRare" | "ultraRare";
-export type StickerRarity = "rare" | "superRare" | "ultraRare";
+export type StickerRarity = "normal" | "rare" | "superRare" | "ultraRare";
 
 export interface EmojiReward {
   kind: "emoji";
@@ -28,11 +28,12 @@ export type RewardItem = EmojiReward | StickerReward;
 export const STICKER_CATEGORIES: { id: RewardCategory; label: string }[] = [
   { id: "daily", label: "ノーマル" },
   { id: "sumanai", label: "すまない先生" },
-  { id: "hikakin", label: "ヒカキン" },
-  { id: "orochinyu", label: "おろちんゆー" },
+  { id: "youtube", label: "YouTube" },
   { id: "kimitsu", label: "鬼滅の刃" },
   { id: "doraemon", label: "ドラえもん" },
   { id: "brainrot", label: "ブレインロット" },
+  { id: "saikyoou", label: "最強王図鑑" },
+  { id: "minecraft", label: "マインクラフト" },
 ];
 
 export const RARITY_LABELS: Record<RewardRarity, string> = {
@@ -56,7 +57,7 @@ export const DAILY_EMOJI_REWARDS: EmojiReward[] = [
   { kind: "emoji", id: "fire", emoji: "🔥", label: "ファイヤー", message: "メラメラパワー全開！", category: "daily", rarity: "normal" },
 ];
 
-/** ごほうびシール（54枚） */
+/** ごほうびシール（82枚） */
 export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "warrior-baby", label: "ミスター赤ちゃん", message: "ミスター赤ちゃんゲット！", image: "/stickers/warrior-baby.png", category: "sumanai", rarity: "rare" },
   { kind: "sticker", id: "blue-fist", label: "ミスター・ブルー", message: "ミスター・ブルー登場！", image: "/stickers/blue-fist.png", category: "sumanai", rarity: "rare" },
@@ -66,9 +67,12 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "banana-soldier", label: "ミスターバナナ", message: "ミスターバナナ！", image: "/stickers/banana-soldier.png", category: "sumanai", rarity: "superRare" },
   { kind: "sticker", id: "hammer-builder", label: "銀さん", message: "銀さんゲット！", image: "/stickers/hammer-builder.png", category: "sumanai", rarity: "rare" },
   { kind: "sticker", id: "gold-prince", label: "ミスターマネー", message: "ミスターマネー！", image: "/stickers/gold-prince.png", category: "sumanai", rarity: "rare" },
-  { kind: "sticker", id: "glasses-boy", label: "ヒカキン", message: "ヒカキン！", image: "/stickers/glasses-boy.png", category: "hikakin", rarity: "superRare" },
-  { kind: "sticker", id: "dot-cat", label: "おろちんゆー", message: "おろちんゆー！", image: "/stickers/dot-cat.png", category: "orochinyu", rarity: "ultraRare" },
-  { kind: "sticker", id: "sakai-dino", label: "ペインさかい", message: "ペインさかい～！", image: "/stickers/sakai-dino.png", category: "orochinyu", rarity: "rare" },
+  { kind: "sticker", id: "glasses-boy", label: "ヒカキン", message: "ヒカキン！", image: "/stickers/glasses-boy.png", category: "youtube", rarity: "superRare" },
+  { kind: "sticker", id: "dot-cat", label: "おろちんゆー", message: "おろちんゆー！", image: "/stickers/dot-cat.png", category: "youtube", rarity: "ultraRare" },
+  { kind: "sticker", id: "sakai-dino", label: "ペインさかい", message: "ペインさかい～！", image: "/stickers/sakai-dino.png", category: "youtube", rarity: "rare" },
+  { kind: "sticker", id: "mori-konnyaku", label: "森こんにゃく", message: "森こんにゃく！", image: "/stickers/mori-konnyaku.png", category: "youtube", rarity: "superRare" },
+  { kind: "sticker", id: "zenichi", label: "ぜんいち", message: "ぜんいち！", image: "/stickers/zenichi.png", category: "youtube", rarity: "superRare" },
+  { kind: "sticker", id: "maikky", label: "マイッキー", message: "マイッキー！", image: "/stickers/maikky.png", category: "youtube", rarity: "rare" },
   { kind: "sticker", id: "tanjiro", label: "たんじろう", message: "たんじろうが応援！", image: "/stickers/tanjiro.png", category: "kimitsu", rarity: "ultraRare" },
   { kind: "sticker", id: "inosuke", label: "いのすけ", message: "いのすけ登場！", image: "/stickers/inosuke.png", category: "kimitsu", rarity: "superRare" },
   { kind: "sticker", id: "zenitsu", label: "ぜんいつ", message: "ぜんいつが来た！", image: "/stickers/zenitsu.png", category: "kimitsu", rarity: "superRare" },
@@ -100,6 +104,7 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "wood-log", label: "トゥントゥントゥンサフール", message: "トゥントゥントゥンサフール！", image: "/stickers/wood-log.png", category: "brainrot", rarity: "superRare" },
   { kind: "sticker", id: "shark-legs", label: "トララレロ・トラララ", message: "トララレロ・トラララ！", image: "/stickers/shark-legs.png", category: "brainrot", rarity: "rare" },
   { kind: "sticker", id: "monkey-banana", label: "チンパンジーニ・バナニーニ", message: "チンパンジーニ・バナニーニ！", image: "/stickers/monkey-banana.png", category: "brainrot", rarity: "rare" },
+  { kind: "sticker", id: "chimpanzini-kingini", label: "チンパンジーニ・キンギーニ", message: "チンパンジーニ・キンギーニ！", image: "/stickers/chimpanzini-kingini.png", category: "brainrot", rarity: "superRare" },
   { kind: "sticker", id: "cactus-elephant", label: "リリリ・ラリラ", message: "リリリ・ラリラ！", image: "/stickers/cactus-elephant.png", category: "brainrot", rarity: "rare" },
   { kind: "sticker", id: "mystical-tree", label: "ブルブル・パタピム", message: "ブルブル・パタピム！", image: "/stickers/mystical-tree.png", category: "brainrot", rarity: "rare" },
   { kind: "sticker", id: "teapot-man", label: "タタタタ・サフール", message: "タタタタ・サフール！", image: "/stickers/teapot-man.png", category: "brainrot", rarity: "rare" },
@@ -113,16 +118,40 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "bombaclot-crococlot", label: "ボンバクロット・クロコクロット", message: "ボンバクロット・クロコクロット！", image: "/stickers/bombaclot-crococlot.png", category: "brainrot", rarity: "rare" },
   { kind: "sticker", id: "meowl", label: "ミャウル", message: "ミャウル！", image: "/stickers/meowl.png", category: "brainrot", rarity: "superRare" },
   { kind: "sticker", id: "ryukku-nyukku-ryuuku", label: "リュック・ニュック・リューク", message: "リュック・ニュック・リューク！", image: "/stickers/ryukku-nyukku-ryuuku.png", category: "brainrot", rarity: "ultraRare" },
+  { kind: "sticker", id: "ouryu", label: "応龍", message: "応龍！", image: "/stickers/ouryu.png", category: "saikyoou", rarity: "ultraRare" },
+  { kind: "sticker", id: "fire-drake", label: "ファイアドレイク", message: "ファイアドレイク！", image: "/stickers/fire-drake.png", category: "saikyoou", rarity: "superRare" },
+  { kind: "sticker", id: "heracles", label: "ヘラクレス", message: "ヘラクレス！", image: "/stickers/heracles.png", category: "saikyoou", rarity: "superRare" },
+  { kind: "sticker", id: "saikyo-lion", label: "ライオン", message: "ライオン！", image: "/stickers/saikyo-lion.png", category: "saikyoou", rarity: "rare" },
+  { kind: "sticker", id: "hercules-beetle", label: "ヘラクレスオオカブト", message: "ヘラクレスオオカブト！", image: "/stickers/hercules-beetle.png", category: "saikyoou", rarity: "rare" },
+  { kind: "sticker", id: "hornet", label: "オオスズメバチ", message: "オオスズメバチ！", image: "/stickers/hornet.png", category: "saikyoou", rarity: "rare" },
+  { kind: "sticker", id: "shiva", label: "シヴァ", message: "シヴァ！", image: "/stickers/shiva.png", category: "saikyoou", rarity: "superRare" },
+  { kind: "sticker", id: "shachi", label: "シャチ", message: "シャチ！", image: "/stickers/shachi.png", category: "saikyoou", rarity: "rare" },
+  { kind: "sticker", id: "mc-villager", label: "村人", message: "村人！", image: "/stickers/mc-villager.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "mc-sheep", label: "ヒツジ", message: "ヒツジ！", image: "/stickers/mc-sheep.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "mc-pig", label: "ブタ", message: "ブタ！", image: "/stickers/mc-pig.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "mc-iron-golem", label: "アイアンゴーレム", message: "アイアンゴーレム！", image: "/stickers/mc-iron-golem.png", category: "minecraft", rarity: "rare" },
+  { kind: "sticker", id: "mc-enderman", label: "エンダーマン", message: "エンダーマン！", image: "/stickers/mc-enderman.png", category: "minecraft", rarity: "rare" },
+  { kind: "sticker", id: "mc-creeper", label: "クリーパー", message: "クリーパー！", image: "/stickers/mc-creeper.png", category: "minecraft", rarity: "rare" },
+  { kind: "sticker", id: "mc-charged-creeper", label: "帯電クリーパー", message: "帯電クリーパー！", image: "/stickers/mc-charged-creeper.png", category: "minecraft", rarity: "superRare" },
+  { kind: "sticker", id: "mc-zombie", label: "ゾンビ", message: "ゾンビ！", image: "/stickers/mc-zombie.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "mc-warden", label: "ウォーデン", message: "ウォーデン！", image: "/stickers/mc-warden.png", category: "minecraft", rarity: "ultraRare" },
+  { kind: "sticker", id: "mc-wither", label: "ウィザー", message: "ウィザー！", image: "/stickers/mc-wither.png", category: "minecraft", rarity: "superRare" },
+  { kind: "sticker", id: "mc-ender-dragon", label: "エンダードラゴン", message: "エンダードラゴン！", image: "/stickers/mc-ender-dragon.png", category: "minecraft", rarity: "ultraRare" },
+  { kind: "sticker", id: "mc-skeleton", label: "スケルトン", message: "スケルトン！", image: "/stickers/mc-skeleton.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "mc-chicken", label: "ニワトリ", message: "ニワトリ！", image: "/stickers/mc-chicken.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "mc-drowned", label: "ドラウンド", message: "ドラウンド！", image: "/stickers/mc-drowned.png", category: "minecraft", rarity: "rare" },
+  { kind: "sticker", id: "mc-spider", label: "クモ", message: "クモ！", image: "/stickers/mc-spider.png", category: "minecraft", rarity: "normal" },
 ];
 
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
 export const TOTAL_REWARD_COUNT = ALL_REWARDS.length;
 
-/** 日次：ノーマル30% / シール70%（レア80%・SR15%・UR5%） */
+/** 日次：ノーマル30% / シール70%（N35%・R45%・SR15%・UR5%） */
 export const DAILY_NORMAL_WEIGHT = 0.30;
 
 export const STICKER_TIER_WEIGHTS: Record<StickerRarity, number> = {
-  rare: 0.80,
+  normal: 0.35,
+  rare: 0.45,
   superRare: 0.15,
   ultraRare: 0.05,
 };
