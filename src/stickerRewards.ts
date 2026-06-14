@@ -304,6 +304,14 @@ export function pickStickerByTier(collectedIds: string[], tier: StickerRarity): 
   return pickFromStickerTier(collectedIds, tier);
 }
 
+export function getStickerById(id: string): StickerReward | undefined {
+  return STICKER_REWARDS.find((r) => r.id === id);
+}
+
+export function getStickersByCategory(category: StickerCategory): StickerReward[] {
+  return STICKER_REWARDS.filter((r) => r.category === category);
+}
+
 /** カットイン昇格演出用の偽ノーマル絵文字 */
 export function pickDecoyNormalReward(): EmojiReward {
   return pickRandom(DAILY_EMOJI_REWARDS);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
-import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
+import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
 import {
   pickTeaseVariant, shouldPlayTease,
   type TeaseVariant, type TeaseVariantId,
@@ -203,6 +203,32 @@ export interface NewRecordCelebration {
   timeSec: number;
 }
 
+export function StickerImg({
+  src, alt, padding = "10%", style,
+}: {
+  src: string; alt: string; padding?: number | string; style?: CSSProperties;
+}) {
+  return (
+    <div style={{
+      width: "100%", height: "100%",
+      padding, boxSizing: "border-box",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      ...style,
+    }}>
+      <img
+        src={src}
+        alt={alt}
+        style={{
+          maxWidth: "100%", maxHeight: "100%",
+          width: "auto", height: "auto",
+          objectFit: "contain", objectPosition: "center",
+          pointerEvents: "none",
+        }}
+      />
+    </div>
+  );
+}
+
 function StickerImage({ reward, size = 160, borderGlow, glowPulse = false }: {
   reward: StickerReward; size?: number; borderGlow: string; glowPulse?: boolean;
 }) {
@@ -218,11 +244,7 @@ function StickerImage({ reward, size = 160, borderGlow, glowPulse = false }: {
         "--glow-color": `${borderGlow}88`,
       } as CSSProperties}
     >
-      <img
-        src={reward.image}
-        alt={reward.label}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
+      <StickerImg src={reward.image} alt={reward.label} padding={12} />
     </div>
   );
 }
@@ -489,7 +511,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 }
 
 function TreatOverlay({
-  mode, collectedIds, onClose, onCollect, devForceTier, devForceTease, devForceTeaseId,
+  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId,
   missionTitle,
 }: {
   mode: TreatMode;
@@ -497,6 +519,7 @@ function TreatOverlay({
   onClose: () => void;
   onCollect: (rewardId: string) => void;
   devForceTier?: StickerRarity;
+  devForceStickerId?: string;
   devForceTease?: boolean;
   devForceTeaseId?: TeaseVariantId;
   missionTitle?: string;
@@ -533,7 +556,7 @@ function TreatOverlay({
     setUpgradeStep(null);
     setDecoy(null);
     setActiveTease(null);
-    onCollect(picked.id);
+    if (!devForceStickerId || import.meta.env.DEV) onCollect(picked.id);
     window.setTimeout(() => {
       vibrateTreat(getRarityRevealConfig(picked.rarity).vibratePattern);
     }, 200);
@@ -562,9 +585,12 @@ function TreatOverlay({
 
   const handleOpen = () => {
     if (phase !== "closed") return;
-    const picked = devForceTier
-      ? pickStickerByTier(collectedIds, devForceTier)
-      : pickTreatReward(collectedIds, mode);
+    const forced = devForceStickerId ? getStickerById(devForceStickerId) : undefined;
+    const picked = forced
+      ?? (devForceTier
+        ? pickStickerByTier(collectedIds, devForceTier)
+        : pickTreatReward(collectedIds, mode));
+    if (!picked) return;
 
     // DEV: 開封前teaseの単体プレビュー（本番SR/URフローとは別）
     if (devForceTease && shouldPlayTease(picked.rarity, true)) {

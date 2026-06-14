@@ -23,7 +23,7 @@ import {
   NewRecordOverlay, TreatOverlay,
   type NewRecordCelebration, type TreatMode,
 } from "./Rewards";
-import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum } from "./stickerRewards";
+import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory } from "./stickerRewards";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate,
 } from "./japaneseCalendar";
@@ -297,6 +297,7 @@ interface PendingTreat {
   mode: TreatMode;
   session?: SessionId;
   devForceTier?: import("./stickerRewards").StickerRarity;
+  devForceStickerId?: string;
   devForceTease?: boolean;
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
   missionTitle?: string;
@@ -2331,9 +2332,10 @@ export default function KeigoTaskApp() {
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           devForceTier={pendingTreat.devForceTier}
+          devForceStickerId={pendingTreat.devForceStickerId}
           devForceTease={pendingTreat.devForceTease}
           devForceTeaseId={pendingTreat.devForceTeaseId}
           missionTitle={pendingTreat.missionTitle}
@@ -2467,6 +2469,20 @@ export default function KeigoTaskApp() {
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
               ...(import.meta.env.DEV ? [
+                { icon: "⛏️", label: "MCシールプレビュー（全16枚）", action: () => {
+                  openTreatQueue(getStickersByCategory("minecraft").map((s) => ({
+                    mode: "daily" as const,
+                    devForceStickerId: s.id,
+                  })));
+                  setShowMenu(false);
+                } },
+                { icon: "👑", label: "最強王図鑑プレビュー（全8枚）", action: () => {
+                  openTreatQueue(getStickersByCategory("saikyoou").map((s) => ({
+                    mode: "daily" as const,
+                    devForceStickerId: s.id,
+                  })));
+                  setShowMenu(false);
+                } },
                 { icon: "🎁", label: "通常ごほうびテスト", action: () => { openTreatQueue([{ mode: "daily" }]); setShowMenu(false); } },
                 { icon: "🌟", label: "1日ボーナステスト", action: () => {
                   openTreatQueue([{ mode: "fullDayBonus" }]);

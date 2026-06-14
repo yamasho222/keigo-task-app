@@ -4,7 +4,7 @@ import {
   REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, getAlbumCategoryGroups,
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
-import { RarityBadge, StickerFrameWithBadge } from "./Rewards";
+import { RarityBadge, StickerFrameWithBadge, StickerImg } from "./Rewards";
 import {
   completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
   requiredSessionCount,
@@ -279,11 +279,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
                           {item.emoji ? (
                             item.emoji
                           ) : (
-                            <img
-                              src={item.image}
-                              alt={item.label}
-                              style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }}
-                            />
+                            <StickerImg src={item.image!} alt={item.label} padding={5} />
                           )}
                         </StickerFrameWithBadge>
                       </button>
@@ -352,11 +348,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
               {previewItem.emoji ? (
                 previewItem.emoji
               ) : (
-                <img
-                  src={previewItem.image}
-                  alt={previewItem.label}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
+                <StickerImg src={previewItem.image!} alt={previewItem.label} padding={16} />
               )}
             </StickerFrameWithBadge>
             <div style={{ fontSize: 20, fontWeight: 900, color: theme.text.primary, marginBottom: 6 }}>
