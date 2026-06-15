@@ -1,6 +1,6 @@
 export type SessionId = "morning" | "daytime" | "home" | "evening";
 
-export type TaskScope = "regular" | "today";
+export type TaskScope = "regular" | "today" | "special";
 
 export interface Task {
   id: number;
@@ -52,12 +52,20 @@ export function gamePlayKey(date: string, session: SessionId): string {
   return `${date}:${session}`;
 }
 
+export function isOneOffSpecialTask(task: Task): boolean {
+  return task.scope === "special";
+}
+
+export function oneOffSpecialClaimKey(task: Task): string {
+  return task.sharedKey ?? `task-${task.id}`;
+}
+
 export function tasksForProgress(tasks: Task[]): Task[] {
-  return tasks.filter((t) => !isGameTask(t));
+  return tasks.filter((t) => !isGameTask(t) && !isOneOffSpecialTask(t));
 }
 
 export function isTaskVisibleToday(task: Task, now = new Date()): boolean {
-  if (task.scope === "today") return true;
+  if (task.scope === "today" || task.scope === "special") return true;
   if (!task.weekdays?.length) return true;
   return task.weekdays.includes(now.getDay());
 }

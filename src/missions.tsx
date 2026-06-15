@@ -783,3 +783,114 @@ export function ShowParentMissionScreen({
     </div>
   );
 }
+
+export function ShowParentOneOffScreen({
+  emoji,
+  title,
+  phaseLabel,
+  completedAt,
+  approved,
+  onApprove,
+  onReset,
+  onHome,
+}: {
+  emoji: string;
+  title: string;
+  phaseLabel: string;
+  completedAt: string;
+  approved: boolean;
+  onApprove: () => void;
+  onReset: () => void;
+  onHome: () => void;
+}) {
+  const canApprove = !approved;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div onClick={onHome} style={{
+          display: "flex", alignItems: "center", gap: 4,
+          cursor: "pointer", color: theme.text.tertiary, fontSize: 13,
+          padding: "4px 6px", borderRadius: 6,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 8L8 2L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M4 6V13H12V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          ホーム
+        </div>
+        <div style={{ fontSize: 12, color: theme.text.tertiary }}>{completedAt} 完了</div>
+      </div>
+
+      <div style={{ textAlign: "center", paddingTop: 4 }}>
+        <div style={{ fontSize: 21, fontWeight: 800, color: theme.text.primary }}>
+          {phaseLabel}の単発特別ミッション
+        </div>
+        <div style={{
+          display: "inline-flex", marginTop: 6, padding: "3px 12px", borderRadius: 100,
+          backgroundColor: `${theme.category.orange}18`,
+        }}>
+          <span style={{ fontSize: 12, color: theme.category.orange, fontWeight: 700 }}>親チェック</span>
+        </div>
+      </div>
+
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12, padding: "14px 16px",
+        borderRadius: 14, backgroundColor: `${theme.category.orange}14`,
+        border: `1.5px solid ${theme.category.orange}44`,
+      }}>
+        <span style={{ fontSize: 32 }}>{emoji}</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: theme.text.primary }}>{title}</span>
+      </div>
+
+      <div style={{
+        padding: "10px 14px", borderRadius: 12, textAlign: "center",
+        backgroundColor: theme.fill.quaternary, border: `1px solid ${theme.stroke.tertiary}`,
+        fontSize: 13, color: theme.text.secondary,
+      }}>
+        クリアするとレア以上のシールがもらえるよ！
+      </div>
+
+      {approved && (
+        <div className="approved-in" style={{
+          padding: "11px 16px", borderRadius: 12,
+          backgroundColor: `${theme.category.green}20`, border: `2px solid ${theme.category.green}66`,
+          display: "flex", alignItems: "center", gap: 10, justifyContent: "center",
+        }}>
+          <div style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: theme.category.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="13" height="10" viewBox="0 0 13 10" fill="none">
+              <path d="M1.5 5L5 8.5L11.5 1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 700, color: theme.category.green }}>ハンコ OK！</span>
+        </div>
+      )}
+
+      <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
+        <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, textAlign: "center" }}>
+          親がミッションをかくにん
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div
+            onClick={canApprove ? onApprove : undefined}
+            style={{
+            flex: 2, padding: "12px", borderRadius: 10, textAlign: "center",
+            backgroundColor: approved ? `${theme.category.green}33` : canApprove ? theme.category.green : theme.fill.secondary,
+            color: approved ? theme.category.green : canApprove ? "#fff" : theme.text.tertiary,
+            fontSize: 14, fontWeight: 800, cursor: canApprove ? "pointer" : "default",
+            opacity: canApprove || approved ? 1 : 0.7,
+          }}>
+            {approved ? "✓ 承認ずみ" : canApprove ? "はんこを押す！" : "まだ承認できません"}
+          </div>
+          <div onClick={onReset} style={{
+            flex: 1, padding: "12px", borderRadius: 10, textAlign: "center",
+            border: `1px solid ${theme.stroke.secondary}`,
+            color: theme.text.tertiary, fontSize: 13, cursor: "pointer",
+          }}>
+            やりなおし
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

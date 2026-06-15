@@ -161,6 +161,13 @@ export const WEEKLY_HIGH_TIER_WEIGHTS: Record<"superRare" | "ultraRare", number>
   ultraRare: 0.15,
 };
 
+/** 単発特別ミッション: レア以上のみ */
+export const ONE_OFF_SPECIAL_TIER_WEIGHTS: Record<"rare" | "superRare" | "ultraRare", number> = {
+  rare: 0.70,
+  superRare: 0.25,
+  ultraRare: 0.05,
+};
+
 export interface RewardLookupEntry {
   label: string;
   category: RewardCategory;
@@ -294,6 +301,11 @@ export function pickSpecialMissionReward(collectedIds: string[]): StickerReward 
   return pickFromStickerTiers(collectedIds, STICKER_TIER_WEIGHTS);
 }
 
+export function pickOneOffSpecialReward(collectedIds: string[]): StickerReward {
+  const tier = rollWeightedTier(ONE_OFF_SPECIAL_TIER_WEIGHTS);
+  return pickFromStickerTier(collectedIds, tier);
+}
+
 export function pickWeeklyReward(collectedIds: string[]): StickerReward {
   const tier = rollWeightedTier(WEEKLY_HIGH_TIER_WEIGHTS);
   return pickFromStickerTier(collectedIds, tier);
@@ -321,7 +333,8 @@ export function pickTreatReward(collectedIds: string[], mode: TreatMode): Reward
   if (mode === "fullDayBonus") return pickFullDayBonusReward(collectedIds);
   if (mode === "weekly") return pickWeeklyReward(collectedIds);
   if (mode === "specialMission") return pickSpecialMissionReward(collectedIds);
+  if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds);
   return pickDailyReward(collectedIds);
 }
 
-export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "specialMission";
+export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "specialMission" | "oneOffSpecial";

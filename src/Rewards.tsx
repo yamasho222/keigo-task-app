@@ -537,6 +537,8 @@ function TreatOverlay({
   const isWeekly = mode === "weekly";
   const isFullDayBonus = mode === "fullDayBonus";
   const isSpecialMission = mode === "specialMission";
+  const isOneOffSpecial = mode === "oneOffSpecial";
+  const isMissionStyle = isSpecialMission || isOneOffSpecial;
 
   const clearTimers = () => {
     if (teaseTimerRef.current !== null) {
@@ -603,7 +605,7 @@ function TreatOverlay({
       return;
     }
 
-    if (!isSpecialMission && shouldPlayUpgradeReveal(picked.rarity)) {
+    if (!isMissionStyle && shouldPlayUpgradeReveal(picked.rarity)) {
       startUpgradeReveal(picked);
       return;
     }
@@ -620,23 +622,27 @@ function TreatOverlay({
     ? "🎊 1週間クリア！ 🎊"
     : isFullDayBonus
       ? "🌟 1日全部クリア！ 🌟"
-      : isSpecialMission
-        ? "⭐ 特別ミッション クリア！ ⭐"
-        : "⭐ きょうのごほうび ⭐";
+      : isOneOffSpecial
+        ? "🎯 単発特別ミッション クリア！ 🎯"
+        : isSpecialMission
+          ? "⭐ 特別ミッション クリア！ ⭐"
+          : "⭐ きょうのごほうび ⭐";
 
   const subtitle = isWeekly
     ? "7日連続ですべてクリア！スーパーレア以上！"
     : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
-      : isSpecialMission
+      : isOneOffSpecial
         ? missionTitle ? `${missionTitle} — クリア！` : "ミッション達成！レア以上のシール！"
-        : "この時間のやること、全部クリア！";
+        : isSpecialMission
+          ? missionTitle ? `${missionTitle} — クリア！` : "ミッション達成！レア以上のシール！"
+          : "この時間のやること、全部クリア！";
 
   const titleColor = isWeekly
     ? theme.category.purple
     : isFullDayBonus
       ? theme.category.orange
-      : isSpecialMission
+      : isMissionStyle
         ? theme.category.purple
         : theme.category.green;
 
@@ -671,7 +677,7 @@ function TreatOverlay({
         textAlign: "center",
       }}>
         <div style={{
-          fontSize: isWeekly ? 22 : isFullDayBonus || isSpecialMission ? 20 : 18, fontWeight: 900,
+          fontSize: isWeekly ? 22 : isFullDayBonus || isMissionStyle ? 20 : 18, fontWeight: 900,
           color: isImmersive ? "#fff" : titleColor,
           marginBottom: 8,
           textShadow: isImmersive ? "0 2px 12px rgba(0,0,0,0.65)" : undefined,
@@ -698,20 +704,20 @@ function TreatOverlay({
             }}>
               <TreasureChest
                 opened={false}
-                size={isFullDayBonus ? 96 : isSpecialMission ? 88 : 80}
-                variant={isFullDayBonus ? "premium" : isSpecialMission ? "mission" : "default"}
+                size={isFullDayBonus ? 96 : isMissionStyle ? 88 : 80}
+                variant={isFullDayBonus ? "premium" : isMissionStyle ? "mission" : "default"}
               />
               <div style={{
                 fontSize: 14, fontWeight: 700, marginTop: 8,
                 color: isFullDayBonus
                   ? theme.category.orange
-                  : isSpecialMission
+                  : isMissionStyle
                     ? theme.category.purple
                     : theme.accent.primary,
               }}>
                 {isFullDayBonus
                   ? "特別な宝箱を開ける！"
-                  : isSpecialMission
+                  : isMissionStyle
                     ? "ミッション宝箱を開ける！"
                     : "タップして開ける！"}
               </div>

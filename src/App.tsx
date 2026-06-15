@@ -30,7 +30,7 @@ import {
 import {
   type DailyMission, type FavoriteMission, type MissionCardStatus,
   MissionCard, MissionConfirmDialog, MissionBriefingOverlay,
-  MissionSetupSheet, ShowParentMissionScreen,
+  MissionSetupSheet, ShowParentMissionScreen, ShowParentOneOffScreen,
   isMissionBriefingSeen, markMissionBriefingSeen,
 } from "./missions";
 import {
@@ -46,6 +46,7 @@ import {
   DEFAULT_HOMEWORK_SHARED_KEY,
   isTaskVisibleToday, isTaskVisibleInSession, visibleTasksForSession,
   isGameTask, ensureGameTaskInList, gamePlayKey, tasksForProgress, createGameTask,
+  isOneOffSpecialTask, oneOffSpecialClaimKey,
   resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
   maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
@@ -53,7 +54,7 @@ import {
 
 // ── Types & Data ──────────────────────────────────────
 
-type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
+type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "show_parent_oneoff" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type SwipeMode = "delete" | "skip";
 
@@ -70,19 +71,21 @@ const WEEKDAYS_WEEKEND = [0, 6];
 
 function taskMatchesWeekdayFilter(task: Task, filterDow: number | null, now = new Date()): boolean {
   if (filterDow === null) return true;
-  if (task.scope === "today") return filterDow === now.getDay();
+  if (task.scope === "today" || task.scope === "special") return filterDow === now.getDay();
   if (!task.weekdays?.length) return true;
   return task.weekdays.includes(filterDow);
 }
 
 function taskScheduleBadge(task: Task): string {
+  if (task.scope === "special") return "特別";
   if (task.scope === "today") return "きょう";
   return weekdayBadgeLabel(task.weekdays) ?? "毎日";
 }
 
-type ScheduleBadgeKind = "today" | "daily" | "weekday" | "weekend" | "custom";
+type ScheduleBadgeKind = "today" | "special" | "daily" | "weekday" | "weekend" | "custom";
 
 function taskScheduleBadgeKind(task: Task): ScheduleBadgeKind {
+  if (task.scope === "special") return "special";
   if (task.scope === "today") return "today";
   if (!task.weekdays?.length || task.weekdays.length === 7) return "daily";
   const sorted = [...task.weekdays].sort((a, b) => a - b);
@@ -95,6 +98,7 @@ function taskScheduleBadgeStyle(task: Task): { label: string; color: string; bac
   const label = taskScheduleBadge(task);
   const colorByKind: Record<ScheduleBadgeKind, string> = {
     today: theme.category.pink,
+    special: theme.category.orange,
     daily: theme.category.blue,
     weekday: theme.category.purple,
     weekend: theme.category.orange,
@@ -277,6 +281,8 @@ interface StoredState {
   missionApprovedSessions?: SessionId[];
   specialMissionRewardClaimed?: Record<string, boolean>;
   specialMissionTreatPending?: Record<string, boolean>;
+  oneOffSpecialClaimed?: Record<string, boolean>;
+  oneOffSpecialTreatPending?: Record<string, boolean>;
   missionHistory?: Record<string, { title: string; emoji: string }>;
   missionEveningNudgeDate?: string;
 }
@@ -301,6 +307,15 @@ interface PendingTreat {
   devForceTease?: boolean;
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
   missionTitle?: string;
+  oneOffSpecialClaimKey?: string;
+}
+
+interface OneOffSpecialPending {
+  claimKey: string;
+  taskId: number;
+  session: SessionId;
+  title: string;
+  emoji: string;
 }
 
 function buildTreatQueue(
@@ -412,10 +427,10 @@ function freshCompletionSlice(
     daytimeApproved: false,
     eveningApproved: false,
     homeApproved: false,
-    morningTasks: stripTodayTasks(morningTasks),
-    daytimeTasks: stripTodayTasks(daytimeTasks),
-    eveningTasks: stripTodayTasks(eveningTasks),
-    homeTasks: stripTodayTasks(homeTasks),
+    morningTasks: stripEphemeralTasks(morningTasks),
+    daytimeTasks: stripEphemeralTasks(daytimeTasks),
+    eveningTasks: stripEphemeralTasks(eveningTasks),
+    homeTasks: stripEphemeralTasks(homeTasks),
   };
 }
 
@@ -439,8 +454,8 @@ function normalizeAllTaskLists(stored: StoredState): Pick<StoredState, "morningT
   };
 }
 
-function stripTodayTasks(tasks: Task[]): Task[] {
-  return normalizeTasks(tasks).filter((t) => t.scope !== "today");
+function stripEphemeralTasks(tasks: Task[]): Task[] {
+  return normalizeTasks(tasks).filter((t) => t.scope !== "today" && t.scope !== "special");
 }
 
 function hydrateStoredState(data: StoredState): StoredState {
@@ -1087,6 +1102,15 @@ export default function KeigoTaskApp() {
   const [specialMissionTreatPending, setSpecialMissionTreatPending] = useState<Record<string, boolean>>(
     stored.specialMissionTreatPending ?? {},
   );
+  const [oneOffSpecialClaimed, setOneOffSpecialClaimed] = useState<Record<string, boolean>>(
+    stored.oneOffSpecialClaimed ?? {},
+  );
+  const [oneOffSpecialTreatPending, setOneOffSpecialTreatPending] = useState<Record<string, boolean>>(
+    stored.oneOffSpecialTreatPending ?? {},
+  );
+  const [oneOffSpecialAwaitingParent, setOneOffSpecialAwaitingParent] = useState<OneOffSpecialPending | null>(null);
+  const [oneOffSpecialStampApproved, setOneOffSpecialStampApproved] = useState(false);
+  const [oneOffSpecialCompletedAt, setOneOffSpecialCompletedAt] = useState("");
   const [missionHistory, setMissionHistory] = useState<Record<string, { title: string; emoji: string }>>(
     stored.missionHistory ?? {},
   );
@@ -1126,6 +1150,7 @@ export default function KeigoTaskApp() {
   const taskDayRef = useRef(stored.date);
   const screenRef = useRef<ScreenId>(getInitialScreen());
   const specialMissionCollectedRef = useRef(false);
+  const oneOffSpecialCollectedRef = useRef(false);
   const dailyTreatCollectedRef = useRef(false);
   const gameTimerStartRef = useRef<number | null>(null);
   const gameTimerPausedTotalRef = useRef(0);
@@ -1290,6 +1315,8 @@ export default function KeigoTaskApp() {
       missionApprovedSessions,
       specialMissionRewardClaimed,
       specialMissionTreatPending,
+      oneOffSpecialClaimed,
+      oneOffSpecialTreatPending,
       missionHistory,
       missionEveningNudgeDate,
     };
@@ -1304,6 +1331,7 @@ export default function KeigoTaskApp() {
     dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, lastWeeklyRewardStreak, stickerAlbum,
     customTaskEmojis, todayMission, favoriteMissions,
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
+    oneOffSpecialClaimed, oneOffSpecialTreatPending,
     missionHistory, missionEveningNudgeDate,
   ]);
 
@@ -1395,10 +1423,14 @@ export default function KeigoTaskApp() {
       setDaytimeApproved(false);
       setEveningApproved(false);
       setHomeApproved(false);
-      setMorningTasks((t) => stripTodayTasks(t));
-      setDaytimeTasks((t) => stripTodayTasks(t));
-      setEveningTasks((t) => stripTodayTasks(t));
-      setHomeTasks((t) => stripTodayTasks(t));
+      setMorningTasks((t) => stripEphemeralTasks(t));
+      setDaytimeTasks((t) => stripEphemeralTasks(t));
+      setEveningTasks((t) => stripEphemeralTasks(t));
+      setHomeTasks((t) => stripEphemeralTasks(t));
+      setOneOffSpecialClaimed({});
+      setOneOffSpecialTreatPending({});
+      setOneOffSpecialAwaitingParent(null);
+      setOneOffSpecialStampApproved(false);
       setActiveWorkTask(null);
       resetWorkTimer();
       setJustChecked(null);
@@ -1479,6 +1511,9 @@ export default function KeigoTaskApp() {
       if (closing?.mode === "specialMission" && !specialMissionCollectedRef.current) {
         setSpecialMissionTreatPending((p) => ({ ...p, [currentTaskDay]: true }));
       }
+      if (closing?.mode === "oneOffSpecial" && closing.oneOffSpecialClaimKey && !oneOffSpecialCollectedRef.current) {
+        setOneOffSpecialTreatPending((p) => ({ ...p, [closing.oneOffSpecialClaimKey!]: true }));
+      }
       if (closing?.mode === "daily" && closing.session && !dailyTreatCollectedRef.current) {
         const treatSession = closing.session;
         setDailyTreatPending((p) => ({
@@ -1487,6 +1522,7 @@ export default function KeigoTaskApp() {
         }));
       }
       specialMissionCollectedRef.current = false;
+      oneOffSpecialCollectedRef.current = false;
       dailyTreatCollectedRef.current = false;
       return null;
     });
@@ -1594,7 +1630,15 @@ export default function KeigoTaskApp() {
       setSkipped(nextSkipped);
     }
 
-    maybeCelebrate(session, nextDone, nextSkipped, label);
+    const task = sessionState[session].tasks.find((t) => t.id === taskId);
+    if (task && isOneOffSpecialTask(task)) {
+      const claimKey = oneOffSpecialClaimKey(task);
+      if (!oneOffSpecialClaimed[claimKey]) {
+        fireOneOffSpecialCelebration(session, task);
+      }
+    } else {
+      maybeCelebrate(session, nextDone, nextSkipped, label);
+    }
   };
 
   const completeWorkTask = (
@@ -1820,6 +1864,17 @@ export default function KeigoTaskApp() {
           return next;
         });
       }
+      if (treat?.mode === "oneOffSpecial" && treat.oneOffSpecialClaimKey) {
+        oneOffSpecialCollectedRef.current = true;
+        const key = treat.oneOffSpecialClaimKey;
+        setOneOffSpecialClaimed((c) => ({ ...c, [key]: true }));
+        setOneOffSpecialTreatPending((p) => {
+          if (!p[key]) return p;
+          const next = { ...p };
+          delete next[key];
+          return next;
+        });
+      }
       if (treat?.mode === "daily" && treat.session) {
         dailyTreatCollectedRef.current = true;
         const key = sessionTreatKey(todayKey(), treat.session);
@@ -1858,6 +1913,99 @@ export default function KeigoTaskApp() {
     const key = sessionTreatKey(todayKey(), session);
     if (dailyTreatPending[key]) return true;
     return !isSessionTreatClaimed(dailyTreatClaimed, todayKey(), session);
+  };
+
+  const findOneOffSpecialPendingInfo = (claimKey: string): OneOffSpecialPending | null => {
+    for (const sid of SESSION_IDS) {
+      for (const t of sessionState[sid].tasks) {
+        if (isOneOffSpecialTask(t) && oneOffSpecialClaimKey(t) === claimKey) {
+          return { claimKey, taskId: t.id, session: sid, title: t.title, emoji: t.emoji };
+        }
+      }
+    }
+    return null;
+  };
+
+  const openOneOffSpecialReward = (pending: OneOffSpecialPending) => {
+    oneOffSpecialCollectedRef.current = false;
+    setOneOffSpecialTreatPending((p) => {
+      if (!p[pending.claimKey]) return p;
+      const next = { ...p };
+      delete next[pending.claimKey];
+      return next;
+    });
+    openTreatQueue([{
+      mode: "oneOffSpecial",
+      missionTitle: `${pending.emoji} ${pending.title}`,
+      oneOffSpecialClaimKey: pending.claimKey,
+    }]);
+  };
+
+  const openFirstPendingOneOffSpecialReward = () => {
+    const claimKey = Object.keys(oneOffSpecialTreatPending).find((k) => oneOffSpecialTreatPending[k]);
+    if (!claimKey) return;
+    const info = findOneOffSpecialPendingInfo(claimKey);
+    if (info) openOneOffSpecialReward(info);
+  };
+
+  const hasUnclaimedOneOffSpecialReward = () =>
+    Object.keys(oneOffSpecialTreatPending).some((k) => oneOffSpecialTreatPending[k]);
+
+  const openOneOffParentCheck = () => {
+    if (!oneOffSpecialAwaitingParent) return;
+    setScreen("show_parent_oneoff");
+  };
+
+  const fireOneOffSpecialCelebration = (session: SessionId, task: Task) => {
+    setOneOffSpecialAwaitingParent({
+      claimKey: oneOffSpecialClaimKey(task),
+      taskId: task.id,
+      session,
+      title: task.title,
+      emoji: task.emoji,
+    });
+    setOneOffSpecialStampApproved(false);
+    setAnticipating(false);
+    setStampVisible(false);
+    setOneOffSpecialCompletedAt(fmtTime(new Date()));
+    setCelebKey((k) => k + 1);
+    setCelebType("burst");
+    setTimeout(() => {
+      setCelebType(null);
+      const s = screenRef.current;
+      if (isSessionScreen(s)) setPrevScreen(s);
+      setScreen("show_parent_oneoff");
+    }, 3000);
+  };
+
+  const handleOneOffSpecialApprove = () => {
+    const pending = oneOffSpecialAwaitingParent;
+    if (!pending || oneOffSpecialStampApproved) return;
+    setOneOffSpecialStampApproved(true);
+    triggerStamp();
+    setTimeout(() => {
+      setOneOffSpecialAwaitingParent(null);
+      setOneOffSpecialStampApproved(false);
+      openOneOffSpecialReward(pending);
+    }, 950);
+  };
+
+  const resetOneOffSpecialApproval = () => {
+    const pending = oneOffSpecialAwaitingParent;
+    if (!pending) return;
+    const { session, taskId } = pending;
+    sessionState[session].setDone((prev) => {
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+    setOneOffSpecialAwaitingParent(null);
+    setOneOffSpecialStampApproved(false);
+    if (isSessionScreen(prevScreen)) {
+      setScreen(prevScreen);
+    } else {
+      setScreen(getSessionScreen());
+    }
   };
 
   const currentTaskDay = taskDayKey();
@@ -2266,14 +2414,36 @@ export default function KeigoTaskApp() {
     const task = sessionState[session].tasks.find((t) => t.id === id);
     if (!task || isGameTask(task)) return;
 
+    const clearOneOffState = (t: Task) => {
+      if (!isOneOffSpecialTask(t)) return;
+      const claimKey = oneOffSpecialClaimKey(t);
+      setOneOffSpecialTreatPending((p) => {
+        if (!p[claimKey]) return p;
+        const next = { ...p };
+        delete next[claimKey];
+        return next;
+      });
+      setOneOffSpecialClaimed((c) => {
+        if (!c[claimKey]) return c;
+        const next = { ...c };
+        delete next[claimKey];
+        return next;
+      });
+      setOneOffSpecialAwaitingParent((p) => (p?.claimKey === claimKey ? null : p));
+    };
+
     if (task.sharedKey) {
       for (const sid of SESSION_IDS) {
         const row = sessionState[sid].tasks.find((t) => t.sharedKey === task.sharedKey);
-        if (row) removeTaskRow(sid, row.id, row);
+        if (row) {
+          clearOneOffState(row);
+          removeTaskRow(sid, row.id, row);
+        }
       }
       return;
     }
 
+    clearOneOffState(task);
     removeTaskRow(session, id, task);
   };
 
@@ -2704,6 +2874,10 @@ export default function KeigoTaskApp() {
                 onOpenMissionParentCheck={() => openMissionParentCheck(sid)}
                 showDailyRewardButton={hasUnclaimedSessionDailyReward(sid)}
                 onOpenDailyReward={() => openSessionDailyReward(sid)}
+                showOneOffSpecialRewardButton={hasUnclaimedOneOffSpecialReward()}
+                onOpenOneOffSpecialReward={openFirstPendingOneOffSpecialReward}
+                showOneOffParentCheckButton={oneOffSpecialAwaitingParent !== null}
+                onOpenOneOffParentCheck={openOneOffParentCheck}
                 gamePlaySec={gamePlayTimes[gamePlayKey(todayKey(), sid)]}
               />
             ))}
@@ -2722,6 +2896,19 @@ export default function KeigoTaskApp() {
             approvedSessions={missionApprovedSessions}
             onApprove={handleMissionApprove}
             onReset={resetMissionApproval}
+            onHome={goHome}
+          />
+        )}
+
+        {screen === "show_parent_oneoff" && oneOffSpecialAwaitingParent && (
+          <ShowParentOneOffScreen
+            emoji={oneOffSpecialAwaitingParent.emoji}
+            title={oneOffSpecialAwaitingParent.title}
+            phaseLabel={SESSION_META[oneOffSpecialAwaitingParent.session].label}
+            completedAt={oneOffSpecialCompletedAt}
+            approved={oneOffSpecialStampApproved}
+            onApprove={handleOneOffSpecialApprove}
+            onReset={resetOneOffSpecialApproval}
             onHome={goHome}
           />
         )}
@@ -3512,6 +3699,12 @@ function TaskListScreen({
     setIsAdding(true);
   };
 
+  const addHeaderLabel = addMode === "special"
+    ? "単発特別ミッション"
+    : addMode === "today"
+      ? "きょうだけのタスク"
+      : "レギュラータスク";
+
   const handleDeleteTask = (taskId: number) => {
     const task = allTasks.find((t) => t.id === taskId);
     if (task && !confirmDeleteShared(task)) return;
@@ -3619,9 +3812,10 @@ function TaskListScreen({
         {isAdding ? (
           <TaskEditForm
             key={`list-add-${addMode}`}
-            header={addMode === "today" ? "きょうだけのタスク" : "レギュラータスク"}
+            header={addHeaderLabel}
+            hint={addMode === "special" ? "クリアするとレア以上のシールがもらえるよ（親の確認が必要）" : undefined}
             initialTitle=""
-            initialEmoji="📝"
+            initialEmoji="🎯"
             saveLabel="追加する"
             showWeekdays={addMode === "regular"}
             currentSession={session}
@@ -3632,6 +3826,14 @@ function TaskListScreen({
           />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={() => startAdding("special")} style={{
+              ...addBtnStyle,
+              borderColor: `${theme.category.orange}66`,
+              color: theme.category.orange,
+              backgroundColor: `${theme.category.orange}10`,
+            }}>
+              <span style={{ fontSize: 18 }}>＋</span> 単発特別ミッション
+            </button>
             <button type="button" onClick={() => startAdding("today")} style={addBtnStyle}>
               <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
             </button>
@@ -3669,7 +3871,7 @@ function TaskListScreen({
               initialTitle={editingTask.title}
               initialEmoji={editingTask.emoji}
               initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
-              showWeekdays={(editingTask.scope ?? "regular") !== "today"}
+              showWeekdays={(editingTask.scope ?? "regular") === "regular"}
               saveLabel="保存する"
               autoFocus={false}
               currentSession={session}
@@ -3906,12 +4108,13 @@ function SessionMultiPicker({
 }
 
 function TaskEditForm({
-  header, initialTitle, initialEmoji, saveLabel, onSave, onCancel, onDelete, autoFocus = true,
+  header, hint, initialTitle, initialEmoji, saveLabel, onSave, onCancel, onDelete, autoFocus = true,
   showWeekdays = false, initialWeekdays,
   currentSession, initialSharedSessions,
   customTaskEmojis, onAddCustomTaskEmoji,
 }: {
   header?: string;
+  hint?: string;
   initialTitle: string;
   initialEmoji: string;
   saveLabel: string;
@@ -3989,6 +4192,9 @@ function TaskEditForm({
     }}>
       {header && (
         <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>{header}</div>
+      )}
+      {hint && (
+        <div style={{ fontSize: 11, color: theme.text.tertiary, lineHeight: 1.45 }}>{hint}</div>
       )}
       <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>おすすめ</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -4181,6 +4387,10 @@ interface TaskScreenProps {
   onOpenMissionParentCheck: () => void;
   showDailyRewardButton: boolean;
   onOpenDailyReward: () => void;
+  showOneOffSpecialRewardButton: boolean;
+  onOpenOneOffSpecialReward: () => void;
+  showOneOffParentCheckButton: boolean;
+  onOpenOneOffParentCheck: () => void;
   gamePlaySec?: number;
 }
 
@@ -4192,6 +4402,8 @@ function TaskScreen({
   todayMission, missionCardStatus, activeMissionSessions, missionDoneSessions, missionApprovedSessions,
   showEveningMissionNudge, onMissionDone, onMissionUndo, onMissionSetup, onOpenMissionReward,
   showDailyRewardButton, onOpenDailyReward, onOpenMissionParentCheck,
+  showOneOffSpecialRewardButton, onOpenOneOffSpecialReward,
+  showOneOffParentCheckButton, onOpenOneOffParentCheck,
   gamePlaySec,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -4379,6 +4591,84 @@ function TaskScreen({
         </div>
       )}
 
+      {showOneOffParentCheckButton && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.orange}55`,
+          backgroundColor: `${theme.category.orange}12`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>👪</span>
+            <span style={{
+              fontSize: 15,
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              color: theme.text.primary,
+            }}>
+              特別ミッション — 親の確認待ち
+            </span>
+            <button
+              type="button"
+              onClick={onOpenOneOffParentCheck}
+              style={{
+                flexShrink: 0,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: theme.category.orange,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              確認する
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showOneOffSpecialRewardButton && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.orange}55`,
+          backgroundColor: `${theme.category.orange}12`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>🎯</span>
+            <span style={{
+              fontSize: 15,
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              color: theme.text.primary,
+            }}>
+              特別ミッションのごほうび
+            </span>
+            <button
+              type="button"
+              onClick={onOpenOneOffSpecialReward}
+              style={{
+                flexShrink: 0,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: theme.category.orange,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              もらう！
+            </button>
+          </div>
+        </div>
+      )}
+
       {todayMission && missionCardStatus && (
         <MissionCard
           mission={todayMission}
@@ -4463,7 +4753,7 @@ function TaskScreen({
               initialTitle={editingTask.title}
               initialEmoji={editingTask.emoji}
               initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
-              showWeekdays={(editingTask.scope ?? "regular") !== "today"}
+              showWeekdays={(editingTask.scope ?? "regular") === "regular"}
               saveLabel="保存する"
               autoFocus={false}
               currentSession={session}
@@ -4989,6 +5279,14 @@ function TaskRow({
             backgroundColor: `${theme.category.orange}22`, padding: "2px 6px", borderRadius: 6,
           }}>
             あとで
+          </span>
+        )}
+        {task.scope === "special" && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 700, color: theme.category.orange,
+            backgroundColor: `${theme.category.orange}18`, padding: "2px 6px", borderRadius: 6,
+          }}>
+            特別
           </span>
         )}
         {task.scope === "today" && (
