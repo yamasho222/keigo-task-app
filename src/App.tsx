@@ -46,7 +46,7 @@ import {
   DEFAULT_HOMEWORK_SHARED_KEY,
   isTaskVisibleToday, isTaskVisibleInSession, visibleTasksForSession,
   isGameTask, ensureGameTaskInList, gamePlayKey, tasksForProgress, createGameTask,
-  isOneOffSpecialTask, oneOffSpecialClaimKey,
+  isOneOffSpecialTask, oneOffSpecialClaimKey, tasksForSessionList,
   resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
   maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
@@ -149,7 +149,7 @@ function reorderVisibleInAll(
 ): Task[] {
   let vi = 0;
   return allTasks.map((t) => {
-    if (!isTaskVisibleInSession(t, session, allSessions) || isGameTask(t)) return t;
+    if (!isTaskVisibleInSession(t, session, allSessions) || isGameTask(t) || isOneOffSpecialTask(t)) return t;
     const next = reorderedVisible[vi++];
     return next ?? t;
   });
@@ -4422,6 +4422,7 @@ function TaskScreen({
   );
 
   const shownTasks = visibleTasksForSession(session, allSessionTasks);
+  const listTasks = tasksForSessionList(shownTasks);
   const progressTasks = tasksForProgress(shownTasks);
   const gameTask = shownTasks.find(isGameTask);
 
@@ -4481,9 +4482,9 @@ function TaskScreen({
       <div style={{ height: 1, backgroundColor: theme.stroke.tertiary }} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={progressTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={listTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {progressTasks.map((task) => {
+            {listTasks.map((task) => {
               const isActive = activeWorkTask?.session === session && activeWorkTask.taskId === task.id;
               const isSkipped = skipped.has(task.id);
               const swipeMode = openSwipe?.id === task.id ? openSwipe.mode : null;
@@ -4491,6 +4492,7 @@ function TaskScreen({
                 <SortableTaskRow
                   key={task.id}
                   task={task}
+                  sortable={!isOneOffSpecialTask(task)}
                   isDone={done.has(task.id)}
                   isSkipped={isSkipped}
                   isJustChecked={justChecked === task.id}
@@ -4826,6 +4828,7 @@ interface TaskRowProps {
   onStartTimer: () => void; onPauseTimer: () => void; onCancelTask: () => void; onCompleteTask: () => void;
   confirmDeleteTime: boolean;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
+  sortable?: boolean;
 }
 
 function swipeSnapOffset(mode: SwipeMode | null) {
@@ -4840,9 +4843,13 @@ function SortableTaskRow(props: TaskRowProps) {
     onStartTimer, onPauseTimer, onCancelTask, onCompleteTask, isActive, liveElapsed, timerRunning,
     interactionLocked = false,
     confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
+    sortable = true,
     ...rowProps
   } = props;
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.task.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.task.id,
+    disabled: !sortable,
+  });
   const swipeRef = useRef<HTMLDivElement>(null);
   const gestureSurfaceRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<GestureState>(emptyGesture());
@@ -4989,13 +4996,14 @@ function SortableTaskRow(props: TaskRowProps) {
     >
       <div
         data-dnd-handle
-        {...(interactionLocked ? {} : { ...attributes, ...listeners })}
+        {...(sortable && !interactionLocked ? { ...attributes, ...listeners } : {})}
         style={{
           flexShrink: 0, width: 22, display: "flex", justifyContent: "center", alignItems: "center",
-          cursor: interactionLocked ? "default" : "grab",
-          color: theme.text.tertiary, fontSize: 18,
-          userSelect: "none", touchAction: interactionLocked ? "auto" : "none",
-          opacity: interactionLocked ? 0.35 : 1,
+          cursor: sortable && !interactionLocked ? "grab" : "default",
+          color: sortable ? theme.text.tertiary : "transparent",
+          fontSize: 18,
+          userSelect: "none", touchAction: sortable && !interactionLocked ? "none" : "auto",
+          opacity: sortable && !interactionLocked ? 1 : 0,
         }}
       >
         ⠿

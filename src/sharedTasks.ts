@@ -64,6 +64,11 @@ export function tasksForProgress(tasks: Task[]): Task[] {
   return tasks.filter((t) => !isGameTask(t) && !isOneOffSpecialTask(t));
 }
 
+/** セッション画面のタスク一覧（ゲーム行以外を表示） */
+export function tasksForSessionList(tasks: Task[]): Task[] {
+  return tasks.filter((t) => !isGameTask(t));
+}
+
 export function isTaskVisibleToday(task: Task, now = new Date()): boolean {
   if (task.scope === "today" || task.scope === "special") return true;
   if (!task.weekdays?.length) return true;
