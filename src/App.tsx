@@ -1534,6 +1534,13 @@ export default function KeigoTaskApp() {
       setPendingTreat(next);
       return rest;
     });
+    if (screenRef.current === "show_parent_oneoff") {
+      if (isSessionScreen(prevScreen)) {
+        setScreen(prevScreen);
+      } else {
+        setScreen(getSessionScreen());
+      }
+    }
   };
 
   const openTreatQueue = (queue: PendingTreat[]) => {
@@ -1986,6 +1993,7 @@ export default function KeigoTaskApp() {
     setTimeout(() => {
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
+      setScreen(pending.session);
       openOneOffSpecialReward(pending);
     }, 950);
   };
