@@ -1,22 +1,35 @@
 import type { ReactNode } from "react";
 import { theme } from "./theme";
 import type { RewardRarity } from "./stickerRewards";
-import type { TeaseTier } from "./treatTease";
+import { LR_RAINBOW_COLORS } from "./rarityMeta";
 
 /** 偽ノーマル表示後、カットインまでの待ち時間 */
 export const UPGRADE_FAKE_NORMAL_MS = 2000;
+export const UPGRADE_FAKE_NORMAL_LR_MS = 1200;
+export const UPGRADE_FAKE_UR_MS = 1500;
+export const UPGRADE_FREEZE_MS = 400;
+export const UPGRADE_CRACK_MS = 600;
+export const UPGRADE_CUTIN_LR_MS = 2000;
+export const UPGRADE_DIRECT_BURST_MS = 280;
 export const UPGRADE_CUTIN_MS = { superRare: 1200, ultraRare: 1500 } as const;
 
 export const CUTIN_VIBRATE = {
   superRare: [30, 40, 30] as number[],
   ultraRare: [40, 50, 40, 50] as number[],
+  legendary: [40, 60, 40, 60, 50, 70, 50, 80] as number[],
 };
 
-export function shouldPlayUpgradeReveal(rarity: RewardRarity): rarity is TeaseTier {
+export type LrCutinStep = "freeze" | "crack" | "cutin";
+
+export function shouldPlayUpgradeReveal(rarity: RewardRarity): rarity is "superRare" | "ultraRare" {
   return rarity === "superRare" || rarity === "ultraRare";
 }
 
-export function getCutinDuration(tier: TeaseTier): number {
+export function shouldPlayLegendaryUpgrade(rarity: RewardRarity): rarity is "legendary" {
+  return rarity === "legendary";
+}
+
+export function getCutinDuration(tier: "superRare" | "ultraRare"): number {
   return UPGRADE_CUTIN_MS[tier];
 }
 
@@ -156,9 +169,72 @@ function UrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
 export function UpgradeCutinScene({
   tier, decoyEmoji,
 }: {
-  tier: TeaseTier;
+  tier: "superRare" | "ultraRare";
   decoyEmoji: string;
 }) {
   if (tier === "superRare") return <SrUpgradeCutin decoyEmoji={decoyEmoji} />;
   return <UrUpgradeCutin decoyEmoji={decoyEmoji} />;
+}
+
+function LrFreezeOverlay() {
+  return (
+    <CutinStage>
+      <div className="cutin-freeze-hold" />
+    </CutinStage>
+  );
+}
+
+function LrCrackOverlay() {
+  const lrColors = LR_RAINBOW_COLORS;
+  return (
+    <CutinStage shake>
+      <div className="cutin-freeze-hold" style={{ opacity: 0.35 }} />
+      <div style={{
+        position: "absolute", left: "50%", top: "50%",
+        transform: "translate(-50%, -50%)",
+      }}>
+        <div className="lr-crack-shatter" style={{
+          width: 190, height: 190, borderRadius: 20,
+          border: `4px solid ${theme.category.orange}`,
+          boxShadow: `0 0 32px ${theme.category.orange}, inset 0 0 24px ${theme.category.yellow}44`,
+          overflow: "hidden", position: "relative",
+        }}>
+          {Array.from({ length: 12 }, (_, i) => (
+            <div key={i} style={{
+              position: "absolute",
+              left: `${(i * 31) % 80 + 10}%`, top: `${(i * 23) % 80 + 10}%`,
+              width: 2, height: `${30 + (i % 4) * 15}%`,
+              backgroundColor: lrColors[i % lrColors.length],
+              transform: `rotate(${(i * 30) % 180}deg)`,
+              opacity: 0.9,
+            }} />
+          ))}
+        </div>
+      </div>
+    </CutinStage>
+  );
+}
+
+function LrUpgradeCutin() {
+  const lrColors = LR_RAINBOW_COLORS;
+  return (
+    <CutinStage shake>
+      <div className="cutin-freeze-dim" />
+      <div className="cutin-tier-burst" style={{
+        position: "absolute", inset: 0,
+        background: `radial-gradient(circle at 50% 50%, ${lrColors[0]}55 0%, ${lrColors[3]}22 42%, transparent 70%)`,
+      }} />
+      <SpeedLines colors={lrColors} count={48} />
+      <div className="lr-morph-rainbow" style={{
+        position: "absolute", inset: 0,
+        background: `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.95) 0%, ${lrColors[1]}88 25%, ${lrColors[4]}55 45%, transparent 62%)`,
+      }} />
+    </CutinStage>
+  );
+}
+
+export function LrCutinScene({ step }: { step: LrCutinStep }) {
+  if (step === "freeze") return <LrFreezeOverlay />;
+  if (step === "crack") return <LrCrackOverlay />;
+  return <LrUpgradeCutin />;
 }

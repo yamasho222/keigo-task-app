@@ -279,7 +279,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
                           {item.emoji ? (
                             item.emoji
                           ) : (
-                            <StickerImg src={item.image!} alt={item.label} padding={5} />
+                            <StickerImg src={item.image!} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
                           )}
                         </StickerFrameWithBadge>
                       </button>
@@ -348,7 +348,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
               {previewItem.emoji ? (
                 previewItem.emoji
               ) : (
-                <StickerImg src={previewItem.image!} alt={previewItem.label} padding={16} />
+                <StickerImg src={previewItem.image!} alt={previewItem.label} padding={16} objectFit={previewItem.imageFit ?? "contain"} />
               )}
             </StickerFrameWithBadge>
             <div style={{ fontSize: 20, fontWeight: 900, color: theme.text.primary, marginBottom: 6 }}>

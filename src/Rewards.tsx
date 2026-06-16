@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
-import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
+import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
+import { pickLegendaryRevealMode, type LegendaryRevealMode } from "./rarityMeta";
 import {
   pickTeaseVariant, shouldPlayTease,
-  type TeaseVariant, type TeaseVariantId,
+  type TeaseVariant, type TeaseVariantId, type TeaseTier,
 } from "./treatTease";
 import {
-  CUTIN_VIBRATE, getCutinDuration, shouldPlayUpgradeReveal, UpgradeCutinScene,
-  UPGRADE_FAKE_NORMAL_MS,
+  CUTIN_VIBRATE, getCutinDuration, shouldPlayUpgradeReveal, shouldPlayLegendaryUpgrade,
+  UpgradeCutinScene, LrCutinScene,
+  UPGRADE_FAKE_NORMAL_MS, UPGRADE_FAKE_NORMAL_LR_MS, UPGRADE_FAKE_UR_MS,
+  UPGRADE_FREEZE_MS, UPGRADE_CRACK_MS, UPGRADE_CUTIN_LR_MS, UPGRADE_DIRECT_BURST_MS,
+  type LrCutinStep,
 } from "./treatCutin";
 export type { RewardItem, StickerReward, TreatMode, RewardRarity };
 export {
@@ -25,6 +29,8 @@ export function getRarityBadgeStyle(rarity: RewardRarity): { color: string; back
       return { color: theme.category.purple, backgroundColor: `${theme.category.purple}18`, label: RARITY_LABELS.superRare };
     case "ultraRare":
       return { color: theme.category.orange, backgroundColor: `${theme.category.orange}18`, label: RARITY_LABELS.ultraRare };
+    case "legendary":
+      return { color: theme.category.yellow, backgroundColor: `${theme.category.yellow}22`, label: RARITY_LABELS.legendary };
   }
 }
 
@@ -134,6 +140,28 @@ export function getRarityRevealConfig(rarity: RewardRarity): RarityRevealConfig 
           theme.category.purple, theme.category.blue,
         ],
       };
+    case "legendary":
+      return {
+        confettiCount: 120,
+        burstCount: 40,
+        flashColor: theme.category.yellow,
+        flashClass: "record-flash",
+        revealClass: "treat-reveal-lr lr-reveal-burst-in",
+        chestClass: "chest-open-lr",
+        revealSize: 220,
+        vibratePattern: [40, 60, 40, 60, 50, 70, 50, 80],
+        showFullScreenFx: true,
+        borderGlow: theme.category.yellow,
+        badgeClass: "rarity-badge-pop-delay lr-rainbow-border",
+        labelClass: "lr-shimmer",
+        glowPulse: true,
+        overlayShake: true,
+        sparkleCount: 28,
+        celebKey: 5,
+        confettiColors: [
+          "#ff3366", "#ff8800", "#ffdd00", "#33dd66", "#3399ff", "#8844ff", "#ff44cc",
+        ],
+      };
   }
 }
 
@@ -158,6 +186,7 @@ const COMPACT_RARITY_LABELS: Record<RewardRarity, string> = {
   rare: "レア",
   superRare: "SR",
   ultraRare: "UR",
+  legendary: "LR",
 };
 
 export function RarityBadgeCorner({
@@ -204,24 +233,33 @@ export interface NewRecordCelebration {
 }
 
 export function StickerImg({
-  src, alt, padding = "10%", style,
+  src, alt, padding = "10%", style, objectFit = "contain",
 }: {
   src: string; alt: string; padding?: number | string; style?: CSSProperties;
+  objectFit?: "contain" | "cover";
 }) {
+  const isCover = objectFit === "cover";
   return (
     <div style={{
       width: "100%", height: "100%",
-      padding, boxSizing: "border-box",
+      padding: isCover ? 0 : padding,
+      boxSizing: "border-box",
       display: "flex", alignItems: "center", justifyContent: "center",
+      overflow: isCover ? "hidden" : undefined,
       ...style,
     }}>
       <img
         src={src}
         alt={alt}
         style={{
-          maxWidth: "100%", maxHeight: "100%",
-          width: "auto", height: "auto",
-          objectFit: "contain", objectPosition: "center",
+          ...(isCover ? {
+            width: "100%", height: "100%",
+            objectFit: "cover", objectPosition: "center center",
+          } : {
+            maxWidth: "100%", maxHeight: "100%",
+            width: "auto", height: "auto",
+            objectFit: "contain", objectPosition: "center",
+          }),
           pointerEvents: "none",
         }}
       />
@@ -244,7 +282,7 @@ function StickerImage({ reward, size = 160, borderGlow, glowPulse = false }: {
         "--glow-color": `${borderGlow}88`,
       } as CSSProperties}
     >
-      <StickerImg src={reward.image} alt={reward.label} padding={12} />
+      <StickerImg src={reward.image} alt={reward.label} padding={12} objectFit={reward.imageFit ?? "contain"} />
     </div>
   );
 }
@@ -420,12 +458,13 @@ export function NewRecordOverlay({
 }
 
 function TreasureChest({ opened, size = 80, chestClass = "chest-open", variant = "default" }: {
-  opened: boolean; size?: number; chestClass?: string; variant?: "default" | "premium" | "mission";
+  opened: boolean; size?: number; chestClass?: string; variant?: "default" | "premium" | "mission" | "legendary";
 }) {
   const isPremium = variant === "premium";
   const isMission = variant === "mission";
-  const isFancy = isPremium || isMission;
-  const closedClass = isFancy ? "chest-shake-premium" : "chest-shake";
+  const isLegendary = variant === "legendary";
+  const isFancy = isPremium || isMission || isLegendary;
+  const closedClass = isLegendary ? "chest-shake-fast" : isFancy ? "chest-shake-premium" : "chest-shake";
 
   const chest = (
     <div
@@ -433,11 +472,13 @@ function TreasureChest({ opened, size = 80, chestClass = "chest-open", variant =
       style={{
         fontSize: size,
         lineHeight: 1,
-        filter: isPremium && !opened
-          ? `drop-shadow(0 0 10px ${theme.category.yellow}) drop-shadow(0 0 22px ${theme.category.orange}99)`
-          : isMission && !opened
-            ? `drop-shadow(0 0 10px ${theme.category.purple}) drop-shadow(0 0 22px ${theme.category.pink}99)`
-            : undefined,
+        filter: isLegendary && !opened
+          ? "drop-shadow(0 0 14px #ffdd00) drop-shadow(0 0 28px #8844ff99) drop-shadow(0 0 42px #ff336688)"
+          : isPremium && !opened
+            ? `drop-shadow(0 0 10px ${theme.category.yellow}) drop-shadow(0 0 22px ${theme.category.orange}99)`
+            : isMission && !opened
+              ? `drop-shadow(0 0 10px ${theme.category.purple}) drop-shadow(0 0 22px ${theme.category.pink}99)`
+              : undefined,
       }}
     >
       {opened ? "🎊" : "🎁"}
@@ -445,25 +486,26 @@ function TreasureChest({ opened, size = 80, chestClass = "chest-open", variant =
   );
 
   if (isFancy && !opened) {
+    const glowClass = isLegendary ? "chest-glow-rainbow" : isMission ? "chest-glow-pulse-mission" : "chest-glow-pulse";
     return (
-      <div className={isMission ? "chest-glow-pulse-mission" : "chest-glow-pulse"} style={{ position: "relative", display: "inline-block" }}>
+      <div className={glowClass} style={{ position: "relative", display: "inline-block" }}>
         <div style={{
           position: "absolute", inset: -12, pointerEvents: "none",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2, 3, 4, 5].map((i) => (
             <span
               key={i}
               className="chest-sparkle-orbit"
               style={{
                 position: "absolute",
-                fontSize: 17,
-                "--orbit-r": "54px",
+                fontSize: isLegendary ? 20 : 17,
+                "--orbit-r": isLegendary ? "62px" : "54px",
                 "--orbit-dur": `${2.2 + i * 0.35}s`,
                 animationDelay: `${i * 0.55}s`,
               } as CSSProperties}
             >
-              ✨
+              {isLegendary ? ["✨", "⭐", "💫", "🌟", "✨", "⭐"][i] : "✨"}
             </span>
           ))}
         </div>
@@ -511,7 +553,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 }
 
 function TreatOverlay({
-  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId,
+  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode,
   missionTitle,
 }: {
   mode: TreatMode;
@@ -522,15 +564,17 @@ function TreatOverlay({
   devForceStickerId?: string;
   devForceTease?: boolean;
   devForceTeaseId?: TeaseVariantId;
+  devForceLegendaryMode?: LegendaryRevealMode;
   missionTitle?: string;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
-  type UpgradeStep = "fakeNormal" | "cutin";
+  type UpgradeStep = "fakeNormal" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
 
   const [phase, setPhase] = useState<TreatPhase>("closed");
   const [upgradeStep, setUpgradeStep] = useState<UpgradeStep | null>(null);
   const [reward, setReward] = useState<RewardItem | null>(null);
   const [decoy, setDecoy] = useState<EmojiReward | null>(null);
+  const [fakeUrDecoy, setFakeUrDecoy] = useState<StickerReward | null>(null);
   const [activeTease, setActiveTease] = useState<TeaseVariant | null>(null);
   const teaseTimerRef = useRef<number | null>(null);
   const upgradeTimerRef = useRef<number | null>(null);
@@ -557,6 +601,7 @@ function TreatOverlay({
     setPhase("revealed");
     setUpgradeStep(null);
     setDecoy(null);
+    setFakeUrDecoy(null);
     setActiveTease(null);
     if (!devForceStickerId || import.meta.env.DEV) onCollect(picked.id);
     window.setTimeout(() => {
@@ -580,9 +625,78 @@ function TreatOverlay({
     }, UPGRADE_FAKE_NORMAL_MS);
   };
 
+  const chainLegendaryStep = (_picked: RewardItem, step: UpgradeStep, delayMs: number, next: () => void) => {
+    setUpgradeStep(step);
+    if (step === "freeze" || step === "crack" || step === "cutin") {
+      vibrateTreat(CUTIN_VIBRATE.legendary);
+    }
+    upgradeTimerRef.current = window.setTimeout(next, delayMs);
+  };
+
+  const startLegendaryUpgradeReveal = (picked: RewardItem) => {
+    setReward(picked);
+    setDecoy(pickDecoyNormalReward());
+    setFakeUrDecoy(pickDecoyUltraRareReward());
+    setUpgradeStep("fakeNormal");
+    setPhase("upgrading");
+    upgradeTimerRef.current = window.setTimeout(() => {
+      chainLegendaryStep(picked, "fakeUltraRare", UPGRADE_FAKE_UR_MS, () => {
+        chainLegendaryStep(picked, "freeze", UPGRADE_FREEZE_MS, () => {
+          chainLegendaryStep(picked, "crack", UPGRADE_CRACK_MS, () => {
+            chainLegendaryStep(picked, "cutin", UPGRADE_CUTIN_LR_MS, () => {
+              finishReveal(picked);
+            });
+          });
+        });
+      });
+    }, UPGRADE_FAKE_NORMAL_LR_MS);
+  };
+
+  const startLegendaryDirectReveal = (picked: RewardItem) => {
+    setReward(picked);
+    setUpgradeStep("directBurst");
+    setPhase("upgrading");
+    upgradeTimerRef.current = window.setTimeout(() => {
+      finishReveal(picked);
+    }, UPGRADE_DIRECT_BURST_MS);
+  };
+
   const finishTease = (picked: RewardItem) => {
     setActiveTease(null);
     finishReveal(picked);
+  };
+
+  const continueAfterLegendaryTease = (picked: RewardItem) => {
+    setActiveTease(null);
+    const mode = pickLegendaryRevealMode(isMissionStyle, devForceLegendaryMode);
+    if (mode === "cutin" && !isMissionStyle) {
+      startLegendaryUpgradeReveal(picked);
+    } else {
+      startLegendaryDirectReveal(picked);
+    }
+  };
+
+  const continueAfterTease = (picked: RewardItem) => {
+    if (picked.rarity === "legendary") {
+      continueAfterLegendaryTease(picked);
+      return;
+    }
+    setActiveTease(null);
+    if (!isMissionStyle && shouldPlayUpgradeReveal(picked.rarity)) {
+      startUpgradeReveal(picked);
+    } else {
+      setReward(picked);
+      finishReveal(picked);
+    }
+  };
+
+  const startTease = (picked: RewardItem, onDone: (p: RewardItem) => void) => {
+    const tease = pickTeaseVariant(picked.rarity as TeaseTier, devForceTeaseId);
+    setReward(picked);
+    setActiveTease(tease);
+    setPhase("teasing");
+    vibrateTreat(tease.vibratePattern);
+    teaseTimerRef.current = window.setTimeout(() => onDone(picked), tease.durationMs);
   };
 
   const handleOpen = () => {
@@ -594,14 +708,14 @@ function TreatOverlay({
         : pickTreatReward(collectedIds, mode));
     if (!picked) return;
 
-    // DEV: 開封前teaseの単体プレビュー（本番SR/URフローとは別）
-    if (devForceTease && shouldPlayTease(picked.rarity, true)) {
-      const tease = pickTeaseVariant(picked.rarity, devForceTeaseId);
-      setReward(picked);
-      setActiveTease(tease);
-      setPhase("teasing");
-      vibrateTreat(tease.vibratePattern);
-      teaseTimerRef.current = window.setTimeout(() => finishTease(picked), tease.durationMs);
+    // DEV: 開封前teaseの単体プレビュー（昇格カットインなし）
+    if (devForceTease && shouldPlayTease(picked.rarity)) {
+      startTease(picked, finishTease);
+      return;
+    }
+
+    if (shouldPlayTease(picked.rarity)) {
+      startTease(picked, continueAfterTease);
       return;
     }
 
@@ -618,6 +732,18 @@ function TreatOverlay({
   const isImmersive = phase === "teasing" || phase === "upgrading";
   const isBusy = isImmersive;
   const normalBadge = getRarityBadgeStyle("normal");
+  const urBadge = getRarityBadgeStyle("ultraRare");
+  const isLegendaryReward = reward?.rarity === "legendary";
+  const chestVariant = isLegendaryReward || devForceTier === "legendary"
+    ? "legendary" as const
+    : isFullDayBonus
+      ? "premium" as const
+      : isMissionStyle
+        ? "mission" as const
+        : "default" as const;
+  const chestSize = isLegendaryReward || devForceTier === "legendary"
+    ? 120
+    : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
   const title = isWeekly
     ? "🎊 1週間クリア！ 🎊"
     : isFullDayBonus
@@ -661,12 +787,19 @@ function TreatOverlay({
         const TeaseScene = activeTease.Component;
         return <TeaseScene key={activeTease.id} />;
       })()}
+      {phase === "upgrading" && upgradeStep === "directBurst" && (
+        <div className="lr-whiteout-legendary" style={{ position: "fixed", inset: 0, zIndex: 3, pointerEvents: "none" }} />
+      )}
       {phase === "upgrading" && upgradeStep === "cutin" && reward && shouldPlayUpgradeReveal(reward.rarity) && decoy && (
         <UpgradeCutinScene
           key={`cutin-${reward.id}`}
           tier={reward.rarity}
           decoyEmoji={decoy.emoji}
         />
+      )}
+      {phase === "upgrading" && reward && shouldPlayLegendaryUpgrade(reward.rarity)
+        && (upgradeStep === "freeze" || upgradeStep === "crack" || upgradeStep === "cutin") && (
+        <LrCutinScene key={`lr-${upgradeStep}`} step={upgradeStep as LrCutinStep} />
       )}
       {phase === "revealed" && fxConfig && <TreatFxLayer config={fxConfig} />}
       <div style={{
@@ -704,22 +837,26 @@ function TreatOverlay({
             }}>
               <TreasureChest
                 opened={false}
-                size={isFullDayBonus ? 96 : isMissionStyle ? 88 : 80}
-                variant={isFullDayBonus ? "premium" : isMissionStyle ? "mission" : "default"}
+                size={chestSize}
+                variant={chestVariant}
               />
               <div style={{
                 fontSize: 14, fontWeight: 700, marginTop: 8,
-                color: isFullDayBonus
-                  ? theme.category.orange
-                  : isMissionStyle
-                    ? theme.category.purple
-                    : theme.accent.primary,
+                color: chestVariant === "legendary"
+                  ? theme.category.yellow
+                  : isFullDayBonus
+                    ? theme.category.orange
+                    : isMissionStyle
+                      ? theme.category.purple
+                      : theme.accent.primary,
               }}>
-                {isFullDayBonus
-                  ? "特別な宝箱を開ける！"
-                  : isMissionStyle
-                    ? "ミッション宝箱を開ける！"
-                    : "タップして開ける！"}
+                {chestVariant === "legendary"
+                  ? "すごいごほうび！"
+                  : isFullDayBonus
+                    ? "特別な宝箱を開ける！"
+                    : isMissionStyle
+                      ? "ミッション宝箱を開ける！"
+                      : "タップして開ける！"}
               </div>
             </button>
           )}
@@ -738,6 +875,25 @@ function TreatOverlay({
               </div>
               <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", textShadow: "0 1px 6px rgba(0,0,0,0.45)" }}>
                 {decoy.message}
+              </div>
+            </div>
+          )}
+          {phase === "upgrading" && upgradeStep === "fakeUltraRare" && fakeUrDecoy && (
+            <div className="cutin-fake-ur-hold" style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+            }}>
+              <RewardReveal
+                reward={fakeUrDecoy}
+                size={190}
+                borderGlow={urBadge.color}
+                glowPulse
+              />
+              <RarityBadge rarity="ultraRare" className="ur-shimmer" />
+              <div className="ur-shimmer" style={{
+                fontSize: 18, fontWeight: 900, color: theme.text.primary,
+                "--shimmer-color": `${urBadge.color}CC`,
+              } as CSSProperties}>
+                {fakeUrDecoy.label}
               </div>
             </div>
           )}

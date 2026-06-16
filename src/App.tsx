@@ -306,6 +306,7 @@ interface PendingTreat {
   devForceStickerId?: string;
   devForceTease?: boolean;
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
+  devForceLegendaryMode?: import("./rarityMeta").LegendaryRevealMode;
   missionTitle?: string;
   oneOffSpecialClaimKey?: string;
 }
@@ -953,6 +954,102 @@ function AnimStyles() {
         70%  { opacity: 0.55; }
         100% { opacity: 0; }
       }
+      @keyframes treatRevealLR {
+        0%   { transform: scale(0) rotate(-12deg); opacity: 0; filter: brightness(2); }
+        35%  { transform: scale(1.35) rotate(4deg); opacity: 1; filter: brightness(1.6); }
+        55%  { transform: scale(0.95) rotate(-2deg); opacity: 1; filter: brightness(1.2); }
+        100% { transform: scale(1) rotate(0deg); opacity: 1; filter: brightness(1); }
+      }
+      @keyframes lrShimmer {
+        0%, 100% { background-position: 0% 50%; }
+        50%      { background-position: 100% 50%; }
+      }
+      @keyframes lrRainbowBorder {
+        0%   { border-color: #ff3366; box-shadow: 0 0 12px #ff336688; }
+        16%  { border-color: #ff8800; box-shadow: 0 0 12px #ff880088; }
+        33%  { border-color: #ffdd00; box-shadow: 0 0 12px #ffdd0088; }
+        50%  { border-color: #33dd66; box-shadow: 0 0 12px #33dd6688; }
+        66%  { border-color: #3399ff; box-shadow: 0 0 12px #3399ff88; }
+        83%  { border-color: #8844ff; box-shadow: 0 0 12px #8844ff88; }
+        100% { border-color: #ff44cc; box-shadow: 0 0 12px #ff44cc88; }
+      }
+      @keyframes lrRevealBurstIn {
+        0%   { transform: scale(0.3); opacity: 0; }
+        20%  { transform: scale(1.15); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      @keyframes lrWhiteoutLegendary {
+        0%   { opacity: 0; background: rgba(255,255,255,0); }
+        40%  { opacity: 1; background: rgba(255,255,255,0.98); }
+        100% { opacity: 0; background: rgba(255,255,255,0); }
+      }
+      @keyframes lrTeaseDim {
+        0%   { opacity: 0; }
+        100% { opacity: 0.72; }
+      }
+      @keyframes lrRainbowPillarGrow {
+        0%   { transform: scaleY(0) scaleX(0.2); opacity: 0; }
+        35%  { opacity: 1; }
+        100% { transform: scaleY(1.2) scaleX(1.3); opacity: 0.85; }
+      }
+      @keyframes lrStarSuck {
+        0%   { transform: translate(0, 0) scale(1); opacity: 0; }
+        20%  { opacity: 1; }
+        100% { transform: translate(calc(50vw - 50%), calc(50vh - 50%)) scale(0.2); opacity: 0; }
+      }
+      @keyframes lrShockwaveGold {
+        0%   { transform: scale(0.1); opacity: 0.95; }
+        100% { transform: scale(6); opacity: 0; }
+      }
+      @keyframes lrPrismRingSpin {
+        0%   { transform: rotate(0deg) scale(0.85); opacity: 0; }
+        25%  { opacity: 0.9; }
+        100% { transform: rotate(360deg) scale(1.15); opacity: 0; }
+      }
+      @keyframes lrCrownDrop {
+        0%   { transform: translateX(-50%) translateY(-80px) scale(1.8); opacity: 0; }
+        40%  { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+        100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+      }
+      @keyframes lrMeteorRainbow {
+        0%   { transform: translate(var(--mx, 0), var(--my, 0)) rotate(var(--meteor-rot, 0deg)) scale(0.3); opacity: 0; }
+        15%  { opacity: 1; }
+        80%  { opacity: 1; }
+        100% { transform: translate(0, 0) rotate(var(--meteor-rot, 0deg)) scale(1.5); opacity: 0; }
+      }
+      @keyframes chestOpenLR {
+        0%   { transform: scale(1) rotate(0deg); }
+        30%  { transform: scale(1.35) rotate(-8deg); }
+        55%  { transform: scale(0.92) rotate(6deg); }
+        100% { transform: scale(1) rotate(0deg); }
+      }
+      @keyframes chestGlowRainbow {
+        0%, 100% { filter: drop-shadow(0 0 12px #ff3366) drop-shadow(0 0 24px #8844ff); }
+        33%      { filter: drop-shadow(0 0 16px #ffdd00) drop-shadow(0 0 28px #33dd66); }
+        66%      { filter: drop-shadow(0 0 14px #3399ff) drop-shadow(0 0 26px #ff8800); }
+      }
+      @keyframes chestLevitateLr {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50%      { transform: translateY(-18px) scale(1.06); }
+      }
+      @keyframes cutinFreezeHold {
+        0%   { opacity: 0; }
+        100% { opacity: 0.82; background: rgba(0,0,0,0.82); }
+      }
+      @keyframes lrCrackShatter {
+        0%   { transform: scale(1); opacity: 1; filter: brightness(1); }
+        40%  { transform: scale(1.05); opacity: 1; filter: brightness(1.5); }
+        100% { transform: scale(0.2) rotate(12deg); opacity: 0; filter: brightness(2.5); }
+      }
+      @keyframes lrMorphRainbow {
+        0%   { opacity: 0; transform: scale(0.5); }
+        30%  { opacity: 1; transform: scale(1.2); }
+        100% { opacity: 0; transform: scale(2); }
+      }
+      @keyframes cutinFakeUrHold {
+        0%   { transform: scale(0.92); opacity: 0.85; }
+        100% { transform: scale(1); opacity: 1; }
+      }
       .check-pop   { animation: checkPop   0.42s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .ring-out    { animation: ringOut    0.5s  ease-out forwards; }
       .row-glow    { animation: rowGlow    0.5s  ease-out; }
@@ -985,6 +1082,26 @@ function AnimStyles() {
       .treat-reveal-rare { animation: treatRevealRare 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .treat-reveal-sr   { animation: treatRevealSR 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .treat-reveal-ur   { animation: treatRevealUR 0.85s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .treat-reveal-lr   { animation: treatRevealLR 1.05s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .lr-reveal-burst-in { animation: lrRevealBurstIn 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .lr-shimmer        { animation: lrShimmer 2s ease-in-out infinite; background: linear-gradient(90deg, #ff3366, #ffdd00, #33dd66, #3399ff, #8844ff, #ff3366); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .lr-rainbow-border { animation: lrRainbowBorder 2.5s linear infinite; border: 2px solid #ffdd00; }
+      .lr-whiteout-legendary { animation: lrWhiteoutLegendary 0.55s ease-out forwards; background: rgba(255,255,255,0.98); position: absolute; inset: 0; }
+      .lr-tease-dim      { animation: lrTeaseDim 0.8s ease-out forwards; background: rgba(0,0,0,0.72); position: absolute; inset: 0; }
+      .lr-rainbow-pillar { animation: lrRainbowPillarGrow 2.2s ease-out forwards; }
+      .lr-star-suck      { animation: lrStarSuck 1.4s ease-in forwards; }
+      .lr-shockwave-gold { animation: lrShockwaveGold 0.75s ease-out forwards; }
+      .lr-prism-ring     { animation: lrPrismRingSpin 2.4s ease-out forwards; }
+      .lr-crown-drop     { animation: lrCrownDrop 1.2s cubic-bezier(0.34,1.4,0.64,1) forwards; }
+      .lr-meteor-rainbow { animation: lrMeteorRainbow 1.1s ease-in forwards; }
+      .chest-open-lr     { animation: chestOpenLR 0.75s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+      .chest-glow-rainbow { animation: chestGlowRainbow 1.6s ease-in-out infinite; }
+      .chest-levitate-lr { animation: chestLevitateLr 2.2s ease-in-out infinite; }
+      .chest-glow-rainbow .chest-shake-fast { animation: chestShakeFast 0.35s ease-in-out infinite, chestLevitateLr 2.2s ease-in-out infinite; }
+      .cutin-freeze-hold { animation: cutinFreezeHold 0.4s ease-out forwards; background: rgba(0,0,0,0.82); position: absolute; inset: 0; }
+      .lr-crack-shatter  { animation: lrCrackShatter 0.6s ease-in forwards; }
+      .lr-morph-rainbow  { animation: lrMorphRainbow 1.8s ease-out forwards; }
+      .cutin-fake-ur-hold { animation: cutinFakeUrHold 0.35s ease-out forwards; }
       .rarity-glow-pulse { animation: rarityGlowPulse 1.6s ease-in-out infinite; }
       .ur-shimmer        { animation: urShimmer 1.8s ease-in-out infinite; }
       .rarity-badge-pop-delay { animation: recordBadgePop 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.15s both; }
@@ -2510,12 +2627,13 @@ export default function KeigoTaskApp() {
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           devForceTier={pendingTreat.devForceTier}
           devForceStickerId={pendingTreat.devForceStickerId}
           devForceTease={pendingTreat.devForceTease}
           devForceTeaseId={pendingTreat.devForceTeaseId}
+          devForceLegendaryMode={pendingTreat.devForceLegendaryMode}
           missionTitle={pendingTreat.missionTitle}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
@@ -2674,6 +2792,35 @@ export default function KeigoTaskApp() {
                 { icon: "💙", label: "レア抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "rare" }]); setShowMenu(false); } },
                 { icon: "💜", label: "SR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "superRare" }]); setShowMenu(false); } },
                 { icon: "🧡", label: "UR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "ultraRare" }]); setShowMenu(false); } },
+                { icon: "👑", label: "LR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "legendary" }]); setShowMenu(false); } },
+                { icon: "🌈", label: "LR: パターンA（二段Cutin）", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "legendary", devForceLegendaryMode: "cutin" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "💥", label: "LR: パターンC（直Reveal）", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "legendary", devForceLegendaryMode: "direct" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🎬", label: "LR: 本番再現（50% A/C）", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "legendary" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🌈", label: "LR演出: 虹の光柱", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "legendary", devForceTease: true, devForceTeaseId: "lr-rainbow-pillar" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "👑", label: "LR演出: プリズム王冠", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "legendary", devForceTease: true, devForceTeaseId: "lr-prism-crown" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "☄️", label: "LR演出: 星の雨", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "legendary", devForceTease: true, devForceTeaseId: "lr-starfall" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🔥", label: "LR: 煉獄さんGIF", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceStickerId: "lr-rengoku", devForceLegendaryMode: "direct" }]);
+                  setShowMenu(false);
+                } },
                 { icon: "✨", label: "期待演出SR（強制・ランダム）", action: () => {
                   openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceTease: true }]);
                   setShowMenu(false);

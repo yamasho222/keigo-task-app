@@ -1,15 +1,17 @@
 import type { CSSProperties, ReactNode } from "react";
 import { theme } from "./theme";
 import type { RewardRarity } from "./stickerRewards";
+import { LR_RAINBOW_COLORS } from "./rarityMeta";
 
 export const TEASE_DURATION_MS = 2000;
-export const TEASE_TRIGGER_CHANCE = { superRare: 1, ultraRare: 1 } as const;
+export const LR_TEASE_DURATION_MS = 2800;
 
 export type TeaseVariantId =
   | "sr-orbit" | "sr-ripple" | "sr-glimmer"
-  | "ur-pillar" | "ur-meteor" | "ur-aurora" | "ur-supernova";
+  | "ur-pillar" | "ur-meteor" | "ur-aurora" | "ur-supernova"
+  | "lr-rainbow-pillar" | "lr-prism-crown" | "lr-starfall";
 
-export type TeaseTier = "superRare" | "ultraRare";
+export type TeaseTier = "superRare" | "ultraRare" | "legendary";
 
 export interface TeaseVariant {
   id: TeaseVariantId;
@@ -370,20 +372,122 @@ export const UR_TEASE_VARIANTS: TeaseVariant[] = [
   { id: "ur-supernova", tier: "ultraRare", durationMs: TEASE_DURATION_MS, vibratePattern: [35, 60, 35, 60], overlayShake: true, Component: UrSupernovaTease },
 ];
 
-const ALL_TEASE_VARIANTS: TeaseVariant[] = [...SR_TEASE_VARIANTS, ...UR_TEASE_VARIANTS];
+function LrRainbowPillarTease() {
+  const stars = Array.from({ length: 64 }, (_, i) => i);
+  const lrColors = LR_RAINBOW_COLORS;
+  return (
+    <TeaseStage shake dim>
+      <div className="lr-tease-dim" />
+      <TeaseChest className="chest-levitate-lr" size={120} glowColor="#ffffff" />
+      <div className="lr-rainbow-pillar" style={{
+        position: "absolute", left: "50%", bottom: "18%",
+        width: 120, height: "62vh", marginLeft: -60,
+        background: `linear-gradient(to top, ${lrColors.join(", ")})`,
+        filter: "blur(2px)",
+        opacity: 0.85,
+        transformOrigin: "bottom center",
+      }} />
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        {stars.map((i) => (
+          <div key={i} className="lr-star-suck" style={{
+            position: "absolute",
+            left: `${(i * 17) % 100}%`, top: `${(i * 23) % 80 + 10}%`,
+            width: 6 + (i % 4), height: 6 + (i % 4), borderRadius: "50%",
+            backgroundColor: lrColors[i % lrColors.length],
+            boxShadow: `0 0 10px ${lrColors[i % lrColors.length]}`,
+            animationDelay: `${0.4 + (i % 20) * 0.04}s`,
+          }} />
+        ))}
+      </div>
+      <div className="lr-shockwave-gold" style={{
+        position: "absolute", left: "50%", top: "50%",
+        width: 80, height: 80, marginLeft: -40, marginTop: -40,
+        borderRadius: "50%",
+        border: "4px solid #ffdd00",
+        animationDelay: "2.2s",
+      }} />
+      <FullFlash color="#ffffff" delay={2.45} opacity={0.88} />
+    </TeaseStage>
+  );
+}
 
-export function shouldPlayTease(rarity: RewardRarity, devForceTease?: boolean): rarity is TeaseTier {
-  if (rarity !== "superRare" && rarity !== "ultraRare") return false;
-  if (devForceTease) return true;
-  if (rarity === "superRare") return Math.random() < TEASE_TRIGGER_CHANCE.superRare;
-  return Math.random() < TEASE_TRIGGER_CHANCE.ultraRare;
+function LrPrismCrownTease() {
+  const rings = [0, 1, 2];
+  const lrColors = LR_RAINBOW_COLORS;
+  return (
+    <TeaseStage dim>
+      <div className="lr-tease-dim" />
+      <div style={{ position: "absolute", left: "50%", top: "50%" }}>
+        {rings.map((i) => (
+          <div key={i} className="lr-prism-ring" style={{
+            position: "absolute", left: -140 - i * 24, top: -140 - i * 24,
+            width: 280 + i * 48, height: 280 + i * 48,
+            borderRadius: "50%",
+            border: `4px solid ${lrColors[i % lrColors.length]}`,
+            animationDelay: `${i * 0.12}s`,
+          }} />
+        ))}
+      </div>
+      <div className="lr-crown-drop" style={{
+        position: "absolute", left: "50%", top: "22%",
+        transform: "translateX(-50%)",
+        fontSize: 56, filter: "drop-shadow(0 0 24px #ffdd00)",
+      }}>
+        👑
+      </div>
+      <TeaseChest className="chest-glow-rainbow" size={120} glowColor="#ffdd00" />
+      <FullFlash color="#ffdd00" delay={2.1} opacity={0.72} />
+      <FullFlash color="#8844ff" delay={2.35} opacity={0.65} />
+    </TeaseStage>
+  );
+}
+
+function LrStarfallTease() {
+  const meteors = Array.from({ length: 72 }, (_, i) => ({
+    mx: `${-60 + (i * 13) % 120}vw`,
+    my: `${-40 + (i * 7) % 80}vh`,
+    rot: (i * 37) % 360,
+  }));
+  const lrColors = LR_RAINBOW_COLORS;
+  return (
+    <TeaseStage shake dim>
+      <div className="lr-tease-dim" />
+      <TeaseChest className="chest-shake-fast" size={120} glowColor="#ffffff" />
+      <div style={{ position: "absolute", left: "50%", top: "50%" }}>
+        {meteors.map((m, i) => (
+          <div key={i} className="lr-meteor-rainbow" style={{
+            position: "absolute", width: 14, height: 14, borderRadius: "50%",
+            backgroundColor: lrColors[i % lrColors.length],
+            boxShadow: `0 0 16px ${lrColors[i % lrColors.length]}`,
+            animationDelay: `${0.08 + i * 0.025}s`,
+            "--mx": m.mx, "--my": m.my, "--meteor-rot": `${m.rot}deg`,
+          } as CSSProperties} />
+        ))}
+      </div>
+      <div className="lr-whiteout-legendary" style={{ position: "absolute", inset: 0, animationDelay: "2.35s" }} />
+      <FullFlash color="#ffffff" delay={2.55} opacity={0.95} />
+    </TeaseStage>
+  );
+}
+
+export const LR_TEASE_VARIANTS: TeaseVariant[] = [
+  { id: "lr-rainbow-pillar", tier: "legendary", durationMs: LR_TEASE_DURATION_MS, vibratePattern: [35, 55, 35, 55, 40, 60, 40], overlayShake: true, Component: LrRainbowPillarTease },
+  { id: "lr-prism-crown", tier: "legendary", durationMs: LR_TEASE_DURATION_MS, vibratePattern: [30, 50, 30, 50, 35, 55, 35, 60], Component: LrPrismCrownTease },
+  { id: "lr-starfall", tier: "legendary", durationMs: LR_TEASE_DURATION_MS, vibratePattern: [40, 60, 40, 60, 45, 70, 45, 80], overlayShake: true, Component: LrStarfallTease },
+];
+
+const ALL_TEASE_VARIANTS: TeaseVariant[] = [...SR_TEASE_VARIANTS, ...UR_TEASE_VARIANTS, ...LR_TEASE_VARIANTS];
+
+export function shouldPlayTease(rarity: RewardRarity): rarity is TeaseTier {
+  return rarity === "superRare" || rarity === "ultraRare" || rarity === "legendary";
 }
 
 export function pickTeaseVariant(tier: TeaseTier, forceId?: TeaseVariantId): TeaseVariant {
   if (forceId) {
     const found = ALL_TEASE_VARIANTS.find((v) => v.id === forceId);
-    if (found && found.tier === tier) return found;
+    if (found) return found;
   }
-  const pool = tier === "superRare" ? SR_TEASE_VARIANTS : UR_TEASE_VARIANTS;
-  return pool[Math.floor(Math.random() * pool.length)];
+  if (tier === "superRare") return SR_TEASE_VARIANTS[Math.floor(Math.random() * SR_TEASE_VARIANTS.length)];
+  if (tier === "ultraRare") return UR_TEASE_VARIANTS[Math.floor(Math.random() * UR_TEASE_VARIANTS.length)];
+  return LR_TEASE_VARIANTS[Math.floor(Math.random() * LR_TEASE_VARIANTS.length)];
 }

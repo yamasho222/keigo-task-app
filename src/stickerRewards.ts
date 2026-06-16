@@ -1,7 +1,18 @@
+import {
+  type StickerRarity,
+  type RewardRarity,
+  RARITY_META,
+  TIER_WEIGHTS_DAILY,
+  TIER_WEIGHTS_FULL_DAY,
+  TIER_WEIGHTS_ONE_OFF_SPECIAL,
+  TIER_WEIGHTS_SPECIAL_MISSION,
+  TIER_WEIGHTS_WEEKLY,
+} from "./rarityMeta";
+
+export type { StickerRarity, RewardRarity } from "./rarityMeta";
+
 export type StickerCategory = "sumanai" | "youtube" | "kimitsu" | "doraemon" | "brainrot" | "saikyoou" | "minecraft";
 export type RewardCategory = "daily" | StickerCategory;
-export type RewardRarity = "normal" | "rare" | "superRare" | "ultraRare";
-export type StickerRarity = "normal" | "rare" | "superRare" | "ultraRare";
 
 export interface EmojiReward {
   kind: "emoji";
@@ -21,6 +32,8 @@ export interface StickerReward {
   image: string;
   category: StickerCategory;
   rarity: StickerRarity;
+  /** 横長画像を1:1枠の中央で切り抜き表示（GIFアニメーション保持） */
+  imageFit?: "contain" | "cover";
 }
 
 export type RewardItem = EmojiReward | StickerReward;
@@ -36,12 +49,9 @@ export const STICKER_CATEGORIES: { id: RewardCategory; label: string }[] = [
   { id: "minecraft", label: "マインクラフト" },
 ];
 
-export const RARITY_LABELS: Record<RewardRarity, string> = {
-  normal: "ノーマル",
-  rare: "レア",
-  superRare: "スーパーレア",
-  ultraRare: "ウルトラレア",
-};
+export const RARITY_LABELS: Record<RewardRarity, string> = Object.fromEntries(
+  Object.entries(RARITY_META).map(([k, v]) => [k, v.label]),
+) as Record<RewardRarity, string>;
 
 const STICKER_ALBUM_KEY = "keigo-sticker-album-v1";
 
@@ -141,32 +151,27 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "mc-chicken", label: "ニワトリ", message: "ニワトリ！", image: "/stickers/mc-chicken.png", category: "minecraft", rarity: "normal" },
   { kind: "sticker", id: "mc-drowned", label: "ドラウンド", message: "ドラウンド！", image: "/stickers/mc-drowned.png", category: "minecraft", rarity: "rare" },
   { kind: "sticker", id: "mc-spider", label: "クモ", message: "クモ！", image: "/stickers/mc-spider.png", category: "minecraft", rarity: "normal" },
+  { kind: "sticker", id: "lr-cyan-jacket", label: "すまない先生", message: "伝説の先生！", image: "/stickers/cyan-jacket.png", category: "sumanai", rarity: "legendary" },
+  { kind: "sticker", id: "lr-tanjiro", label: "たんじろう", message: "たんじろう伝説！", image: "/stickers/tanjiro.png", category: "kimitsu", rarity: "legendary" },
+  { kind: "sticker", id: "lr-rengoku", label: "れんごく", message: "心を燃やせ！煉獄さん伝説！", image: "/stickers/lr-rengoku.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
+  { kind: "sticker", id: "lr-ouryu", label: "応龍", message: "応龍降臨！", image: "/stickers/ouryu.png", category: "saikyoou", rarity: "legendary" },
+  { kind: "sticker", id: "lr-ender-dragon", label: "エンダードラゴン", message: "エンダードラゴン伝説！", image: "/stickers/mc-ender-dragon.png", category: "minecraft", rarity: "legendary" },
 ];
 
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
 export const TOTAL_REWARD_COUNT = ALL_REWARDS.length;
 
-/** 日次：ノーマル30% / シール70%（N35%・R45%・SR15%・UR5%） */
+/** 日次：ノーマル30% / シール70%（N35%・R45%・SR15%・UR4.9%・LR0.1%） */
 export const DAILY_NORMAL_WEIGHT = 0.30;
 
-export const STICKER_TIER_WEIGHTS: Record<StickerRarity, number> = {
-  normal: 0.35,
-  rare: 0.45,
-  superRare: 0.15,
-  ultraRare: 0.05,
-};
+/** @deprecated TIER_WEIGHTS_DAILY を参照 */
+export const STICKER_TIER_WEIGHTS = TIER_WEIGHTS_DAILY;
 
-export const WEEKLY_HIGH_TIER_WEIGHTS: Record<"superRare" | "ultraRare", number> = {
-  superRare: 0.85,
-  ultraRare: 0.15,
-};
+/** @deprecated TIER_WEIGHTS_WEEKLY を参照 */
+export const WEEKLY_HIGH_TIER_WEIGHTS = TIER_WEIGHTS_WEEKLY;
 
-/** 単発特別ミッション: レア以上のみ */
-export const ONE_OFF_SPECIAL_TIER_WEIGHTS: Record<"rare" | "superRare" | "ultraRare", number> = {
-  rare: 0.70,
-  superRare: 0.25,
-  ultraRare: 0.05,
-};
+/** @deprecated TIER_WEIGHTS_ONE_OFF_SPECIAL を参照 */
+export const ONE_OFF_SPECIAL_TIER_WEIGHTS = TIER_WEIGHTS_ONE_OFF_SPECIAL;
 
 export interface RewardLookupEntry {
   label: string;
@@ -174,6 +179,7 @@ export interface RewardLookupEntry {
   rarity: RewardRarity;
   emoji?: string;
   image?: string;
+  imageFit?: "contain" | "cover";
 }
 
 export const REWARD_LOOKUP: Record<string, RewardLookupEntry> = Object.fromEntries(
@@ -181,7 +187,7 @@ export const REWARD_LOOKUP: Record<string, RewardLookupEntry> = Object.fromEntri
     r.id,
     r.kind === "emoji"
       ? { label: r.label, category: r.category, rarity: r.rarity, emoji: r.emoji }
-      : { label: r.label, category: r.category, rarity: r.rarity, image: r.image },
+      : { label: r.label, category: r.category, rarity: r.rarity, image: r.image, imageFit: r.imageFit },
   ]),
 );
 
@@ -262,10 +268,18 @@ export interface AlbumCategoryGroup {
   totalCount: number;
 }
 
+function compareRewardsByRarityDesc(a: RewardItem, b: RewardItem): number {
+  const rankDiff = RARITY_META[b.rarity].rank - RARITY_META[a.rarity].rank;
+  if (rankDiff !== 0) return rankDiff;
+  return a.label.localeCompare(b.label, "ja");
+}
+
 export function getAlbumCategoryGroups(collectedIds: string[]): AlbumCategoryGroup[] {
   const collected = new Set(dedupeStickerIds(collectedIds));
   return STICKER_CATEGORIES.map((cat) => {
-    const rewards = ALL_REWARDS.filter((r) => r.category === cat.id);
+    const rewards = ALL_REWARDS
+      .filter((r) => r.category === cat.id)
+      .sort(compareRewardsByRarityDesc);
     return {
       category: cat.id,
       label: cat.label,
@@ -290,24 +304,24 @@ export function pickDailyReward(collectedIds: string[]): RewardItem {
   if (Math.random() < DAILY_NORMAL_WEIGHT && availableNormal.length > 0) {
     return pickRandom(availableNormal);
   }
-  return pickFromStickerTiers(collectedIds, STICKER_TIER_WEIGHTS);
+  return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_DAILY);
 }
 
 export function pickFullDayBonusReward(collectedIds: string[]): StickerReward {
-  return pickFromStickerTiers(collectedIds, STICKER_TIER_WEIGHTS);
+  return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_FULL_DAY);
 }
 
 export function pickSpecialMissionReward(collectedIds: string[]): StickerReward {
-  return pickFromStickerTiers(collectedIds, STICKER_TIER_WEIGHTS);
+  return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_SPECIAL_MISSION);
 }
 
 export function pickOneOffSpecialReward(collectedIds: string[]): StickerReward {
-  const tier = rollWeightedTier(ONE_OFF_SPECIAL_TIER_WEIGHTS);
+  const tier = rollWeightedTier(TIER_WEIGHTS_ONE_OFF_SPECIAL);
   return pickFromStickerTier(collectedIds, tier);
 }
 
 export function pickWeeklyReward(collectedIds: string[]): StickerReward {
-  const tier = rollWeightedTier(WEEKLY_HIGH_TIER_WEIGHTS);
+  const tier = rollWeightedTier(TIER_WEIGHTS_WEEKLY);
   return pickFromStickerTier(collectedIds, tier);
 }
 
@@ -327,6 +341,12 @@ export function getStickersByCategory(category: StickerCategory): StickerReward[
 /** カットイン昇格演出用の偽ノーマル絵文字 */
 export function pickDecoyNormalReward(): EmojiReward {
   return pickRandom(DAILY_EMOJI_REWARDS);
+}
+
+/** LR カットイン用の偽 UR シール */
+export function pickDecoyUltraRareReward(): StickerReward {
+  const pool = STICKER_REWARDS.filter((r) => r.rarity === "ultraRare");
+  return pickRandom(pool);
 }
 
 export function pickTreatReward(collectedIds: string[], mode: TreatMode): RewardItem {
