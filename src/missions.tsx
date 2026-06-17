@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { theme } from "./theme";
 import { MISSION_EMOJIS, MISSION_TEMPLATES, type MissionTemplate } from "./missionTemplates";
-import { SESSION_SHORT_LABELS, type SessionId } from "./sharedTasks";
+import { SESSION_SHORT_LABELS, type SessionId, type SpecialRewardFloor } from "./sharedTasks";
 import {
   type MissionCardStatus,
   type MissionOverallStatus,
@@ -13,6 +13,7 @@ export interface DailyMission {
   title: string;
   emoji: string;
   source: "template" | "custom" | "favorite";
+  rewardFloor?: SpecialRewardFloor;
 }
 
 export interface FavoriteMission {
@@ -504,22 +505,23 @@ export function MissionSetupSheet({
 }) {
   const [customTitle, setCustomTitle] = useState(currentMission?.source === "custom" ? currentMission.title : "");
   const [customEmoji, setCustomEmoji] = useState(currentMission?.source === "custom" ? currentMission.emoji : "⭐");
+  const [rewardFloor, setRewardFloor] = useState<SpecialRewardFloor>(currentMission?.rewardFloor ?? "rare");
   const [addToFavorites, setAddToFavorites] = useState(false);
 
   const emojiOptions = [...new Set([...MISSION_EMOJIS, ...customTaskEmojis])];
 
   const pickTemplate = (t: MissionTemplate) => {
-    onSave({ title: t.title, emoji: t.emoji, source: "template" }, false);
+    onSave({ title: t.title, emoji: t.emoji, source: "template", rewardFloor }, false);
   };
 
   const pickFavorite = (f: FavoriteMission) => {
-    onSave({ title: f.title, emoji: f.emoji, source: "favorite" }, false);
+    onSave({ title: f.title, emoji: f.emoji, source: "favorite", rewardFloor }, false);
   };
 
   const saveCustom = () => {
     const title = customTitle.trim();
     if (!title) return;
-    onSave({ title, emoji: customEmoji, source: "custom" }, addToFavorites);
+    onSave({ title, emoji: customEmoji, source: "custom", rewardFloor }, addToFavorites);
   };
 
   return (
@@ -543,6 +545,39 @@ export function MissionSetupSheet({
         </div>
         <div style={{ fontSize: 12, color: theme.text.tertiary, marginBottom: 16 }}>
           親と一緒に決めよう
+        </div>
+        <div style={{
+          display: "flex", gap: 8, marginBottom: 16,
+          padding: 10, borderRadius: 12,
+          border: `1px solid ${theme.stroke.tertiary}`,
+          backgroundColor: theme.fill.quaternary,
+        }}>
+          <button
+            type="button"
+            onClick={() => setRewardFloor("rare")}
+            style={{
+              flex: 1, padding: "10px 8px", borderRadius: 10,
+              border: rewardFloor === "rare" ? `2px solid ${theme.category.purple}` : `1px solid ${theme.stroke.secondary}`,
+              backgroundColor: rewardFloor === "rare" ? `${theme.category.purple}16` : theme.bg.editor,
+              color: rewardFloor === "rare" ? theme.category.purple : theme.text.secondary,
+              fontSize: 12, fontWeight: 800, cursor: "pointer",
+            }}
+          >
+            レア以上
+          </button>
+          <button
+            type="button"
+            onClick={() => setRewardFloor("superRare")}
+            style={{
+              flex: 1, padding: "10px 8px", borderRadius: 10,
+              border: rewardFloor === "superRare" ? `2px solid ${theme.category.purple}` : `1px solid ${theme.stroke.secondary}`,
+              backgroundColor: rewardFloor === "superRare" ? `${theme.category.purple}16` : theme.bg.editor,
+              color: rewardFloor === "superRare" ? theme.category.purple : theme.text.secondary,
+              fontSize: 12, fontWeight: 800, cursor: "pointer",
+            }}
+          >
+            スーパーレア以上
+          </button>
         </div>
 
         <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.secondary, marginBottom: 8 }}>

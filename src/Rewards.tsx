@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { theme } from "./theme";
 import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
 import { pickLegendaryRevealMode, pickSrUrRevealMode, type LegendaryRevealMode, type SrUrRevealMode } from "./rarityMeta";
+import type { SpecialRewardFloor } from "./sharedTasks";
 import {
   pickTeaseVariant, shouldPlayTease,
   type TeaseVariant, type TeaseVariantId, type TeaseTier,
@@ -553,7 +554,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 }
 
 function TreatOverlay({
-  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode,
+  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
   missionTitle,
 }: {
   mode: TreatMode;
@@ -566,6 +567,7 @@ function TreatOverlay({
   devForceTeaseId?: TeaseVariantId;
   devForceLegendaryMode?: LegendaryRevealMode;
   devForceSrUrMode?: SrUrRevealMode;
+  rewardFloor?: SpecialRewardFloor;
   missionTitle?: string;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
@@ -717,7 +719,7 @@ function TreatOverlay({
     const picked = forced
       ?? (devForceTier
         ? pickStickerByTier(collectedIds, devForceTier)
-        : pickTreatReward(collectedIds, mode));
+        : pickTreatReward(collectedIds, mode, { rewardFloor }));
     if (!picked) return;
 
     // DEV: 開封前teaseの単体プレビュー（昇格カットインなし）

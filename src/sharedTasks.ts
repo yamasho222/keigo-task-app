@@ -1,12 +1,14 @@
 export type SessionId = "morning" | "daytime" | "home" | "evening";
 
 export type TaskScope = "regular" | "today" | "special";
+export type SpecialRewardFloor = "rare" | "superRare";
 
 export interface Task {
   id: number;
   title: string;
   emoji: string;
   scope?: TaskScope;
+  specialRewardFloor?: SpecialRewardFloor;
   weekdays?: number[];
   sharedKey?: string;
   sharedSessions?: SessionId[];

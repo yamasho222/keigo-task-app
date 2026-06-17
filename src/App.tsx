@@ -41,7 +41,7 @@ import {
   getActiveMissionSessions,
 } from "./missionProgress";
 import {
-  type Task, type SessionId, type AllSessionTasks, type TaskScope,
+  type Task, type SessionId, type AllSessionTasks, type TaskScope, type SpecialRewardFloor,
   SESSION_IDS, SESSION_SHORT_LABELS,
   DEFAULT_HOMEWORK_SHARED_KEY,
   isTaskVisibleToday, isTaskVisibleInSession, visibleTasksForSession,
@@ -308,6 +308,7 @@ interface PendingTreat {
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
   devForceLegendaryMode?: import("./rarityMeta").LegendaryRevealMode;
   devForceSrUrMode?: import("./rarityMeta").SrUrRevealMode;
+  rewardFloor?: SpecialRewardFloor;
   missionTitle?: string;
   oneOffSpecialClaimKey?: string;
 }
@@ -318,6 +319,7 @@ interface OneOffSpecialPending {
   session: SessionId;
   title: string;
   emoji: string;
+  rewardFloor: SpecialRewardFloor;
 }
 
 function buildTreatQueue(
@@ -2070,7 +2072,14 @@ export default function KeigoTaskApp() {
     for (const sid of SESSION_IDS) {
       for (const t of sessionState[sid].tasks) {
         if (isOneOffSpecialTask(t) && oneOffSpecialClaimKey(t) === claimKey) {
-          return { claimKey, taskId: t.id, session: sid, title: t.title, emoji: t.emoji };
+          return {
+            claimKey,
+            taskId: t.id,
+            session: sid,
+            title: t.title,
+            emoji: t.emoji,
+            rewardFloor: t.specialRewardFloor ?? "rare",
+          };
         }
       }
     }
@@ -2089,6 +2098,7 @@ export default function KeigoTaskApp() {
       mode: "oneOffSpecial",
       missionTitle: `${pending.emoji} ${pending.title}`,
       oneOffSpecialClaimKey: pending.claimKey,
+      rewardFloor: pending.rewardFloor,
     }]);
   };
 
@@ -2114,6 +2124,7 @@ export default function KeigoTaskApp() {
       session,
       title: task.title,
       emoji: task.emoji,
+      rewardFloor: task.specialRewardFloor ?? "rare",
     });
     setOneOffSpecialStampApproved(false);
     setAnticipating(false);
@@ -2255,6 +2266,7 @@ export default function KeigoTaskApp() {
     openTreatQueue([{
       mode: "specialMission",
       missionTitle: `${todayMission.emoji} ${todayMission.title}`,
+      rewardFloor: todayMission.rewardFloor ?? "rare",
     }]);
   };
 
@@ -2435,6 +2447,7 @@ export default function KeigoTaskApp() {
     scope: TaskScope,
     weekdays?: number[],
     targetSessions?: SessionId[],
+    specialRewardFloor: SpecialRewardFloor = "rare",
   ) => {
     if (!title.trim()) return;
     const sessions = (targetSessions?.length ? targetSessions : [session]) as SessionId[];
@@ -2453,6 +2466,7 @@ export default function KeigoTaskApp() {
         const task = buildSharedTaskRow(
           nextId, title.trim(), emoji, scope, normalizedWeekdays, sharedKey, sharedSessions,
         );
+        if (scope === "special") task.specialRewardFloor = specialRewardFloor;
         const { tasks: base, setTasks } = sessionState[sid];
         setTasks([...base, task]);
       }
@@ -2464,6 +2478,7 @@ export default function KeigoTaskApp() {
     const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
     const task: Task = { id: maxId + 1, title: title.trim(), emoji, scope };
     if (scope === "regular") task.weekdays = normalizedWeekdays;
+    if (scope === "special") task.specialRewardFloor = specialRewardFloor;
     setTasks([...base, task]);
   };
 
@@ -2474,6 +2489,7 @@ export default function KeigoTaskApp() {
     emoji: string,
     weekdays?: number[],
     targetSessions?: SessionId[],
+    specialRewardFloor: SpecialRewardFloor = "rare",
   ) => {
     if (!title.trim()) return;
     const existing = sessionState[session].tasks.find((t) => t.id === id);
@@ -2517,16 +2533,19 @@ export default function KeigoTaskApp() {
             emoji,
             scope,
             weekdays: normalizedWeekdays,
+            specialRewardFloor: scope === "special" ? specialRewardFloor : undefined,
             sharedKey,
             sharedSessions: sortedDesired,
           } : t)));
         } else {
           nextId += 1;
+          const created = buildSharedTaskRow(
+            nextId, title.trim(), emoji, scope, normalizedWeekdays, sharedKey, sortedDesired,
+          );
+          if (scope === "special") created.specialRewardFloor = specialRewardFloor;
           setTasks([
             ...base,
-            buildSharedTaskRow(
-              nextId, title.trim(), emoji, scope, normalizedWeekdays, sharedKey, sortedDesired,
-            ),
+            created,
           ]);
         }
       }
@@ -2548,6 +2567,7 @@ export default function KeigoTaskApp() {
       delete updated.sharedKey;
       delete updated.sharedSessions;
       if (scope === "regular") updated.weekdays = normalizedWeekdays;
+      updated.specialRewardFloor = scope === "special" ? specialRewardFloor : undefined;
       return updated;
     }));
   };
@@ -2662,6 +2682,7 @@ export default function KeigoTaskApp() {
           devForceTeaseId={pendingTreat.devForceTeaseId}
           devForceLegendaryMode={pendingTreat.devForceLegendaryMode}
           devForceSrUrMode={pendingTreat.devForceSrUrMode}
+          rewardFloor={pendingTreat.rewardFloor}
           missionTitle={pendingTreat.missionTitle}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
@@ -3023,8 +3044,8 @@ export default function KeigoTaskApp() {
                 newRecordTaskId={newRecordTaskId}
                 allSessionTasks={getAllSessionTasks()}
                 onReorder={sessionState[sid].setTasks}
-                onAddTask={(title, emoji, scope, weekdays, targetSessions) => addTask(sid, title, emoji, scope, weekdays, targetSessions)}
-                onEditTask={(id, title, emoji, weekdays, targetSessions) => updateTask(sid, id, title, emoji, weekdays, targetSessions)}
+                onAddTask={(title, emoji, scope, weekdays, targetSessions, specialRewardFloor) => addTask(sid, title, emoji, scope, weekdays, targetSessions, specialRewardFloor)}
+                onEditTask={(id, title, emoji, weekdays, targetSessions, specialRewardFloor) => updateTask(sid, id, title, emoji, weekdays, targetSessions, specialRewardFloor)}
                 onDeleteTask={(id) => deleteTask(sid, id)}
                 onSkipTask={(id) => skipTask(
                   sid, id,
@@ -3189,8 +3210,8 @@ export default function KeigoTaskApp() {
             eveningTasks={eveningTasks}
             onSwitchSession={setTaskListSession}
             onBack={goHome}
-            onAddTask={(title, emoji, scope, weekdays, targetSessions) => addTask(taskListSession, title, emoji, scope, weekdays, targetSessions)}
-            onEditTask={(sess, id, title, emoji, weekdays, targetSessions) => updateTask(sess, id, title, emoji, weekdays, targetSessions)}
+            onAddTask={(title, emoji, scope, weekdays, targetSessions, specialRewardFloor) => addTask(taskListSession, title, emoji, scope, weekdays, targetSessions, specialRewardFloor)}
+            onEditTask={(sess, id, title, emoji, weekdays, targetSessions, specialRewardFloor) => updateTask(sess, id, title, emoji, weekdays, targetSessions, specialRewardFloor)}
             onDeleteTask={(sess, id) => deleteTask(sess, id)}
             customTaskEmojis={customTaskEmojis}
             onAddCustomTaskEmoji={addCustomTaskEmoji}
@@ -3866,8 +3887,8 @@ function TaskListScreen({
   eveningTasks: Task[];
   onSwitchSession: (s: SessionId) => void;
   onBack: () => void;
-  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[]) => void;
-  onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[]) => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[], specialRewardFloor?: SpecialRewardFloor) => void;
+  onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[], specialRewardFloor?: SpecialRewardFloor) => void;
   onDeleteTask: (session: SessionId, id: number) => void;
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
@@ -3896,8 +3917,14 @@ function TaskListScreen({
     ? `${allTasks.length}件登録 · きょう ${todayVisibleCount}件`
     : `${filteredTasks.length}件 · ${WEEKDAY_LABELS[filterDow]}曜のタスク`;
 
-  const handleAdd = (title: string, emoji: string, weekdays?: number[], sharedSessions?: SessionId[]) => {
-    onAddTask(title, emoji, addMode, weekdays, sharedSessions);
+  const handleAdd = (
+    title: string,
+    emoji: string,
+    weekdays?: number[],
+    sharedSessions?: SessionId[],
+    specialRewardFloor?: SpecialRewardFloor,
+  ) => {
+    onAddTask(title, emoji, addMode, weekdays, sharedSessions, specialRewardFloor);
     setIsAdding(false);
   };
 
@@ -4030,6 +4057,8 @@ function TaskListScreen({
             hint={addMode === "special" ? "クリアするとレア以上のシールがもらえるよ（親の確認が必要）" : undefined}
             initialTitle=""
             initialEmoji="🎯"
+          isSpecialMission={addMode === "special"}
+          initialSpecialRewardFloor="rare"
             saveLabel="追加する"
             showWeekdays={addMode === "regular"}
             currentSession={session}
@@ -4084,6 +4113,8 @@ function TaskListScreen({
               header="タスクを編集"
               initialTitle={editingTask.title}
               initialEmoji={editingTask.emoji}
+              isSpecialMission={(editingTask.scope ?? "regular") === "special"}
+              initialSpecialRewardFloor={editingTask.specialRewardFloor ?? "rare"}
               initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
               showWeekdays={(editingTask.scope ?? "regular") === "regular"}
               saveLabel="保存する"
@@ -4092,8 +4123,8 @@ function TaskListScreen({
               initialSharedSessions={editingTask.sharedSessions}
               customTaskEmojis={customTaskEmojis}
               onAddCustomTaskEmoji={onAddCustomTaskEmoji}
-              onSave={(title, emoji, weekdays, sharedSessions) => {
-                onEditTask(session, editingTask.id, title, emoji, weekdays, sharedSessions);
+              onSave={(title, emoji, weekdays, sharedSessions, specialRewardFloor) => {
+                onEditTask(session, editingTask.id, title, emoji, weekdays, sharedSessions, specialRewardFloor);
                 setEditingTaskId(null);
               }}
               onCancel={() => setEditingTaskId(null)}
@@ -4324,6 +4355,7 @@ function SessionMultiPicker({
 function TaskEditForm({
   header, hint, initialTitle, initialEmoji, saveLabel, onSave, onCancel, onDelete, autoFocus = true,
   showWeekdays = false, initialWeekdays,
+  isSpecialMission = false, initialSpecialRewardFloor = "rare",
   currentSession, initialSharedSessions,
   customTaskEmojis, onAddCustomTaskEmoji,
 }: {
@@ -4332,12 +4364,20 @@ function TaskEditForm({
   initialTitle: string;
   initialEmoji: string;
   saveLabel: string;
-  onSave: (title: string, emoji: string, weekdays?: number[], sharedSessions?: SessionId[]) => void;
+  onSave: (
+    title: string,
+    emoji: string,
+    weekdays?: number[],
+    sharedSessions?: SessionId[],
+    specialRewardFloor?: SpecialRewardFloor,
+  ) => void;
   onCancel: () => void;
   onDelete?: () => void;
   autoFocus?: boolean;
   showWeekdays?: boolean;
   initialWeekdays?: number[];
+  isSpecialMission?: boolean;
+  initialSpecialRewardFloor?: SpecialRewardFloor;
   currentSession: SessionId;
   initialSharedSessions?: SessionId[];
   customTaskEmojis: string[];
@@ -4352,6 +4392,7 @@ function TaskEditForm({
   const [weekdayError, setWeekdayError] = useState(false);
   const [customEmojiInput, setCustomEmojiInput] = useState("");
   const [customEmojiError, setCustomEmojiError] = useState(false);
+  const [specialRewardFloor, setSpecialRewardFloor] = useState<SpecialRewardFloor>(initialSpecialRewardFloor);
 
   const savedCustomEmojis = customTaskEmojis.filter((e) => !QUICK_EMOJIS.includes(e));
   const showSavedCustom = savedCustomEmojis.length > 0 || (emoji && !QUICK_EMOJIS.includes(emoji) && !savedCustomEmojis.includes(emoji));
@@ -4362,10 +4403,11 @@ function TaskEditForm({
     setEmoji(initialEmoji);
     setWeekdays(initialWeekdays ?? ALL_WEEKDAYS);
     setSharedSessions(initialSharedSessions?.length ? initialSharedSessions : [currentSession]);
+    setSpecialRewardFloor(initialSpecialRewardFloor);
     setWeekdayError(false);
     setCustomEmojiInput("");
     setCustomEmojiError(false);
-  }, [initialTitle, initialEmoji, initialWeekdays, initialSharedSessions, currentSession]);
+  }, [initialTitle, initialEmoji, initialWeekdays, initialSharedSessions, currentSession, initialSpecialRewardFloor]);
 
   const handleAddCustomEmoji = () => {
     const picked = extractFirstEmoji(customEmojiInput);
@@ -4387,7 +4429,7 @@ function TaskEditForm({
     }
     setWeekdayError(false);
     onAddCustomTaskEmoji(emoji);
-    onSave(title, emoji, showWeekdays ? weekdays : undefined, sharedSessions);
+    onSave(title, emoji, showWeekdays ? weekdays : undefined, sharedSessions, isSpecialMission ? specialRewardFloor : undefined);
   };
 
   const emojiBtnStyle = (selected: boolean): CSSProperties => ({
@@ -4482,6 +4524,41 @@ function TaskEditForm({
           )}
         </>
       )}
+      {isSpecialMission && (
+        <div style={{
+          display: "flex", gap: 8,
+          padding: 8, borderRadius: 10,
+          border: `1px solid ${theme.stroke.tertiary}`,
+          backgroundColor: theme.fill.quaternary,
+        }}>
+          <button
+            type="button"
+            onClick={() => setSpecialRewardFloor("rare")}
+            style={{
+              flex: 1, padding: "9px 8px", borderRadius: 9, cursor: "pointer",
+              border: specialRewardFloor === "rare" ? `2px solid ${theme.category.orange}` : `1px solid ${theme.stroke.secondary}`,
+              backgroundColor: specialRewardFloor === "rare" ? `${theme.category.orange}16` : theme.bg.editor,
+              color: specialRewardFloor === "rare" ? theme.category.orange : theme.text.secondary,
+              fontSize: 12, fontWeight: 800,
+            }}
+          >
+            レア以上
+          </button>
+          <button
+            type="button"
+            onClick={() => setSpecialRewardFloor("superRare")}
+            style={{
+              flex: 1, padding: "9px 8px", borderRadius: 9, cursor: "pointer",
+              border: specialRewardFloor === "superRare" ? `2px solid ${theme.category.purple}` : `1px solid ${theme.stroke.secondary}`,
+              backgroundColor: specialRewardFloor === "superRare" ? `${theme.category.purple}16` : theme.bg.editor,
+              color: specialRewardFloor === "superRare" ? theme.category.purple : theme.text.secondary,
+              fontSize: 12, fontWeight: 800,
+            }}
+          >
+            スーパーレア以上
+          </button>
+        </div>
+      )}
       <SessionMultiPicker selected={sharedSessions} onChange={setSharedSessions} />
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" onClick={handleSave} style={{
@@ -4575,8 +4652,8 @@ interface TaskScreenProps {
   workTimerRunning: boolean;
   newRecordTaskId: number | null;
   onReorder: (tasks: Task[]) => void;
-  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[]) => void;
-  onEditTask: (id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[]) => void;
+  onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[], specialRewardFloor?: SpecialRewardFloor) => void;
+  onEditTask: (id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[], specialRewardFloor?: SpecialRewardFloor) => void;
   onDeleteTask: (id: number) => void;
   onSkipTask: (id: number) => void;
   onQuickCompleteTask: (id: number) => void;
@@ -4651,8 +4728,14 @@ function TaskScreen({
     }
   };
 
-  const handleAdd = (title: string, emoji: string, weekdays?: number[], sharedSessions?: SessionId[]) => {
-    onAddTask(title, emoji, addMode, weekdays, sharedSessions);
+  const handleAdd = (
+    title: string,
+    emoji: string,
+    weekdays?: number[],
+    sharedSessions?: SessionId[],
+    specialRewardFloor?: SpecialRewardFloor,
+  ) => {
+    onAddTask(title, emoji, addMode, weekdays, sharedSessions, specialRewardFloor);
     setIsAdding(false);
   };
 
@@ -4909,9 +4992,18 @@ function TaskScreen({
       {isAdding ? (
         <TaskEditForm
           key={`add-${addMode}`}
-          header={addMode === "today" ? "きょうだけのタスク" : "レギュラータスク"}
+          header={
+            addMode === "special"
+              ? "単発特別ミッション"
+              : addMode === "today"
+                ? "きょうだけのタスク"
+                : "レギュラータスク"
+          }
+          hint={addMode === "special" ? "クリアするとレア以上のシールがもらえるよ（親の確認が必要）" : undefined}
           initialTitle=""
-          initialEmoji="📝"
+          initialEmoji={addMode === "special" ? "🎯" : "📝"}
+          isSpecialMission={addMode === "special"}
+          initialSpecialRewardFloor="rare"
           saveLabel="追加する"
           showWeekdays={addMode === "regular"}
           currentSession={session}
@@ -4922,6 +5014,22 @@ function TaskScreen({
         />
       ) : !interactionLocked && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={() => startAdding("special")} style={{
+            ...addBtnStyle,
+            borderColor: `${theme.category.orange}66`,
+            color: theme.category.orange,
+            backgroundColor: `${theme.category.orange}10`,
+          }}>
+            <span style={{ fontSize: 18 }}>＋</span> 単発特別ミッション
+          </button>
+          <button onClick={onMissionSetup} style={{
+            ...addBtnStyle,
+            borderColor: `${theme.category.purple}66`,
+            color: theme.category.purple,
+            backgroundColor: `${theme.category.purple}10`,
+          }}>
+            <span style={{ fontSize: 18 }}>＋</span> {todayMission ? "特別ミッションを変更" : "特別ミッションを設定"}
+          </button>
           <button onClick={() => startAdding("today")} style={addBtnStyle}>
             <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
           </button>
@@ -4968,6 +5076,8 @@ function TaskScreen({
               header="タスクを編集"
               initialTitle={editingTask.title}
               initialEmoji={editingTask.emoji}
+              isSpecialMission={(editingTask.scope ?? "regular") === "special"}
+              initialSpecialRewardFloor={editingTask.specialRewardFloor ?? "rare"}
               initialWeekdays={editingTask.weekdays ?? ALL_WEEKDAYS}
               showWeekdays={(editingTask.scope ?? "regular") === "regular"}
               saveLabel="保存する"
@@ -4976,8 +5086,8 @@ function TaskScreen({
               initialSharedSessions={editingTask.sharedSessions}
               customTaskEmojis={customTaskEmojis}
               onAddCustomTaskEmoji={onAddCustomTaskEmoji}
-              onSave={(title, emoji, weekdays, sharedSessions) => {
-                onEditTask(editingTask.id, title, emoji, weekdays, sharedSessions);
+              onSave={(title, emoji, weekdays, sharedSessions, specialRewardFloor) => {
+                onEditTask(editingTask.id, title, emoji, weekdays, sharedSessions, specialRewardFloor);
                 setEditingTaskId(null);
               }}
               onCancel={() => setEditingTaskId(null)}

@@ -5,9 +5,9 @@ import {
   TIER_WEIGHTS_DAILY,
   TIER_WEIGHTS_FULL_DAY,
   TIER_WEIGHTS_ONE_OFF_SPECIAL,
-  TIER_WEIGHTS_SPECIAL_MISSION,
   TIER_WEIGHTS_WEEKLY,
 } from "./rarityMeta";
+import type { SpecialRewardFloor } from "./sharedTasks";
 
 export type { StickerRarity, RewardRarity } from "./rarityMeta";
 
@@ -189,6 +189,25 @@ export const WEEKLY_HIGH_TIER_WEIGHTS = TIER_WEIGHTS_WEEKLY;
 /** @deprecated TIER_WEIGHTS_ONE_OFF_SPECIAL を参照 */
 export const ONE_OFF_SPECIAL_TIER_WEIGHTS = TIER_WEIGHTS_ONE_OFF_SPECIAL;
 
+const SPECIAL_MISSION_RARE_PLUS_WEIGHTS: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
+  rare: 0.70,
+  superRare: 0.23,
+  ultraRare: 0.06,
+  legendary: 0.01,
+};
+
+const SPECIAL_MISSION_SR_PLUS_WEIGHTS: Record<"superRare" | "ultraRare" | "legendary", number> = {
+  superRare: 0.80,
+  ultraRare: 0.18,
+  legendary: 0.02,
+};
+
+const ONE_OFF_SPECIAL_SR_PLUS_WEIGHTS: Record<"superRare" | "ultraRare" | "legendary", number> = {
+  superRare: 0.80,
+  ultraRare: 0.18,
+  legendary: 0.02,
+};
+
 export interface RewardLookupEntry {
   label: string;
   category: RewardCategory;
@@ -327,12 +346,23 @@ export function pickFullDayBonusReward(collectedIds: string[]): StickerReward {
   return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_FULL_DAY);
 }
 
-export function pickSpecialMissionReward(collectedIds: string[]): StickerReward {
-  return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_SPECIAL_MISSION);
+export function pickSpecialMissionReward(
+  collectedIds: string[],
+  rewardFloor: SpecialRewardFloor = "rare",
+): StickerReward {
+  if (rewardFloor === "superRare") {
+    return pickFromStickerTier(collectedIds, rollWeightedTier(SPECIAL_MISSION_SR_PLUS_WEIGHTS));
+  }
+  return pickFromStickerTier(collectedIds, rollWeightedTier(SPECIAL_MISSION_RARE_PLUS_WEIGHTS));
 }
 
-export function pickOneOffSpecialReward(collectedIds: string[]): StickerReward {
-  const tier = rollWeightedTier(TIER_WEIGHTS_ONE_OFF_SPECIAL);
+export function pickOneOffSpecialReward(
+  collectedIds: string[],
+  rewardFloor: SpecialRewardFloor = "rare",
+): StickerReward {
+  const tier = rewardFloor === "superRare"
+    ? rollWeightedTier(ONE_OFF_SPECIAL_SR_PLUS_WEIGHTS)
+    : rollWeightedTier(TIER_WEIGHTS_ONE_OFF_SPECIAL);
   return pickFromStickerTier(collectedIds, tier);
 }
 
@@ -365,11 +395,15 @@ export function pickDecoyUltraRareReward(): StickerReward {
   return pickRandom(pool);
 }
 
-export function pickTreatReward(collectedIds: string[], mode: TreatMode): RewardItem {
+export function pickTreatReward(
+  collectedIds: string[],
+  mode: TreatMode,
+  options?: { rewardFloor?: SpecialRewardFloor },
+): RewardItem {
   if (mode === "fullDayBonus") return pickFullDayBonusReward(collectedIds);
   if (mode === "weekly") return pickWeeklyReward(collectedIds);
-  if (mode === "specialMission") return pickSpecialMissionReward(collectedIds);
-  if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds);
+  if (mode === "specialMission") return pickSpecialMissionReward(collectedIds, options?.rewardFloor ?? "rare");
+  if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds, options?.rewardFloor ?? "rare");
   return pickDailyReward(collectedIds);
 }
 
