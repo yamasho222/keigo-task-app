@@ -49,10 +49,10 @@ export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraR
   ultraRare: 0.05,
 };
 
-export const TIER_WEIGHTS_WEEKLY: Record<"superRare" | "ultraRare" | "legendary", number> = {
-  superRare: 0.83,
-  ultraRare: 0.15,
-  legendary: 0.02,
+/** 7日連続ごほうび — UR以上確定 */
+export const TIER_WEIGHTS_WEEKLY: Record<"ultraRare" | "legendary", number> = {
+  ultraRare: 0.70,
+  legendary: 0.30,
 };
 
 export type LegendaryRevealMode = "cutin" | "direct";

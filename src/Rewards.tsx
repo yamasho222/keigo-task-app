@@ -759,7 +759,7 @@ function TreatOverlay({
     ? 120
     : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
   const title = isWeekly
-    ? "🎊 1週間クリア！ 🎊"
+    ? "🎊 7日連続 特別ごほうび！ 🎊"
     : isFullDayBonus
       ? "🌟 1日全部クリア！ 🌟"
       : isOneOffSpecial
@@ -769,7 +769,7 @@ function TreatOverlay({
           : "⭐ きょうのごほうび ⭐";
 
   const subtitle = isWeekly
-    ? "7日連続ですべてクリア！スーパーレア以上！"
+    ? "7日連続ですべてクリア！ウルトラレア以上確定！"
     : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
       : isOneOffSpecial

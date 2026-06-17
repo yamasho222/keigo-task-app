@@ -51,6 +51,13 @@ export function getFullDayStreak(history: Record<string, DayHistory>): number {
   return streak;
 }
 
+/** 次の7日連続特別ごほうびまでの日数（0 = きょうが対象日） */
+export function daysUntilWeeklySpecialReward(fullDayStreak: number): number {
+  if (fullDayStreak <= 0) return 7;
+  const remainder = fullDayStreak % 7;
+  return remainder === 0 ? 0 : 7 - remainder;
+}
+
 export function getStreak(history: Record<string, DayHistory>): number {
   let streak = 0;
   const today = new Date();
@@ -187,6 +194,13 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
         {fullDayStreak >= 1 && (
           <div style={{ fontSize: 12, color: theme.category.green, marginTop: 6, fontWeight: 700 }}>
             全部クリア {fullDayStreak}日連続 {fullDayStreak >= 7 ? "🎉" : ""}
+          </div>
+        )}
+        {fullDayStreak >= 1 && (
+          <div style={{ fontSize: 12, color: theme.category.purple, marginTop: 4, fontWeight: 700 }}>
+            {daysUntilWeeklySpecialReward(fullDayStreak) === 0
+              ? "きょう、特別ごほうびのチャンス！"
+              : `特別ごほうびまで あと${daysUntilWeeklySpecialReward(fullDayStreak)}日`}
           </div>
         )}
       </div>
