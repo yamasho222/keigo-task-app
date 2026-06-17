@@ -71,6 +71,25 @@ export function tasksForSessionList(tasks: Task[]): Task[] {
   return tasks.filter((t) => !isGameTask(t));
 }
 
+const SCOPE_DISPLAY_ORDER: Record<TaskScope, number> = {
+  regular: 0,
+  today: 1,
+  special: 2,
+};
+
+export function taskScopeForSort(task: Task): TaskScope {
+  return task.scope ?? "regular";
+}
+
+/** 各フェーズ表示順: レギュラー → きょうだけ → 単発特別 */
+export function sortTasksForSessionDisplay(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const scopeDiff = SCOPE_DISPLAY_ORDER[taskScopeForSort(a)] - SCOPE_DISPLAY_ORDER[taskScopeForSort(b)];
+    if (scopeDiff !== 0) return scopeDiff;
+    return a.id - b.id;
+  });
+}
+
 export function isTaskVisibleToday(task: Task, now = new Date()): boolean {
   if (task.scope === "today" || task.scope === "special") return true;
   if (!task.weekdays?.length) return true;

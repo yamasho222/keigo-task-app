@@ -46,7 +46,7 @@ import {
   DEFAULT_HOMEWORK_SHARED_KEY,
   isTaskVisibleToday, isTaskVisibleInSession, visibleTasksForSession,
   isGameTask, ensureGameTaskInList, gamePlayKey, tasksForProgress, createGameTask,
-  isOneOffSpecialTask, oneOffSpecialClaimKey, tasksForSessionList,
+  isOneOffSpecialTask, oneOffSpecialClaimKey, tasksForSessionList, sortTasksForSessionDisplay,
   resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
   maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
@@ -4713,7 +4713,7 @@ function TaskScreen({
   );
 
   const shownTasks = visibleTasksForSession(session, allSessionTasks);
-  const listTasks = tasksForSessionList(shownTasks);
+  const listTasks = sortTasksForSessionDisplay(tasksForSessionList(shownTasks));
   const progressTasks = tasksForProgress(shownTasks);
   const gameTask = shownTasks.find(isGameTask);
 
@@ -4830,6 +4830,26 @@ function TaskScreen({
           </div>
         </SortableContext>
       </DndContext>
+
+      {todayMission && missionCardStatus && (
+        <MissionCard
+          mission={todayMission}
+          status={missionCardStatus}
+          currentSession={session}
+          activeSessions={activeMissionSessions}
+          doneSessions={missionDoneSessions}
+          approvedSessions={missionApprovedSessions}
+          showEveningNudge={showEveningMissionNudge}
+          alignWithTaskRows
+          onDone={onMissionDone}
+          onUndoSession={missionCardStatus === "session_complete" ? onMissionUndo : undefined}
+          onOpenReward={onOpenMissionReward}
+          onOpenParentCheck={
+            missionCardStatus === "session_awaiting_parent" ? onOpenMissionParentCheck : undefined
+          }
+          onLongPressSetup={onMissionSetup}
+        />
+      )}
 
       {gameTask && (
         <TaskRow
@@ -4968,26 +4988,6 @@ function TaskScreen({
         </div>
       )}
 
-      {todayMission && missionCardStatus && (
-        <MissionCard
-          mission={todayMission}
-          status={missionCardStatus}
-          currentSession={session}
-          activeSessions={activeMissionSessions}
-          doneSessions={missionDoneSessions}
-          approvedSessions={missionApprovedSessions}
-          showEveningNudge={showEveningMissionNudge}
-          alignWithTaskRows
-          onDone={onMissionDone}
-          onUndoSession={missionCardStatus === "session_complete" ? onMissionUndo : undefined}
-          onOpenReward={onOpenMissionReward}
-          onOpenParentCheck={
-            missionCardStatus === "session_awaiting_parent" ? onOpenMissionParentCheck : undefined
-          }
-          onLongPressSetup={onMissionSetup}
-        />
-      )}
-
       {/* タスク追加エリア */}
       {isAdding ? (
         <TaskEditForm
@@ -5014,6 +5014,12 @@ function TaskScreen({
         />
       ) : !interactionLocked && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={() => startAdding("regular")} style={{ ...addBtnStyle, borderColor: `${theme.accent.primary}55`, color: theme.text.secondary }}>
+            <span style={{ fontSize: 18 }}>＋</span> レギュラータスク
+          </button>
+          <button onClick={() => startAdding("today")} style={addBtnStyle}>
+            <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
+          </button>
           <button onClick={() => startAdding("special")} style={{
             ...addBtnStyle,
             borderColor: `${theme.category.orange}66`,
@@ -5029,12 +5035,6 @@ function TaskScreen({
             backgroundColor: `${theme.category.purple}10`,
           }}>
             <span style={{ fontSize: 18 }}>＋</span> {todayMission ? "特別ミッションを変更" : "特別ミッションを設定"}
-          </button>
-          <button onClick={() => startAdding("today")} style={addBtnStyle}>
-            <span style={{ fontSize: 18 }}>＋</span> きょうだけのタスク
-          </button>
-          <button onClick={() => startAdding("regular")} style={{ ...addBtnStyle, borderColor: `${theme.accent.primary}55`, color: theme.text.secondary }}>
-            <span style={{ fontSize: 18 }}>＋</span> レギュラータスク
           </button>
         </div>
       )}
