@@ -582,6 +582,7 @@ function TreatOverlay({
   const teaseTimerRef = useRef<number | null>(null);
   const upgradeTimerRef = useRef<number | null>(null);
   const isWeekly = mode === "weekly";
+  const isThreeDayStreak = mode === "threeDayStreak";
   const isFullDayBonus = mode === "fullDayBonus";
   const isSpecialMission = mode === "specialMission";
   const isOneOffSpecial = mode === "oneOffSpecial";
@@ -750,17 +751,21 @@ function TreatOverlay({
   const isLegendaryReward = reward?.rarity === "legendary";
   const chestVariant = isLegendaryReward || devForceTier === "legendary"
     ? "legendary" as const
-    : isFullDayBonus
+    : isWeekly
       ? "premium" as const
-      : isMissionStyle
-        ? "mission" as const
-        : "default" as const;
+      : isThreeDayStreak || isFullDayBonus
+        ? "premium" as const
+        : isMissionStyle
+          ? "mission" as const
+          : "default" as const;
   const chestSize = isLegendaryReward || devForceTier === "legendary"
     ? 120
-    : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
+    : isWeekly ? 100 : isThreeDayStreak ? 92 : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
   const title = isWeekly
     ? "🎊 7日連続 特別ごほうび！ 🎊"
-    : isFullDayBonus
+    : isThreeDayStreak
+      ? "🎉 3日連続 ごほうび！ 🎉"
+      : isFullDayBonus
       ? "🌟 1日全部クリア！ 🌟"
       : isOneOffSpecial
         ? "🎯 単発特別ミッション クリア！ 🎯"
@@ -770,7 +775,9 @@ function TreatOverlay({
 
   const subtitle = isWeekly
     ? "7日連続ですべてクリア！ウルトラレア以上確定！"
-    : isFullDayBonus
+    : isThreeDayStreak
+      ? "3日連続ですべてクリア！レア以上確定！"
+      : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
       : isOneOffSpecial
         ? missionTitle ? `${missionTitle} — クリア！` : "ミッション達成！レア以上のシール！"
@@ -780,7 +787,9 @@ function TreatOverlay({
 
   const titleColor = isWeekly
     ? theme.category.purple
-    : isFullDayBonus
+    : isThreeDayStreak
+      ? theme.category.blue
+      : isFullDayBonus
       ? theme.category.orange
       : isMissionStyle
         ? theme.category.purple
@@ -981,6 +990,10 @@ export function WeeklyRewardOverlay(props: Omit<Parameters<typeof TreatOverlay>[
 
 export function FullDayBonusTreatOverlay(props: Omit<Parameters<typeof TreatOverlay>[0], "mode">) {
   return <TreatOverlay mode="fullDayBonus" {...props} />;
+}
+
+export function ThreeDayStreakRewardOverlay(props: Omit<Parameters<typeof TreatOverlay>[0], "mode">) {
+  return <TreatOverlay mode="threeDayStreak" {...props} />;
 }
 
 export { TreatOverlay };

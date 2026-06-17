@@ -5,6 +5,7 @@ import {
   TIER_WEIGHTS_DAILY,
   TIER_WEIGHTS_FULL_DAY,
   TIER_WEIGHTS_ONE_OFF_SPECIAL,
+  TIER_WEIGHTS_THREE_DAY,
   TIER_WEIGHTS_WEEKLY,
 } from "./rarityMeta";
 import type { SpecialRewardFloor } from "./sharedTasks";
@@ -177,7 +178,7 @@ export const STICKER_REWARDS: StickerReward[] = [
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
 export const TOTAL_REWARD_COUNT = ALL_REWARDS.length;
 
-/** 日次：ノーマル30% / シール70%（N35%・R45%・SR15%・UR4.9%・LR0.1%） */
+/** 日次：ノーマル30% / シール70% */
 export const DAILY_NORMAL_WEIGHT = 0.30;
 
 /** @deprecated TIER_WEIGHTS_DAILY を参照 */
@@ -190,16 +191,16 @@ export const WEEKLY_HIGH_TIER_WEIGHTS = TIER_WEIGHTS_WEEKLY;
 export const ONE_OFF_SPECIAL_TIER_WEIGHTS = TIER_WEIGHTS_ONE_OFF_SPECIAL;
 
 const SPECIAL_MISSION_RARE_PLUS_WEIGHTS: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
-  rare: 0.70,
-  superRare: 0.23,
-  ultraRare: 0.06,
-  legendary: 0.01,
+  rare: 0.55,
+  superRare: 0.30,
+  ultraRare: 0.12,
+  legendary: 0.03,
 };
 
 const SPECIAL_MISSION_SR_PLUS_WEIGHTS: Record<"superRare" | "ultraRare" | "legendary", number> = {
-  superRare: 0.80,
-  ultraRare: 0.18,
-  legendary: 0.02,
+  superRare: 0.65,
+  ultraRare: 0.28,
+  legendary: 0.07,
 };
 
 const ONE_OFF_SPECIAL_SR_PLUS_WEIGHTS: Record<"superRare" | "ultraRare" | "legendary", number> = {
@@ -343,7 +344,11 @@ export function pickDailyReward(collectedIds: string[]): RewardItem {
 }
 
 export function pickFullDayBonusReward(collectedIds: string[]): StickerReward {
-  return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_FULL_DAY);
+  return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_FULL_DAY));
+}
+
+export function pickThreeDayReward(collectedIds: string[]): StickerReward {
+  return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_THREE_DAY));
 }
 
 export function pickSpecialMissionReward(
@@ -401,10 +406,11 @@ export function pickTreatReward(
   options?: { rewardFloor?: SpecialRewardFloor },
 ): RewardItem {
   if (mode === "fullDayBonus") return pickFullDayBonusReward(collectedIds);
+  if (mode === "threeDayStreak") return pickThreeDayReward(collectedIds);
   if (mode === "weekly") return pickWeeklyReward(collectedIds);
   if (mode === "specialMission") return pickSpecialMissionReward(collectedIds, options?.rewardFloor ?? "rare");
   if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds, options?.rewardFloor ?? "rare");
   return pickDailyReward(collectedIds);
 }
 
-export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "specialMission" | "oneOffSpecial";
+export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "threeDayStreak" | "specialMission" | "oneOffSpecial";

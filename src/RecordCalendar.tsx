@@ -51,11 +51,36 @@ export function getFullDayStreak(history: Record<string, DayHistory>): number {
   return streak;
 }
 
-/** 次の7日連続特別ごほうびまでの日数（0 = きょうが対象日） */
-export function daysUntilWeeklySpecialReward(fullDayStreak: number): number {
+/** 3日連続ごほうびのマイルストーン（3, 10, 17…） */
+export function isThreeDayMilestoneStreak(fullDayStreak: number): boolean {
+  return fullDayStreak >= 3 && (fullDayStreak - 3) % 7 === 0;
+}
+
+/** 7日連続ごほうびのマイルストーン（7, 14, 21…） */
+export function isSevenDayMilestoneStreak(fullDayStreak: number): boolean {
+  return fullDayStreak >= 7 && fullDayStreak % 7 === 0;
+}
+
+/** 次の3日連続ごほうびまでの日数（0 = きょうが対象日） */
+export function daysUntilThreeDayMilestone(fullDayStreak: number): number {
+  if (fullDayStreak <= 0) return 3;
+  if (isThreeDayMilestoneStreak(fullDayStreak)) return 0;
+  const posInBlock = ((fullDayStreak - 1) % 7) + 1;
+  if (posInBlock < 3) return 3 - posInBlock;
+  return 7 - posInBlock + 3;
+}
+
+/** 次の7日連続ごほうびまでの日数（0 = きょうが対象日） */
+export function daysUntilSevenDayMilestone(fullDayStreak: number): number {
   if (fullDayStreak <= 0) return 7;
+  if (isSevenDayMilestoneStreak(fullDayStreak)) return 0;
   const remainder = fullDayStreak % 7;
   return remainder === 0 ? 0 : 7 - remainder;
+}
+
+/** @deprecated daysUntilSevenDayMilestone を使用 */
+export function daysUntilWeeklySpecialReward(fullDayStreak: number): number {
+  return daysUntilSevenDayMilestone(fullDayStreak);
 }
 
 export function getStreak(history: Record<string, DayHistory>): number {
@@ -197,10 +222,17 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
           </div>
         )}
         {fullDayStreak >= 1 && (
+          <div style={{ fontSize: 12, color: theme.category.blue, marginTop: 4, fontWeight: 700 }}>
+            {daysUntilThreeDayMilestone(fullDayStreak) === 0
+              ? "きょう、3日連続ごほうびのチャンス！"
+              : `3日ごほうびまで あと${daysUntilThreeDayMilestone(fullDayStreak)}日`}
+          </div>
+        )}
+        {fullDayStreak >= 1 && (
           <div style={{ fontSize: 12, color: theme.category.purple, marginTop: 4, fontWeight: 700 }}>
-            {daysUntilWeeklySpecialReward(fullDayStreak) === 0
-              ? "きょう、特別ごほうびのチャンス！"
-              : `特別ごほうびまで あと${daysUntilWeeklySpecialReward(fullDayStreak)}日`}
+            {daysUntilSevenDayMilestone(fullDayStreak) === 0
+              ? "きょう、7日連続ごほうびのチャンス！"
+              : `7日ごほうびまで あと${daysUntilSevenDayMilestone(fullDayStreak)}日`}
           </div>
         )}
       </div>
