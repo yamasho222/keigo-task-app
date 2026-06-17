@@ -147,12 +147,25 @@ function reorderVisibleInAll(
   reorderedVisible: Task[],
   allSessions: AllSessionTasks,
 ): Task[] {
-  let vi = 0;
-  return allTasks.map((t) => {
-    if (!isTaskVisibleInSession(t, session, allSessions) || isGameTask(t) || isOneOffSpecialTask(t)) return t;
-    const next = reorderedVisible[vi++];
-    return next ?? t;
-  });
+  const isReorderable = (task: Task) =>
+    isTaskVisibleInSession(task, session, allSessions)
+    && !isGameTask(task)
+    && !isOneOffSpecialTask(task);
+
+  const prefix: Task[] = [];
+  const suffix: Task[] = [];
+  let seenReorderable = false;
+
+  for (const task of allTasks) {
+    if (isReorderable(task)) {
+      seenReorderable = true;
+      continue;
+    }
+    if (!seenReorderable) prefix.push(task);
+    else suffix.push(task);
+  }
+
+  return [...prefix, ...reorderedVisible, ...suffix];
 }
 
 function applyHomeworkMigrationToState(tasks: {
@@ -4773,6 +4786,7 @@ function TaskScreen({
 
   const shownTasks = visibleTasksForSession(session, allSessionTasks);
   const listTasks = sortTasksForSessionDisplay(tasksForSessionList(shownTasks));
+  const sortableListTasks = listTasks.filter((task) => !isOneOffSpecialTask(task));
   const progressTasks = tasksForProgress(shownTasks);
   const gameTask = shownTasks.find(isGameTask);
 
@@ -4780,10 +4794,15 @@ function TaskScreen({
     if (interactionLocked) return;
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIdx = progressTasks.findIndex((t) => t.id === active.id);
-      const newIdx = progressTasks.findIndex((t) => t.id === over.id);
+      const oldIdx = sortableListTasks.findIndex((t) => t.id === active.id);
+      const newIdx = sortableListTasks.findIndex((t) => t.id === over.id);
       if (oldIdx < 0 || newIdx < 0) return;
-      onReorder(reorderVisibleInAll(session, tasks, arrayMove(progressTasks, oldIdx, newIdx), allSessionTasks));
+      onReorder(reorderVisibleInAll(
+        session,
+        tasks,
+        arrayMove(sortableListTasks, oldIdx, newIdx),
+        allSessionTasks,
+      ));
     }
   };
 

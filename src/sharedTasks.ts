@@ -81,12 +81,13 @@ export function taskScopeForSort(task: Task): TaskScope {
   return task.scope ?? "regular";
 }
 
-/** 各フェーズ表示順: レギュラー → きょうだけ → 単発特別 */
+/** 各フェーズ表示順: レギュラー → きょうだけ → 単発特別（スコープ内は配列順を維持） */
 export function sortTasksForSessionDisplay(tasks: Task[]): Task[] {
+  const orderIndex = new Map(tasks.map((task, index) => [task.id, index]));
   return [...tasks].sort((a, b) => {
     const scopeDiff = SCOPE_DISPLAY_ORDER[taskScopeForSort(a)] - SCOPE_DISPLAY_ORDER[taskScopeForSort(b)];
     if (scopeDiff !== 0) return scopeDiff;
-    return a.id - b.id;
+    return (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0);
   });
 }
 
