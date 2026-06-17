@@ -1298,6 +1298,11 @@ export default function KeigoTaskApp() {
   const specialMissionCollectedRef = useRef(false);
   const oneOffSpecialCollectedRef = useRef(false);
   const dailyTreatCollectedRef = useRef(false);
+  const pendingTreatRef = useRef<PendingTreat | null>(null);
+  const specialMissionRewardClaimedRef = useRef<Record<string, boolean>>(
+    stored.specialMissionRewardClaimed ?? {},
+  );
+  const oneOffSpecialClaimedRef = useRef<Record<string, boolean>>(stored.oneOffSpecialClaimed ?? {});
   const gameTimerStartRef = useRef<number | null>(null);
   const gameTimerPausedTotalRef = useRef(0);
   const gameTimerPauseStartRef = useRef<number | null>(null);
@@ -1654,11 +1659,33 @@ export default function KeigoTaskApp() {
 
   const closeTreatOverlay = () => {
     setPendingTreat((closing) => {
-      if (closing?.mode === "specialMission" && !specialMissionCollectedRef.current) {
-        setSpecialMissionTreatPending((p) => ({ ...p, [currentTaskDay]: true }));
+      if (closing?.mode === "specialMission") {
+        const dayKey = taskDayKey();
+        if (specialMissionCollectedRef.current) {
+          setSpecialMissionRewardClaimed((c) => (c[dayKey] ? c : { ...c, [dayKey]: true }));
+          setSpecialMissionTreatPending((p) => {
+            if (!p[dayKey]) return p;
+            const next = { ...p };
+            delete next[dayKey];
+            return next;
+          });
+        } else {
+          setSpecialMissionTreatPending((p) => ({ ...p, [dayKey]: true }));
+        }
       }
-      if (closing?.mode === "oneOffSpecial" && closing.oneOffSpecialClaimKey && !oneOffSpecialCollectedRef.current) {
-        setOneOffSpecialTreatPending((p) => ({ ...p, [closing.oneOffSpecialClaimKey!]: true }));
+      if (closing?.mode === "oneOffSpecial" && closing.oneOffSpecialClaimKey) {
+        const claimKey = closing.oneOffSpecialClaimKey;
+        if (oneOffSpecialCollectedRef.current) {
+          setOneOffSpecialClaimed((c) => (c[claimKey] ? c : { ...c, [claimKey]: true }));
+          setOneOffSpecialTreatPending((p) => {
+            if (!p[claimKey]) return p;
+            const next = { ...p };
+            delete next[claimKey];
+            return next;
+          });
+        } else {
+          setOneOffSpecialTreatPending((p) => ({ ...p, [claimKey]: true }));
+        }
       }
       if (closing?.mode === "daily" && closing.session && !dailyTreatCollectedRef.current) {
         const treatSession = closing.session;
@@ -2004,43 +2031,55 @@ export default function KeigoTaskApp() {
     });
   };
 
+  pendingTreatRef.current = pendingTreat;
+  specialMissionRewardClaimedRef.current = specialMissionRewardClaimed;
+  oneOffSpecialClaimedRef.current = oneOffSpecialClaimed;
+
   const handleTreatCollect = (rewardId: string) => {
+    const treat = pendingTreatRef.current;
+    if (!treat) return;
+
+    if (treat.mode === "specialMission") {
+      const dayKey = taskDayKey();
+      if (specialMissionRewardClaimedRef.current[dayKey]) return;
+      specialMissionCollectedRef.current = true;
+      setSpecialMissionRewardClaimed((c) => {
+        if (c[dayKey]) return c;
+        return { ...c, [dayKey]: true };
+      });
+      setSpecialMissionTreatPending((p) => {
+        if (!p[dayKey]) return p;
+        const next = { ...p };
+        delete next[dayKey];
+        return next;
+      });
+    } else if (treat.mode === "oneOffSpecial" && treat.oneOffSpecialClaimKey) {
+      const key = treat.oneOffSpecialClaimKey;
+      if (oneOffSpecialClaimedRef.current[key]) return;
+      oneOffSpecialCollectedRef.current = true;
+      setOneOffSpecialClaimed((c) => {
+        if (c[key]) return c;
+        return { ...c, [key]: true };
+      });
+      setOneOffSpecialTreatPending((p) => {
+        if (!p[key]) return p;
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    } else if (treat.mode === "daily" && treat.session) {
+      dailyTreatCollectedRef.current = true;
+      const key = sessionTreatKey(todayKey(), treat.session);
+      setDailyTreatClaimed((c) => ({ ...c, [key]: true }));
+      setDailyTreatPending((p) => {
+        if (!p[key]) return p;
+        const next = { ...p };
+        delete next[key];
+        return next;
+      });
+    }
+
     collectSticker(rewardId);
-    setPendingTreat((treat) => {
-      if (treat?.mode === "specialMission") {
-        specialMissionCollectedRef.current = true;
-        setSpecialMissionRewardClaimed((c) => ({ ...c, [currentTaskDay]: true }));
-        setSpecialMissionTreatPending((p) => {
-          if (!p[currentTaskDay]) return p;
-          const next = { ...p };
-          delete next[currentTaskDay];
-          return next;
-        });
-      }
-      if (treat?.mode === "oneOffSpecial" && treat.oneOffSpecialClaimKey) {
-        oneOffSpecialCollectedRef.current = true;
-        const key = treat.oneOffSpecialClaimKey;
-        setOneOffSpecialClaimed((c) => ({ ...c, [key]: true }));
-        setOneOffSpecialTreatPending((p) => {
-          if (!p[key]) return p;
-          const next = { ...p };
-          delete next[key];
-          return next;
-        });
-      }
-      if (treat?.mode === "daily" && treat.session) {
-        dailyTreatCollectedRef.current = true;
-        const key = sessionTreatKey(todayKey(), treat.session);
-        setDailyTreatClaimed((c) => ({ ...c, [key]: true }));
-        setDailyTreatPending((p) => {
-          if (!p[key]) return p;
-          const next = { ...p };
-          delete next[key];
-          return next;
-        });
-      }
-      return treat;
-    });
   };
 
   const openSessionDailyReward = (session: SessionId) => {
@@ -2087,6 +2126,13 @@ export default function KeigoTaskApp() {
   };
 
   const openOneOffSpecialReward = (pending: OneOffSpecialPending) => {
+    if (oneOffSpecialClaimedRef.current[pending.claimKey]) return;
+    if (
+      pendingTreatRef.current?.mode === "oneOffSpecial"
+      && pendingTreatRef.current.oneOffSpecialClaimKey === pending.claimKey
+    ) {
+      return;
+    }
     oneOffSpecialCollectedRef.current = false;
     setOneOffSpecialTreatPending((p) => {
       if (!p[pending.claimKey]) return p;
@@ -2103,14 +2149,18 @@ export default function KeigoTaskApp() {
   };
 
   const openFirstPendingOneOffSpecialReward = () => {
-    const claimKey = Object.keys(oneOffSpecialTreatPending).find((k) => oneOffSpecialTreatPending[k]);
+    const claimKey = Object.keys(oneOffSpecialTreatPending).find(
+      (k) => oneOffSpecialTreatPending[k] && !oneOffSpecialClaimed[k],
+    );
     if (!claimKey) return;
     const info = findOneOffSpecialPendingInfo(claimKey);
     if (info) openOneOffSpecialReward(info);
   };
 
   const hasUnclaimedOneOffSpecialReward = () =>
-    Object.keys(oneOffSpecialTreatPending).some((k) => oneOffSpecialTreatPending[k]);
+    Object.keys(oneOffSpecialTreatPending).some(
+      (k) => oneOffSpecialTreatPending[k] && !oneOffSpecialClaimed[k],
+    );
 
   const openOneOffParentCheck = () => {
     if (!oneOffSpecialAwaitingParent) return;
@@ -2149,7 +2199,9 @@ export default function KeigoTaskApp() {
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
       setScreen(pending.session);
-      openOneOffSpecialReward(pending);
+      if (!oneOffSpecialClaimedRef.current[pending.claimKey]) {
+        openOneOffSpecialReward(pending);
+      }
     }, 950);
   };
 
@@ -2255,12 +2307,15 @@ export default function KeigoTaskApp() {
 
   const openMissionReward = () => {
     if (!todayMission) return;
+    const dayKey = taskDayKey();
+    if (specialMissionRewardClaimedRef.current[dayKey]) return;
     if (!isAllMissionPhasesParentApproved(missionApprovedSessions)) return;
+    if (pendingTreatRef.current?.mode === "specialMission") return;
     specialMissionCollectedRef.current = false;
     setSpecialMissionTreatPending((p) => {
-      if (!p[currentTaskDay]) return p;
+      if (!p[dayKey]) return p;
       const next = { ...p };
-      delete next[currentTaskDay];
+      delete next[dayKey];
       return next;
     });
     openTreatQueue([{
@@ -2282,7 +2337,11 @@ export default function KeigoTaskApp() {
         ...h,
         [currentTodayKey]: { title: todayMission.title, emoji: todayMission.emoji },
       }));
-      setTimeout(() => openMissionReward(), 950);
+      setTimeout(() => {
+        if (!specialMissionRewardClaimedRef.current[taskDayKey()]) {
+          openMissionReward();
+        }
+      }, 950);
     }
   };
 
