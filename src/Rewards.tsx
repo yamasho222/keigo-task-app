@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
 import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
-import { pickLegendaryRevealMode, type LegendaryRevealMode } from "./rarityMeta";
+import { pickLegendaryRevealMode, pickSrUrRevealMode, type LegendaryRevealMode, type SrUrRevealMode } from "./rarityMeta";
 import {
   pickTeaseVariant, shouldPlayTease,
   type TeaseVariant, type TeaseVariantId, type TeaseTier,
 } from "./treatTease";
 import {
   CUTIN_VIBRATE, getCutinDuration, shouldPlayUpgradeReveal, shouldPlayLegendaryUpgrade,
-  UpgradeCutinScene, LrCutinScene,
-  UPGRADE_FAKE_NORMAL_MS, UPGRADE_FAKE_NORMAL_LR_MS, UPGRADE_FAKE_UR_MS,
+  UpgradeCutinScene, LrCutinScene, LrNormalToUrBridge,
+  UPGRADE_FAKE_NORMAL_MS, UPGRADE_FAKE_NORMAL_LR_MS, UPGRADE_FAKE_NORMAL_CRUSH_MS, UPGRADE_FAKE_UR_MS,
   UPGRADE_FREEZE_MS, UPGRADE_CRACK_MS, UPGRADE_CUTIN_LR_MS, UPGRADE_DIRECT_BURST_MS,
   type LrCutinStep,
 } from "./treatCutin";
@@ -553,7 +553,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 }
 
 function TreatOverlay({
-  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode,
+  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode,
   missionTitle,
 }: {
   mode: TreatMode;
@@ -565,10 +565,11 @@ function TreatOverlay({
   devForceTease?: boolean;
   devForceTeaseId?: TeaseVariantId;
   devForceLegendaryMode?: LegendaryRevealMode;
+  devForceSrUrMode?: SrUrRevealMode;
   missionTitle?: string;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
-  type UpgradeStep = "fakeNormal" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
+  type UpgradeStep = "fakeNormal" | "fakeNormalCrush" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
 
   const [phase, setPhase] = useState<TreatPhase>("closed");
   const [upgradeStep, setUpgradeStep] = useState<UpgradeStep | null>(null);
@@ -627,7 +628,11 @@ function TreatOverlay({
 
   const chainLegendaryStep = (_picked: RewardItem, step: UpgradeStep, delayMs: number, next: () => void) => {
     setUpgradeStep(step);
-    if (step === "freeze" || step === "crack" || step === "cutin") {
+    if (step === "fakeNormalCrush") {
+      vibrateTreat(CUTIN_VIBRATE.lrNormalCrush);
+    } else if (step === "fakeUltraRare") {
+      vibrateTreat(CUTIN_VIBRATE.lrFakeUrBurst);
+    } else if (step === "freeze" || step === "crack" || step === "cutin") {
       vibrateTreat(CUTIN_VIBRATE.legendary);
     }
     upgradeTimerRef.current = window.setTimeout(next, delayMs);
@@ -640,11 +645,13 @@ function TreatOverlay({
     setUpgradeStep("fakeNormal");
     setPhase("upgrading");
     upgradeTimerRef.current = window.setTimeout(() => {
-      chainLegendaryStep(picked, "fakeUltraRare", UPGRADE_FAKE_UR_MS, () => {
-        chainLegendaryStep(picked, "freeze", UPGRADE_FREEZE_MS, () => {
-          chainLegendaryStep(picked, "crack", UPGRADE_CRACK_MS, () => {
-            chainLegendaryStep(picked, "cutin", UPGRADE_CUTIN_LR_MS, () => {
-              finishReveal(picked);
+      chainLegendaryStep(picked, "fakeNormalCrush", UPGRADE_FAKE_NORMAL_CRUSH_MS, () => {
+        chainLegendaryStep(picked, "fakeUltraRare", UPGRADE_FAKE_UR_MS, () => {
+          chainLegendaryStep(picked, "freeze", UPGRADE_FREEZE_MS, () => {
+            chainLegendaryStep(picked, "crack", UPGRADE_CRACK_MS, () => {
+              chainLegendaryStep(picked, "cutin", UPGRADE_CUTIN_LR_MS, () => {
+                finishReveal(picked);
+              });
             });
           });
         });
@@ -682,11 +689,16 @@ function TreatOverlay({
       return;
     }
     setActiveTease(null);
-    if (!isMissionStyle && shouldPlayUpgradeReveal(picked.rarity)) {
-      startUpgradeReveal(picked);
+    setReward(picked);
+    finishReveal(picked);
+  };
+
+  const playSrUrReveal = (picked: RewardItem) => {
+    const mode = pickSrUrRevealMode(isMissionStyle, devForceSrUrMode);
+    if (mode === "tease") {
+      startTease(picked, continueAfterTease);
     } else {
-      setReward(picked);
-      finishReveal(picked);
+      startUpgradeReveal(picked);
     }
   };
 
@@ -714,13 +726,13 @@ function TreatOverlay({
       return;
     }
 
-    if (shouldPlayTease(picked.rarity)) {
-      startTease(picked, continueAfterTease);
+    if (picked.rarity === "legendary") {
+      startTease(picked, continueAfterLegendaryTease);
       return;
     }
 
-    if (!isMissionStyle && shouldPlayUpgradeReveal(picked.rarity)) {
-      startUpgradeReveal(picked);
+    if (shouldPlayUpgradeReveal(picked.rarity)) {
+      playSrUrReveal(picked);
       return;
     }
 
@@ -789,6 +801,14 @@ function TreatOverlay({
       })()}
       {phase === "upgrading" && upgradeStep === "directBurst" && (
         <div className="lr-whiteout-legendary" style={{ position: "fixed", inset: 0, zIndex: 3, pointerEvents: "none" }} />
+      )}
+      {phase === "upgrading" && upgradeStep === "fakeNormalCrush" && decoy && (
+        <LrNormalToUrBridge key="lr-normal-ur-bridge" decoyEmoji={decoy.emoji} />
+      )}
+      {phase === "upgrading" && upgradeStep === "fakeUltraRare" && (
+        <div className="lr-fake-ur-bg-glow" style={{
+          position: "fixed", inset: 0, zIndex: 3, pointerEvents: "none",
+        }} />
       )}
       {phase === "upgrading" && upgradeStep === "cutin" && reward && shouldPlayUpgradeReveal(reward.rarity) && decoy && (
         <UpgradeCutinScene
@@ -879,7 +899,7 @@ function TreatOverlay({
             </div>
           )}
           {phase === "upgrading" && upgradeStep === "fakeUltraRare" && fakeUrDecoy && (
-            <div className="cutin-fake-ur-hold" style={{
+            <div className="lr-fake-ur-burst-in" style={{
               display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
             }}>
               <RewardReveal
@@ -888,9 +908,10 @@ function TreatOverlay({
                 borderGlow={urBadge.color}
                 glowPulse
               />
-              <RarityBadge rarity="ultraRare" className="ur-shimmer" />
+              <RarityBadge rarity="ultraRare" className="rarity-badge-pop-delay ur-shimmer" />
               <div className="ur-shimmer" style={{
-                fontSize: 18, fontWeight: 900, color: theme.text.primary,
+                fontSize: 18, fontWeight: 900, color: "#fff",
+                textShadow: `0 0 20px ${urBadge.color}, 0 2px 12px rgba(0,0,0,0.55)`,
                 "--shimmer-color": `${urBadge.color}CC`,
               } as CSSProperties}>
                 {fakeUrDecoy.label}

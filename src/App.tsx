@@ -307,6 +307,7 @@ interface PendingTreat {
   devForceTease?: boolean;
   devForceTeaseId?: import("./treatTease").TeaseVariantId;
   devForceLegendaryMode?: import("./rarityMeta").LegendaryRevealMode;
+  devForceSrUrMode?: import("./rarityMeta").SrUrRevealMode;
   missionTitle?: string;
   oneOffSpecialClaimKey?: string;
 }
@@ -1050,6 +1051,28 @@ function AnimStyles() {
         0%   { transform: scale(0.92); opacity: 0.85; }
         100% { transform: scale(1); opacity: 1; }
       }
+      @keyframes lrNormalUrSurge {
+        0%   { opacity: 0; transform: scale(0.75); }
+        35%  { opacity: 0.9; transform: scale(1.05); }
+        100% { opacity: 0; transform: scale(1.2); }
+      }
+      @keyframes lrUrImpactWhite {
+        0%   { opacity: 0; }
+        55%  { opacity: 0; }
+        72%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes lrFakeUrBgGlow {
+        0%   { opacity: 0; }
+        20%  { opacity: 0.85; }
+        100% { opacity: 0.55; }
+      }
+      @keyframes lrFakeUrBurstIn {
+        0%   { transform: scale(0.15) rotate(-18deg); opacity: 0; filter: brightness(2.2); }
+        28%  { transform: scale(1.18) rotate(6deg); opacity: 1; filter: brightness(1.6); }
+        48%  { transform: scale(0.94) rotate(-3deg); opacity: 1; filter: brightness(1.25); }
+        100% { transform: scale(1) rotate(0deg); opacity: 1; filter: brightness(1); }
+      }
       .check-pop   { animation: checkPop   0.42s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .ring-out    { animation: ringOut    0.5s  ease-out forwards; }
       .row-glow    { animation: rowGlow    0.5s  ease-out; }
@@ -1102,6 +1125,10 @@ function AnimStyles() {
       .lr-crack-shatter  { animation: lrCrackShatter 0.6s ease-in forwards; }
       .lr-morph-rainbow  { animation: lrMorphRainbow 1.8s ease-out forwards; }
       .cutin-fake-ur-hold { animation: cutinFakeUrHold 0.35s ease-out forwards; }
+      .lr-normal-ur-surge { animation: lrNormalUrSurge 0.95s ease-out forwards; }
+      .lr-ur-impact-white { animation: lrUrImpactWhite 0.55s ease-out forwards; background: rgba(255,255,255,0.94); position: absolute; inset: 0; }
+      .lr-fake-ur-bg-glow { animation: lrFakeUrBgGlow 1.2s ease-out forwards; background: radial-gradient(circle at 50% 45%, rgba(255,160,60,0.55) 0%, rgba(255,220,80,0.28) 35%, transparent 68%); }
+      .lr-fake-ur-burst-in { animation: lrFakeUrBurstIn 0.75s cubic-bezier(0.34,1.56,0.64,1) forwards; }
       .rarity-glow-pulse { animation: rarityGlowPulse 1.6s ease-in-out infinite; }
       .ur-shimmer        { animation: urShimmer 1.8s ease-in-out infinite; }
       .rarity-badge-pop-delay { animation: recordBadgePop 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.15s both; }
@@ -2627,13 +2654,14 @@ export default function KeigoTaskApp() {
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           devForceTier={pendingTreat.devForceTier}
           devForceStickerId={pendingTreat.devForceStickerId}
           devForceTease={pendingTreat.devForceTease}
           devForceTeaseId={pendingTreat.devForceTeaseId}
           devForceLegendaryMode={pendingTreat.devForceLegendaryMode}
+          devForceSrUrMode={pendingTreat.devForceSrUrMode}
           missionTitle={pendingTreat.missionTitle}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
@@ -2779,6 +2807,13 @@ export default function KeigoTaskApp() {
                   })));
                   setShowMenu(false);
                 } },
+                { icon: "⚡", label: "ポケモンプレビュー", action: () => {
+                  openTreatQueue(getStickersByCategory("pokemon").map((s) => ({
+                    mode: "daily" as const,
+                    devForceStickerId: s.id,
+                  })));
+                  setShowMenu(false);
+                } },
                 { icon: "🎁", label: "通常ごほうびテスト", action: () => { openTreatQueue([{ mode: "daily" }]); setShowMenu(false); } },
                 { icon: "🌟", label: "1日ボーナステスト", action: () => {
                   openTreatQueue([{ mode: "fullDayBonus" }]);
@@ -2821,6 +2856,22 @@ export default function KeigoTaskApp() {
                   openTreatQueue([{ mode: "daily", devForceStickerId: "lr-rengoku", devForceLegendaryMode: "direct" }]);
                   setShowMenu(false);
                 } },
+                { icon: "⚔️", label: "LR: たんじろうGIF", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceStickerId: "lr-tanjiro", devForceLegendaryMode: "direct" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "⚡", label: "LR: ぜんいつGIF", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceStickerId: "lr-zenitu", devForceLegendaryMode: "direct" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🐸", label: "LR: ゲッコウガGIF", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceStickerId: "lr-gekkouga", devForceLegendaryMode: "direct" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🐉", label: "UR: エンダードラゴンGIF", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceStickerId: "ur-enderdragon" }]);
+                  setShowMenu(false);
+                } },
                 { icon: "✨", label: "期待演出SR（強制・ランダム）", action: () => {
                   openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceTease: true }]);
                   setShowMenu(false);
@@ -2858,11 +2909,19 @@ export default function KeigoTaskApp() {
                   setShowMenu(false);
                 } },
                 { icon: "🎭", label: "SR: カットイン昇格", action: () => {
-                  openTreatQueue([{ mode: "daily", devForceTier: "superRare" }]);
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceSrUrMode: "cutin" }]);
                   setShowMenu(false);
                 } },
                 { icon: "🎭", label: "UR: カットイン昇格", action: () => {
-                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare" }]);
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceSrUrMode: "cutin" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "✨", label: "SR: 期待演出→Reveal", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "superRare", devForceSrUrMode: "tease" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🔥", label: "UR: 期待演出→Reveal", action: () => {
+                  openTreatQueue([{ mode: "daily", devForceTier: "ultraRare", devForceSrUrMode: "tease" }]);
                   setShowMenu(false);
                 } },
               ] : []),

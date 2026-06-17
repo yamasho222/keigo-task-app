@@ -5,8 +5,9 @@ import { LR_RAINBOW_COLORS } from "./rarityMeta";
 
 /** 偽ノーマル表示後、カットインまでの待ち時間 */
 export const UPGRADE_FAKE_NORMAL_MS = 2000;
-export const UPGRADE_FAKE_NORMAL_LR_MS = 1200;
-export const UPGRADE_FAKE_UR_MS = 1500;
+export const UPGRADE_FAKE_NORMAL_LR_MS = 2000;
+export const UPGRADE_FAKE_NORMAL_CRUSH_MS = 1000;
+export const UPGRADE_FAKE_UR_MS = 1800;
 export const UPGRADE_FREEZE_MS = 400;
 export const UPGRADE_CRACK_MS = 600;
 export const UPGRADE_CUTIN_LR_MS = 2000;
@@ -17,6 +18,8 @@ export const CUTIN_VIBRATE = {
   superRare: [30, 40, 30] as number[],
   ultraRare: [40, 50, 40, 50] as number[],
   legendary: [40, 60, 40, 60, 50, 70, 50, 80] as number[],
+  lrNormalCrush: [35, 50, 35, 50] as number[],
+  lrFakeUrBurst: [40, 55, 40, 55, 35] as number[],
 };
 
 export type LrCutinStep = "freeze" | "crack" | "cutin";
@@ -174,6 +177,39 @@ export function UpgradeCutinScene({
 }) {
   if (tier === "superRare") return <SrUpgradeCutin decoyEmoji={decoyEmoji} />;
   return <UrUpgradeCutin decoyEmoji={decoyEmoji} />;
+}
+
+/** LR二段演出: 偽ノーマル → 偽UR の遷移ブリッジ（テキストなし） */
+export function LrNormalToUrBridge({ decoyEmoji }: { decoyEmoji: string }) {
+  const urGold = theme.category.yellow;
+  const urOrange = theme.category.orange;
+  return (
+    <CutinStage shake>
+      <div className="cutin-freeze-dim" />
+      <div className="lr-normal-ur-surge" style={{
+        position: "absolute", inset: 0,
+        background: `radial-gradient(circle at 50% 50%, ${urOrange}66 0%, ${urGold}33 38%, transparent 72%)`,
+      }} />
+      <SpeedLines colors={[urGold, urOrange, "#ffffff", urGold]} count={36} />
+      <DecoyCrush emoji={decoyEmoji} />
+      {[0, 0.14, 0.28].map((delay, i) => (
+        <div key={i} className="cutin-shock-ring" style={{
+          position: "absolute", left: "50%", top: "50%",
+          width: 70 + i * 24, height: 70 + i * 24,
+          marginLeft: -(35 + i * 12), marginTop: -(35 + i * 12),
+          borderRadius: "50%",
+          border: `3px solid ${i % 2 ? urGold : urOrange}`,
+          animationDelay: `${delay}s`,
+        }} />
+      ))}
+      <div className="cutin-morph-flash-ur" style={{
+        position: "absolute", inset: 0,
+        background: `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.92) 0%, ${urGold}88 28%, ${urOrange}44 48%, transparent 68%)`,
+        animationDelay: "0.62s",
+      }} />
+      <div className="lr-ur-impact-white" />
+    </CutinStage>
+  );
 }
 
 function LrFreezeOverlay() {

@@ -71,6 +71,23 @@ export function pickLegendaryRevealMode(
   return Math.random() < LR_REVEAL_MODE_WEIGHTS.cutin ? "cutin" : "direct";
 }
 
+/** SR/UR: 期待演出（Tease）かカットイン昇格か — 同時には走らない */
+export type SrUrRevealMode = "tease" | "cutin";
+
+export const SR_UR_REVEAL_MODE_WEIGHTS = {
+  tease: 0.5,
+  cutin: 0.5,
+} as const;
+
+export function pickSrUrRevealMode(
+  isMissionStyle: boolean,
+  force?: SrUrRevealMode,
+): SrUrRevealMode {
+  if (force) return force;
+  if (isMissionStyle) return "tease";
+  return Math.random() < SR_UR_REVEAL_MODE_WEIGHTS.cutin ? "cutin" : "tease";
+}
+
 export const LR_RAINBOW_COLORS = [
   "#ff3366", "#ff8800", "#ffdd00", "#33dd66", "#3399ff", "#8844ff", "#ff44cc",
 ];

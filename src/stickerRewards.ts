@@ -11,7 +11,7 @@ import {
 
 export type { StickerRarity, RewardRarity } from "./rarityMeta";
 
-export type StickerCategory = "sumanai" | "youtube" | "kimitsu" | "doraemon" | "brainrot" | "saikyoou" | "minecraft";
+export type StickerCategory = "sumanai" | "youtube" | "kimitsu" | "doraemon" | "brainrot" | "saikyoou" | "minecraft" | "pokemon";
 export type RewardCategory = "daily" | StickerCategory;
 
 export interface EmojiReward {
@@ -47,6 +47,7 @@ export const STICKER_CATEGORIES: { id: RewardCategory; label: string }[] = [
   { id: "brainrot", label: "ブレインロット" },
   { id: "saikyoou", label: "最強王図鑑" },
   { id: "minecraft", label: "マインクラフト" },
+  { id: "pokemon", label: "ポケモン" },
 ];
 
 export const RARITY_LABELS: Record<RewardRarity, string> = Object.fromEntries(
@@ -146,16 +147,31 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "mc-zombie", label: "ゾンビ", message: "ゾンビ！", image: "/stickers/mc-zombie.png", category: "minecraft", rarity: "normal" },
   { kind: "sticker", id: "mc-warden", label: "ウォーデン", message: "ウォーデン！", image: "/stickers/mc-warden.png", category: "minecraft", rarity: "ultraRare" },
   { kind: "sticker", id: "mc-wither", label: "ウィザー", message: "ウィザー！", image: "/stickers/mc-wither.png", category: "minecraft", rarity: "superRare" },
-  { kind: "sticker", id: "mc-ender-dragon", label: "エンダードラゴン", message: "エンダードラゴン！", image: "/stickers/mc-ender-dragon.png", category: "minecraft", rarity: "ultraRare" },
+  { kind: "sticker", id: "ur-enderdragon", label: "エンダードラゴン", message: "エンダードラゴン！", image: "/stickers/ur-enderdragon.gif", category: "minecraft", rarity: "ultraRare", imageFit: "cover" },
   { kind: "sticker", id: "mc-skeleton", label: "スケルトン", message: "スケルトン！", image: "/stickers/mc-skeleton.png", category: "minecraft", rarity: "normal" },
   { kind: "sticker", id: "mc-chicken", label: "ニワトリ", message: "ニワトリ！", image: "/stickers/mc-chicken.png", category: "minecraft", rarity: "normal" },
   { kind: "sticker", id: "mc-drowned", label: "ドラウンド", message: "ドラウンド！", image: "/stickers/mc-drowned.png", category: "minecraft", rarity: "rare" },
   { kind: "sticker", id: "mc-spider", label: "クモ", message: "クモ！", image: "/stickers/mc-spider.png", category: "minecraft", rarity: "normal" },
-  { kind: "sticker", id: "lr-cyan-jacket", label: "すまない先生", message: "伝説の先生！", image: "/stickers/cyan-jacket.png", category: "sumanai", rarity: "legendary" },
-  { kind: "sticker", id: "lr-tanjiro", label: "たんじろう", message: "たんじろう伝説！", image: "/stickers/tanjiro.png", category: "kimitsu", rarity: "legendary" },
   { kind: "sticker", id: "lr-rengoku", label: "れんごく", message: "心を燃やせ！煉獄さん伝説！", image: "/stickers/lr-rengoku.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
-  { kind: "sticker", id: "lr-ouryu", label: "応龍", message: "応龍降臨！", image: "/stickers/ouryu.png", category: "saikyoou", rarity: "legendary" },
-  { kind: "sticker", id: "lr-ender-dragon", label: "エンダードラゴン", message: "エンダードラゴン伝説！", image: "/stickers/mc-ender-dragon.png", category: "minecraft", rarity: "legendary" },
+  { kind: "sticker", id: "lr-tanjiro", label: "たんじろう", message: "たんじろう伝説！", image: "/stickers/lr-tanjiro.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
+  { kind: "sticker", id: "lr-zenitu", label: "ぜんいつ", message: "ぜんいつ伝説！", image: "/stickers/lr-zenitu.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
+  { kind: "sticker", id: "lr-gekkouga", label: "ゲッコウガ", message: "ゲッコウガ伝説！", image: "/stickers/lr-gekkouga.gif", category: "pokemon", rarity: "legendary", imageFit: "cover" },
+  { kind: "sticker", id: "ur-fire", label: "ファイヤー", message: "ファイヤー！", image: "/stickers/ur-fire.png", category: "pokemon", rarity: "ultraRare" },
+  { kind: "sticker", id: "ur-thunder", label: "サンダー", message: "サンダー！", image: "/stickers/ur-thunder.png", category: "pokemon", rarity: "ultraRare" },
+  { kind: "sticker", id: "ur-freezer", label: "フリーザー", message: "フリーザー！", image: "/stickers/ur-freezer.png", category: "pokemon", rarity: "ultraRare" },
+  { kind: "sticker", id: "gengar", label: "ゲンガー", message: "ゲンガー！", image: "/stickers/gengar.png", category: "pokemon", rarity: "superRare" },
+  { kind: "sticker", id: "dragonite", label: "カイリュー", message: "カイリュー！", image: "/stickers/dragonite.png", category: "pokemon", rarity: "superRare" },
+  { kind: "sticker", id: "lucario", label: "ルカリオ", message: "ルカリオ！", image: "/stickers/lucario.png", category: "pokemon", rarity: "superRare" },
+  { kind: "sticker", id: "flareon", label: "ブースター", message: "ブースター！", image: "/stickers/flareon.png", category: "pokemon", rarity: "rare" },
+  { kind: "sticker", id: "vaporeon", label: "シャワーズ", message: "シャワーズ！", image: "/stickers/vaporeon.png", category: "pokemon", rarity: "rare" },
+  { kind: "sticker", id: "jolteon", label: "サンダース", message: "サンダース！", image: "/stickers/jolteon.png", category: "pokemon", rarity: "rare" },
+  { kind: "sticker", id: "pikachu", label: "ピカチュウ", message: "ピカチュウ！", image: "/stickers/pikachu.png", category: "pokemon", rarity: "rare" },
+  { kind: "sticker", id: "eevee", label: "イーブイ", message: "イーブイ！", image: "/stickers/eevee.png", category: "pokemon", rarity: "rare" },
+  { kind: "sticker", id: "poppo", label: "ポッポ", message: "ポッポ！", image: "/stickers/poppo.png", category: "pokemon", rarity: "normal" },
+  { kind: "sticker", id: "yadon", label: "ヤドン", message: "ヤドン！", image: "/stickers/yadon.png", category: "pokemon", rarity: "normal" },
+  { kind: "sticker", id: "koiking", label: "コイキング", message: "コイキング！", image: "/stickers/koiking.png", category: "pokemon", rarity: "normal" },
+  { kind: "sticker", id: "caterpie", label: "キャタピー", message: "キャタピー！", image: "/stickers/caterpie.png", category: "pokemon", rarity: "normal" },
+  { kind: "sticker", id: "psyduck", label: "コダック", message: "コダック！", image: "/stickers/psyduck.png", category: "pokemon", rarity: "normal" },
 ];
 
 export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
