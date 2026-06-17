@@ -83,6 +83,19 @@ export function daysUntilWeeklySpecialReward(fullDayStreak: number): number {
   return daysUntilSevenDayMilestone(fullDayStreak);
 }
 
+export type NearestStreakMilestone = {
+  kind: "threeDay" | "sevenDay";
+  daysUntil: number;
+};
+
+/** 次に近いストリークごほうび（3日 or 7日） */
+export function getNearestStreakMilestone(fullDayStreak: number): NearestStreakMilestone {
+  const threeDays = daysUntilThreeDayMilestone(fullDayStreak);
+  const sevenDays = daysUntilSevenDayMilestone(fullDayStreak);
+  if (sevenDays < threeDays) return { kind: "sevenDay", daysUntil: sevenDays };
+  return { kind: "threeDay", daysUntil: threeDays };
+}
+
 export function getStreak(history: Record<string, DayHistory>): number {
   let streak = 0;
   const today = new Date();
@@ -189,6 +202,7 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
   }).filter(Boolean).length;
 
   const fullDayStreak = getFullDayStreak(history);
+  const nearestMilestone = fullDayStreak >= 1 ? getNearestStreakMilestone(fullDayStreak) : null;
   const uniqueAlbum = dedupeStickerIds(stickerAlbum);
   const albumGroups = getAlbumCategoryGroups(stickerAlbum);
   const previewItem = previewId ? REWARD_LOOKUP[previewId] : null;
@@ -221,18 +235,20 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
             全部クリア {fullDayStreak}日連続 {fullDayStreak >= 7 ? "🎉" : ""}
           </div>
         )}
-        {fullDayStreak >= 1 && (
-          <div style={{ fontSize: 12, color: theme.category.blue, marginTop: 4, fontWeight: 700 }}>
-            {daysUntilThreeDayMilestone(fullDayStreak) === 0
-              ? "きょう、3日連続ごほうびのチャンス！"
-              : `3日ごほうびまで あと${daysUntilThreeDayMilestone(fullDayStreak)}日`}
-          </div>
-        )}
-        {fullDayStreak >= 1 && (
-          <div style={{ fontSize: 12, color: theme.category.purple, marginTop: 4, fontWeight: 700 }}>
-            {daysUntilSevenDayMilestone(fullDayStreak) === 0
-              ? "きょう、7日連続ごほうびのチャンス！"
-              : `7日ごほうびまで あと${daysUntilSevenDayMilestone(fullDayStreak)}日`}
+        {nearestMilestone && (
+          <div style={{
+            fontSize: 12,
+            marginTop: 4,
+            fontWeight: 700,
+            color: nearestMilestone.kind === "sevenDay" ? theme.category.purple : theme.category.blue,
+          }}>
+            {nearestMilestone.daysUntil === 0
+              ? nearestMilestone.kind === "sevenDay"
+                ? "きょう、7日連続ごほうびのチャンス！"
+                : "きょう、3日連続ごほうびのチャンス！"
+              : nearestMilestone.kind === "sevenDay"
+                ? `7日ごほうびまで あと${nearestMilestone.daysUntil}日`
+                : `3日ごほうびまで あと${nearestMilestone.daysUntil}日`}
           </div>
         )}
       </div>
