@@ -158,6 +158,7 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "lr-tanjiro", label: "たんじろう", message: "たんじろう伝説！", image: "/stickers/lr-tanjiro.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
   { kind: "sticker", id: "lr-zenitu", label: "ぜんいつ", message: "ぜんいつ伝説！", image: "/stickers/lr-zenitu.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
   { kind: "sticker", id: "lr-tengen", label: "LR宇髄天元", message: "宇髄天元伝説！", image: "/stickers/lr-tengen.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
+  { kind: "sticker", id: "lr-inosuke", label: "LR伊之助", message: "伊之助伝説！", image: "/stickers/lr-inosuke.gif", category: "kimitsu", rarity: "legendary", imageFit: "cover" },
   { kind: "sticker", id: "lr-gekkouga", label: "ゲッコウガ", message: "ゲッコウガ伝説！", image: "/stickers/lr-gekkouga.gif", category: "pokemon", rarity: "legendary", imageFit: "cover" },
   { kind: "sticker", id: "lr-megarucario", label: "メガルカリオ", message: "メガルカリオ伝説！", image: "/stickers/lr-megarucario.gif", category: "pokemon", rarity: "legendary", imageFit: "cover" },
   { kind: "sticker", id: "ur-fire", label: "ファイヤー", message: "ファイヤー！", image: "/stickers/ur-fire.png", category: "pokemon", rarity: "ultraRare" },
