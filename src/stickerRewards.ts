@@ -130,6 +130,7 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "bombaclot-crococlot", label: "ボンバクロット・クロコクロット", message: "ボンバクロット・クロコクロット！", image: "/stickers/bombaclot-crococlot.png", category: "brainrot", rarity: "rare" },
   { kind: "sticker", id: "meowl", label: "ミャウル", message: "ミャウル！", image: "/stickers/meowl.png", category: "brainrot", rarity: "superRare" },
   { kind: "sticker", id: "ryukku-nyukku-ryuuku", label: "リュック・ニュック・リューク", message: "リュック・ニュック・リューク！", image: "/stickers/ryukku-nyukku-ryuuku.png", category: "brainrot", rarity: "ultraRare" },
+  { kind: "sticker", id: "lr-brainrod", label: "ブレインロッド大集合", message: "ブレインロッド大集合！", image: "/stickers/lr-brainrod.gif", category: "brainrot", rarity: "legendary", imageFit: "cover" },
   { kind: "sticker", id: "ouryu", label: "応龍", message: "応龍！", image: "/stickers/ouryu.png", category: "saikyoou", rarity: "ultraRare" },
   { kind: "sticker", id: "fire-drake", label: "ファイアドレイク", message: "ファイアドレイク！", image: "/stickers/fire-drake.png", category: "saikyoou", rarity: "superRare" },
   { kind: "sticker", id: "heracles", label: "ヘラクレス", message: "ヘラクレス！", image: "/stickers/heracles.png", category: "saikyoou", rarity: "superRare" },
