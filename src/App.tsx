@@ -281,10 +281,14 @@ interface StoredState {
   homeTasks: Task[];
   history: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
+  taskCompletedAt?: Record<string, string>;
   gamePlayTimes?: Record<string, number>;
   dailyTreatClaimed?: Record<string, boolean>;
   dailyTreatPending?: Record<string, boolean>;
   fullDayBonusClaimed?: Record<string, boolean>;
+  deadlineFullDayCompletedAt?: Record<string, string>;
+  deadlineTreatClaimed?: Record<string, SpecialRewardFloor>;
+  deadlineTreatPending?: Record<string, SpecialRewardFloor>;
   lastWeeklyRewardStreak?: number;
   weeklyTreatPending?: Record<string, number>;
   lastThreeDayRewardStreak?: number;
@@ -327,6 +331,7 @@ interface PendingTreat {
   rewardFloor?: SpecialRewardFloor;
   missionTitle?: string;
   oneOffSpecialClaimKey?: string;
+  deadlineRewardFloor?: SpecialRewardFloor;
   weeklyMilestoneStreak?: number;
   threeDayMilestoneStreak?: number;
 }
@@ -357,6 +362,7 @@ function buildTreatQueue(
     dailySession?: SessionId;
     specialMissionEligible: boolean;
     fullDayBonusEligible: boolean;
+    deadlineRewardFloor?: SpecialRewardFloor;
     threeDayMilestone: boolean;
     threeDayMilestoneStreak?: number;
     weeklyMilestone: boolean;
@@ -372,6 +378,13 @@ function buildTreatQueue(
     queue.push({ mode: "specialMission", missionTitle: opts.missionTitle });
   }
   if (opts.fullDayBonusEligible) queue.push({ mode: "fullDayBonus" });
+  if (opts.deadlineRewardFloor) {
+    queue.push({
+      mode: "deadline",
+      rewardFloor: opts.deadlineRewardFloor,
+      deadlineRewardFloor: opts.deadlineRewardFloor,
+    });
+  }
   if (opts.threeDayMilestone && opts.threeDayMilestoneStreak) {
     queue.push({ mode: "threeDayStreak", threeDayMilestoneStreak: opts.threeDayMilestoneStreak });
   }
@@ -397,6 +410,22 @@ function isAllResolved(session: SessionId, allSessions: AllSessionTasks) {
   return visible.every((t) => isTaskResolved(done, skipped, t.id));
 }
 
+function isAllDayResolved(allSessions: AllSessionTasks, date = new Date()) {
+  return SESSION_IDS.every((sid) => (
+    !isSessionActiveOnDate(sid, date) || isAllResolved(sid, allSessions)
+  ));
+}
+
+function resolveDeadlineRewardFloor(completedAtIso?: string): SpecialRewardFloor | undefined {
+  if (!completedAtIso) return undefined;
+  const completedAt = new Date(completedAtIso);
+  if (Number.isNaN(completedAt.getTime())) return undefined;
+  const completedMinutes = completedAt.getHours() * 60 + completedAt.getMinutes();
+  if (completedMinutes <= 20 * 60 + 30) return "superRare";
+  if (completedMinutes <= 20 * 60 + 50) return "rare";
+  return undefined;
+}
+
 function fmtTaskTime(totalSec: number) {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
@@ -405,6 +434,13 @@ function fmtTaskTime(totalSec: number) {
 
 function fmtTaskTimeMs(ms: number) {
   return fmtTaskTime(Math.floor(ms / 1000));
+}
+
+function fmtCompletedAt(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return fmtTime(d);
 }
 
 function sumSessionBestTimes(
@@ -538,9 +574,11 @@ function loadStoredState(): StoredState {
         ),
         history: hydrated.history ?? {},
         bestTimes: hydrated.bestTimes,
+        taskCompletedAt: hydrated.taskCompletedAt,
         stickerAlbum: hydrated.stickerAlbum,
         dailyTreatClaimed: hydrated.dailyTreatClaimed,
         fullDayBonusClaimed: hydrated.fullDayBonusClaimed,
+        deadlineFullDayCompletedAt: hydrated.deadlineFullDayCompletedAt,
         lastWeeklyRewardStreak: hydrated.lastWeeklyRewardStreak,
         lastThreeDayRewardStreak: hydrated.lastThreeDayRewardStreak,
         favoriteMissions: hydrated.favoriteMissions,
@@ -1262,6 +1300,7 @@ export default function KeigoTaskApp() {
   const [homeApproved,    setHomeApproved]    = useState(stored.homeApproved);
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
   const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
+  const [taskCompletedAt, setTaskCompletedAt] = useState<Record<string, string>>(stored.taskCompletedAt ?? {});
   const [gamePlayTimes,  setGamePlayTimes]  = useState<Record<string, number>>(stored.gamePlayTimes ?? {});
   const [customTaskEmojis, setCustomTaskEmojis] = useState<string[]>(stored.customTaskEmojis ?? []);
   const [todayMission, setTodayMission] = useState<DailyMission | null>(() => {
@@ -1323,6 +1362,15 @@ export default function KeigoTaskApp() {
   const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
   const [dailyTreatPending, setDailyTreatPending] = useState<Record<string, boolean>>(stored.dailyTreatPending ?? {});
   const [fullDayBonusClaimed, setFullDayBonusClaimed] = useState<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
+  const [deadlineFullDayCompletedAt, setDeadlineFullDayCompletedAt] = useState<Record<string, string>>(
+    stored.deadlineFullDayCompletedAt ?? {},
+  );
+  const [deadlineTreatClaimed, setDeadlineTreatClaimed] = useState<Record<string, SpecialRewardFloor>>(
+    stored.deadlineTreatClaimed ?? {},
+  );
+  const [deadlineTreatPending, setDeadlineTreatPending] = useState<Record<string, SpecialRewardFloor>>(
+    stored.deadlineTreatPending ?? {},
+  );
   const [lastWeeklyRewardStreak, setLastWeeklyRewardStreak] = useState(stored.lastWeeklyRewardStreak ?? 0);
   const [weeklyTreatPending, setWeeklyTreatPending] = useState<Record<string, number>>(stored.weeklyTreatPending ?? {});
   const [lastThreeDayRewardStreak, setLastThreeDayRewardStreak] = useState(stored.lastThreeDayRewardStreak ?? 0);
@@ -1344,6 +1392,8 @@ export default function KeigoTaskApp() {
     stored.specialMissionRewardClaimed ?? {},
   );
   const oneOffSpecialClaimedRef = useRef<Record<string, boolean>>(stored.oneOffSpecialClaimed ?? {});
+  const deadlineTreatClaimedRef = useRef<Record<string, SpecialRewardFloor>>(stored.deadlineTreatClaimed ?? {});
+  const deadlineCollectedRef = useRef(false);
   const lastWeeklyRewardStreakRef = useRef(stored.lastWeeklyRewardStreak ?? 0);
   const weeklyCollectedRef = useRef(false);
   const lastThreeDayRewardStreakRef = useRef(stored.lastThreeDayRewardStreak ?? 0);
@@ -1498,10 +1548,14 @@ export default function KeigoTaskApp() {
       homeTasks,
       history,
       bestTimes,
+      taskCompletedAt,
       gamePlayTimes,
       dailyTreatClaimed,
       dailyTreatPending,
       fullDayBonusClaimed,
+      deadlineFullDayCompletedAt,
+      deadlineTreatClaimed,
+      deadlineTreatPending,
       lastWeeklyRewardStreak,
       weeklyTreatPending,
       lastThreeDayRewardStreak,
@@ -1526,8 +1580,10 @@ export default function KeigoTaskApp() {
     morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
     morningApproved, daytimeApproved, eveningApproved, homeApproved,
     morningTasks, daytimeTasks, eveningTasks, homeTasks,
-    history, bestTimes, gamePlayTimes,
-    dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, lastWeeklyRewardStreak, weeklyTreatPending, lastThreeDayRewardStreak, threeDayTreatPending, stickerAlbum,
+    history, bestTimes, taskCompletedAt, gamePlayTimes,
+    dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed,
+    deadlineFullDayCompletedAt, deadlineTreatClaimed, deadlineTreatPending,
+    lastWeeklyRewardStreak, weeklyTreatPending, lastThreeDayRewardStreak, threeDayTreatPending, stickerAlbum,
     customTaskEmojis, todayMission, favoriteMissions,
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
@@ -1742,6 +1798,21 @@ export default function KeigoTaskApp() {
           [sessionTreatKey(todayKey(), treatSession)]: true,
         }));
       }
+      if (closing?.mode === "deadline" && closing.deadlineRewardFloor) {
+        const dayKey = taskDayKey();
+        const floor = closing.deadlineRewardFloor;
+        if (deadlineCollectedRef.current) {
+          setDeadlineTreatClaimed((p) => ({ ...p, [dayKey]: floor }));
+          setDeadlineTreatPending((p) => {
+            if (!(dayKey in p)) return p;
+            const next = { ...p };
+            delete next[dayKey];
+            return next;
+          });
+        } else {
+          setDeadlineTreatPending((p) => ({ ...p, [dayKey]: floor }));
+        }
+      }
       if (closing?.mode === "weekly" && closing.weeklyMilestoneStreak) {
         const milestoneDay = todayKey();
         const milestoneStreak = closing.weeklyMilestoneStreak;
@@ -1775,6 +1846,7 @@ export default function KeigoTaskApp() {
       specialMissionCollectedRef.current = false;
       oneOffSpecialCollectedRef.current = false;
       dailyTreatCollectedRef.current = false;
+      deadlineCollectedRef.current = false;
       weeklyCollectedRef.current = false;
       threeDayCollectedRef.current = false;
       return null;
@@ -1803,6 +1875,52 @@ export default function KeigoTaskApp() {
     setTreatQueue(rest);
   };
 
+  const markTaskCompletedAt = (session: SessionId, taskId: number, completedAt = new Date()) => {
+    const task = sessionState[session].tasks.find((t) => t.id === taskId);
+    const key = taskTimeKey(session, taskId, task);
+    setTaskCompletedAt((prev) => ({ ...prev, [key]: completedAt.toISOString() }));
+  };
+
+  const clearTaskCompletedAt = (session: SessionId, taskId: number, task?: Task) => {
+    const key = taskTimeKey(session, taskId, task ?? sessionState[session].tasks.find((t) => t.id === taskId));
+    setTaskCompletedAt((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const clearDeadlineFullDayCompletion = () => {
+    const dayKey = taskDayKey();
+    setDeadlineFullDayCompletedAt((p) => {
+      if (!(dayKey in p)) return p;
+      const next = { ...p };
+      delete next[dayKey];
+      return next;
+    });
+    setDeadlineTreatPending((p) => {
+      if (!(dayKey in p)) return p;
+      const next = { ...p };
+      delete next[dayKey];
+      return next;
+    });
+    setDeadlineTreatClaimed((p) => {
+      if (!(dayKey in p)) return p;
+      const next = { ...p };
+      delete next[dayKey];
+      return next;
+    });
+  };
+
+  const maybeRecordDeadlineFullDayCompletion = (allSessions: AllSessionTasks, completedAt = new Date()) => {
+    if (!isAllDayResolved(allSessions, completedAt)) return;
+    const dayKey = taskDayKey(completedAt);
+    setDeadlineFullDayCompletedAt((prev) => (
+      prev[dayKey] ? prev : { ...prev, [dayKey]: completedAt.toISOString() }
+    ));
+  };
+
   const redoTask = (
     session: SessionId,
     taskId: number,
@@ -1813,6 +1931,8 @@ export default function KeigoTaskApp() {
     const next = new Set(done);
     next.delete(taskId);
     setDone(next);
+    clearTaskCompletedAt(session, taskId);
+    clearDeadlineFullDayCompletion();
     resetSessionApproval(session);
     cancelWorkTask();
     setActiveWorkTask({ session, taskId });
@@ -1879,6 +1999,7 @@ export default function KeigoTaskApp() {
       nextDone = new Set(done);
       nextDone.add(taskId);
       setDone(nextDone);
+      markTaskCompletedAt(session, taskId);
       setFloatColor(FLOAT_COLORS[Math.floor(Math.random() * FLOAT_COLORS.length)]);
       setJustChecked(taskId);
       setTimeout(() => setJustChecked(null), 1350);
@@ -1897,6 +2018,9 @@ export default function KeigoTaskApp() {
         fireOneOffSpecialCelebration(session, task);
       }
     } else {
+      maybeRecordDeadlineFullDayCompletion(getAllSessionTasks({
+        [session]: { done: nextDone, skipped: nextSkipped },
+      }));
       maybeCelebrate(session, nextDone, nextSkipped, label);
     }
   };
@@ -2114,6 +2238,7 @@ export default function KeigoTaskApp() {
   pendingTreatRef.current = pendingTreat;
   specialMissionRewardClaimedRef.current = specialMissionRewardClaimed;
   oneOffSpecialClaimedRef.current = oneOffSpecialClaimed;
+  deadlineTreatClaimedRef.current = deadlineTreatClaimed;
   lastWeeklyRewardStreakRef.current = lastWeeklyRewardStreak;
   lastThreeDayRewardStreakRef.current = lastThreeDayRewardStreak;
 
@@ -2157,6 +2282,18 @@ export default function KeigoTaskApp() {
         if (!p[key]) return p;
         const next = { ...p };
         delete next[key];
+        return next;
+      });
+    } else if (treat.mode === "deadline" && treat.deadlineRewardFloor) {
+      const dayKey = taskDayKey();
+      if (deadlineTreatClaimedRef.current[dayKey]) return;
+      deadlineCollectedRef.current = true;
+      const floor = treat.deadlineRewardFloor;
+      setDeadlineTreatClaimed((p) => ({ ...p, [dayKey]: floor }));
+      setDeadlineTreatPending((p) => {
+        if (!(dayKey in p)) return p;
+        const next = { ...p };
+        delete next[dayKey];
         return next;
       });
     } else if (treat.mode === "weekly" && treat.weeklyMilestoneStreak) {
@@ -2204,6 +2341,28 @@ export default function KeigoTaskApp() {
       return next;
     });
     openTreatQueue([{ mode: "daily", session }]);
+  };
+
+  const hasUnclaimedDeadlineReward = () => {
+    const dayKey = taskDayKey();
+    if (deadlineTreatClaimed[dayKey]) return false;
+    return deadlineTreatPending[dayKey] !== undefined;
+  };
+
+  const openDeadlineReward = () => {
+    const dayKey = taskDayKey();
+    const floor = deadlineTreatPending[dayKey];
+    if (!floor) return;
+    if (deadlineTreatClaimedRef.current[dayKey]) return;
+    if (pendingTreatRef.current?.mode === "deadline") return;
+    deadlineCollectedRef.current = false;
+    setDeadlineTreatPending((p) => {
+      if (!(dayKey in p)) return p;
+      const next = { ...p };
+      delete next[dayKey];
+      return next;
+    });
+    openTreatQueue([{ mode: "deadline", rewardFloor: floor, deadlineRewardFloor: floor }]);
   };
 
   const hasUnclaimedSessionDailyReward = (session: SessionId) => {
@@ -2557,6 +2716,12 @@ export default function KeigoTaskApp() {
     const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
     const isFullDayToday = isFullDay(updatedDay, new Date());
     const fullDayBonusEligible = isFullDayToday && !fullDayBonusClaimed[today];
+    const deadlineRewardFloor = isFullDayToday && !deadlineTreatClaimed[today]
+      ? resolveDeadlineRewardFloor(deadlineFullDayCompletedAt[today])
+      : undefined;
+    const deadlineRewardToQueue = deadlineRewardFloor && deadlineTreatPending[today] === undefined
+      ? deadlineRewardFloor
+      : undefined;
     const fullDayStreak = getFullDayStreak(newHistory);
     const { lastThreeDay, lastWeekly } = normalizeStreakRewardBaseline(
       fullDayStreak,
@@ -2579,6 +2744,7 @@ export default function KeigoTaskApp() {
       dailySession: parentSession,
       specialMissionEligible: false,
       fullDayBonusEligible,
+      deadlineRewardFloor: deadlineRewardToQueue,
       threeDayMilestone,
       threeDayMilestoneStreak: threeDayMilestoneEligible ? fullDayStreak : undefined,
       weeklyMilestone,
@@ -2657,6 +2823,7 @@ export default function KeigoTaskApp() {
       delete updated[key];
       return updated;
     });
+    clearTaskCompletedAt(session, id, task ?? base.find((t) => t.id === id));
     if (activeWorkTask?.session === session && activeWorkTask.taskId === id) {
       resetWorkTimer();
       setActiveWorkTask(null);
@@ -2858,6 +3025,9 @@ export default function KeigoTaskApp() {
       const nextSkipped = new Set(skipped);
       nextSkipped.delete(id);
       setSkipped(nextSkipped);
+      if (!isAllDayResolved(getAllSessionTasks({ [session]: { done, skipped: nextSkipped } }))) {
+        clearDeadlineFullDayCompletion();
+      }
       return;
     }
 
@@ -2870,12 +3040,16 @@ export default function KeigoTaskApp() {
       nextDone = new Set(done);
       nextDone.delete(id);
       setDone(nextDone);
+      clearTaskCompletedAt(session, id);
     }
 
     if (activeWorkTask?.session === session && activeWorkTask.taskId === id) {
       cancelWorkTask();
     }
 
+    maybeRecordDeadlineFullDayCompletion(getAllSessionTasks({
+      [session]: { done: nextDone, skipped: nextSkipped },
+    }));
     maybeCelebrate(session, nextDone, nextSkipped, label);
   };
 
@@ -3075,6 +3249,14 @@ export default function KeigoTaskApp() {
                   openTreatQueue([{ mode: "threeDayStreak", threeDayMilestoneStreak: 3 }]);
                   setShowMenu(false);
                 } },
+                { icon: "⏰", label: "20:50締切 R確定ごほうびテスト", action: () => {
+                  openTreatQueue([{ mode: "deadline", rewardFloor: "rare", deadlineRewardFloor: "rare" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "⏱️", label: "20:30締切 SR確定ごほうびテスト", action: () => {
+                  openTreatQueue([{ mode: "deadline", rewardFloor: "superRare", deadlineRewardFloor: "superRare" }]);
+                  setShowMenu(false);
+                } },
                 { icon: "💙", label: "レア抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "rare" }]); setShowMenu(false); } },
                 { icon: "💜", label: "SR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "superRare" }]); setShowMenu(false); } },
                 { icon: "🧡", label: "UR抽選テスト", action: () => { openTreatQueue([{ mode: "daily", devForceTier: "ultraRare" }]); setShowMenu(false); } },
@@ -3268,6 +3450,7 @@ export default function KeigoTaskApp() {
                 justChecked={justChecked}
                 floatColor={floatColor}
                 bestTimes={bestTimes}
+                taskCompletedAt={taskCompletedAt}
                 activeWorkTask={activeWorkTask}
                 workTimerElapsed={workTimerElapsed}
                 workTimerRunning={workTimerRunning}
@@ -3339,6 +3522,8 @@ export default function KeigoTaskApp() {
                 onOpenMissionParentCheck={() => openMissionParentCheck(sid)}
                 showDailyRewardButton={hasUnclaimedSessionDailyReward(sid)}
                 onOpenDailyReward={() => openSessionDailyReward(sid)}
+                showDeadlineRewardButton={hasUnclaimedDeadlineReward()}
+                onOpenDeadlineReward={openDeadlineReward}
                 showWeeklyRewardButton={hasUnclaimedWeeklyReward()}
                 onOpenWeeklyReward={openWeeklyReward}
                 showThreeDayRewardButton={hasUnclaimedThreeDayReward()}
@@ -4881,6 +5066,7 @@ interface TaskScreenProps {
   tasks: Task[]; done: Set<number>; skipped: Set<number>; justChecked: number | null;
   floatColor: string;
   bestTimes: Record<string, number>;
+  taskCompletedAt: Record<string, string>;
   activeWorkTask: ActiveWorkTask | null;
   workTimerElapsed: number;
   workTimerRunning: boolean;
@@ -4912,6 +5098,8 @@ interface TaskScreenProps {
   onOpenMissionParentCheck: () => void;
   showDailyRewardButton: boolean;
   onOpenDailyReward: () => void;
+  showDeadlineRewardButton: boolean;
+  onOpenDeadlineReward: () => void;
   showWeeklyRewardButton: boolean;
   onOpenWeeklyReward: () => void;
   showThreeDayRewardButton: boolean;
@@ -4925,12 +5113,13 @@ interface TaskScreenProps {
 
 function TaskScreen({
   session, allSessionTasks, interactionLocked = false, label, timeLabel, tasks, done, skipped, justChecked, floatColor,
-  bestTimes, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
+  bestTimes, taskCompletedAt, activeWorkTask, workTimerElapsed, workTimerRunning, newRecordTaskId,
   onReorder, onAddTask, onEditTask, onDeleteTask, onSkipTask, onQuickCompleteTask, onSelectTask, onStartTimer, onPauseTimer, onCancelTask, onCompleteTask,
   onClearBestTime, customTaskEmojis, onAddCustomTaskEmoji,
   todayMission, missionCardStatus, activeMissionSessions, missionDoneSessions, missionApprovedSessions,
   showEveningMissionNudge, onMissionDone, onMissionUndo, onMissionSetup, onOpenMissionReward,
   showDailyRewardButton, onOpenDailyReward, onOpenMissionParentCheck,
+  showDeadlineRewardButton, onOpenDeadlineReward,
   showWeeklyRewardButton, onOpenWeeklyReward,
   showThreeDayRewardButton, onOpenThreeDayReward,
   showOneOffSpecialRewardButton, onOpenOneOffSpecialReward,
@@ -5043,6 +5232,7 @@ function TaskScreen({
                   isNewRecord={newRecordTaskId === task.id}
                   floatColor={floatColor}
                   bestTime={bestTimes[taskTimeKey(session, task.id, task)]}
+                  completedAt={taskCompletedAt[taskTimeKey(session, task.id, task)]}
                   liveElapsed={isActive ? workTimerElapsed : undefined}
                   timerRunning={isActive && workTimerRunning}
                   interactionLocked={interactionLocked}
@@ -5106,6 +5296,7 @@ function TaskScreen({
           isActive={false}
           isNewRecord={false}
           floatColor={floatColor}
+          completedAt={undefined}
           isGameRow
           gamePlaySec={gamePlaySec}
           interactionLocked={interactionLocked}
@@ -5151,6 +5342,45 @@ function TaskScreen({
               }}
             >
               ごほうび！
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDeadlineRewardButton && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.orange}55`,
+          backgroundColor: `${theme.category.orange}12`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>⏰</span>
+            <span style={{
+              fontSize: 15,
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              color: theme.text.primary,
+            }}>
+              締切クリア ごほうび
+            </span>
+            <button
+              type="button"
+              onClick={onOpenDeadlineReward}
+              style={{
+                flexShrink: 0,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: theme.category.orange,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              もらう！
             </button>
           </div>
         </div>
@@ -5469,7 +5699,7 @@ const addBtnStyle: CSSProperties = {
 
 interface TaskRowProps {
   task: Task; isDone: boolean; isSkipped: boolean; isJustChecked: boolean; isActive: boolean; isNewRecord: boolean;
-  floatColor: string; bestTime?: number; liveElapsed?: number; gamePlaySec?: number; isGameRow?: boolean;
+  floatColor: string; bestTime?: number; completedAt?: string; liveElapsed?: number; gamePlaySec?: number; isGameRow?: boolean;
   timerRunning: boolean; interactionLocked?: boolean;
   onSelect: () => void; onDelete: () => void; onSkip: () => void; onQuickComplete: () => void; onLongPress: () => void;
   swipeMode: SwipeMode | null; onSwipeOpen: (mode: SwipeMode) => void; onSwipeClose: () => void;
@@ -5826,10 +6056,10 @@ function TaskTimerPanel({
 }
 
 function TaskRow({
-  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, liveElapsed, gamePlaySec,
+  task, isDone, isSkipped, isJustChecked, isActive, isNewRecord, floatColor, bestTime, completedAt, liveElapsed, gamePlaySec,
   isGameRow = false, interactionLocked = false, onSelect,
   confirmDeleteTime, onTimeBadgeTap, onConfirmDeleteTime, onCancelDeleteTime,
-}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "liveElapsed" | "gamePlaySec" | "isGameRow" | "interactionLocked" | "confirmDeleteTime"> & {
+}: Pick<TaskRowProps, "task" | "isDone" | "isSkipped" | "isJustChecked" | "isActive" | "isNewRecord" | "floatColor" | "bestTime" | "completedAt" | "liveElapsed" | "gamePlaySec" | "isGameRow" | "interactionLocked" | "confirmDeleteTime"> & {
   onSelect: () => void;
   onTimeBadgeTap: () => void; onConfirmDeleteTime: () => void; onCancelDeleteTime: () => void;
 }) {
@@ -5868,6 +6098,7 @@ function TaskRow({
 
   const resolved = isDone || isSkipped;
   const canTap = !isSkipped && !interactionLocked;
+  const completedTimeLabel = isDone ? fmtCompletedAt(completedAt) : "";
 
   return (
     <div
@@ -5968,6 +6199,21 @@ function TaskRow({
           padding: "3px 7px", borderRadius: 6, border: `1px solid ${theme.stroke.secondary}`,
         }}>
           もう一度
+        </span>
+      )}
+      {completedTimeLabel && liveElapsed === undefined && (
+        <span style={{
+          flexShrink: 0,
+          fontSize: 11,
+          fontWeight: 800,
+          fontVariantNumeric: "tabular-nums",
+          color: theme.category.green,
+          backgroundColor: `${theme.category.green}14`,
+          padding: "4px 7px",
+          borderRadius: 8,
+          whiteSpace: "nowrap",
+        }}>
+          完了 {completedTimeLabel}
         </span>
       )}
       {liveElapsed !== undefined && (

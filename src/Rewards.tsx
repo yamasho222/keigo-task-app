@@ -583,6 +583,7 @@ function TreatOverlay({
   const upgradeTimerRef = useRef<number | null>(null);
   const isWeekly = mode === "weekly";
   const isThreeDayStreak = mode === "threeDayStreak";
+  const isDeadline = mode === "deadline";
   const isFullDayBonus = mode === "fullDayBonus";
   const isSpecialMission = mode === "specialMission";
   const isOneOffSpecial = mode === "oneOffSpecial";
@@ -753,18 +754,20 @@ function TreatOverlay({
     ? "legendary" as const
     : isWeekly
       ? "premium" as const
-      : isThreeDayStreak || isFullDayBonus
+      : isDeadline || isThreeDayStreak || isFullDayBonus
         ? "premium" as const
         : isMissionStyle
           ? "mission" as const
           : "default" as const;
   const chestSize = isLegendaryReward || devForceTier === "legendary"
     ? 120
-    : isWeekly ? 100 : isThreeDayStreak ? 92 : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
+    : isWeekly ? 100 : isDeadline ? 94 : isThreeDayStreak ? 92 : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
   const title = isWeekly
     ? "🎊 7日連続 特別ごほうび！ 🎊"
     : isThreeDayStreak
       ? "🎉 3日連続 ごほうび！ 🎉"
+      : isDeadline
+        ? "⏰ 締切クリア ごほうび！ ⏰"
       : isFullDayBonus
       ? "🌟 1日全部クリア！ 🌟"
       : isOneOffSpecial
@@ -777,6 +780,10 @@ function TreatOverlay({
     ? "7日連続ですべてクリア！ウルトラレア以上確定！"
     : isThreeDayStreak
       ? "3日連続ですべてクリア！レア以上確定！"
+      : isDeadline
+        ? rewardFloor === "superRare"
+          ? "20:30までに全部クリア！スーパーレア以上確定！"
+          : "20:50までに全部クリア！レア以上確定！"
       : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
       : isOneOffSpecial
@@ -789,6 +796,8 @@ function TreatOverlay({
     ? theme.category.purple
     : isThreeDayStreak
       ? theme.category.blue
+      : isDeadline
+        ? theme.category.orange
       : isFullDayBonus
       ? theme.category.orange
       : isMissionStyle

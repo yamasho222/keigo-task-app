@@ -3,6 +3,8 @@ import {
   type RewardRarity,
   RARITY_META,
   TIER_WEIGHTS_DAILY,
+  TIER_WEIGHTS_DEADLINE_RARE_PLUS,
+  TIER_WEIGHTS_DEADLINE_SR_PLUS,
   TIER_WEIGHTS_FULL_DAY,
   TIER_WEIGHTS_ONE_OFF_SPECIAL,
   TIER_WEIGHTS_THREE_DAY,
@@ -355,6 +357,16 @@ export function pickThreeDayReward(collectedIds: string[]): StickerReward {
   return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_THREE_DAY));
 }
 
+export function pickDeadlineReward(
+  collectedIds: string[],
+  rewardFloor: SpecialRewardFloor = "rare",
+): StickerReward {
+  const tier = rewardFloor === "superRare"
+    ? rollWeightedTier(TIER_WEIGHTS_DEADLINE_SR_PLUS)
+    : rollWeightedTier(TIER_WEIGHTS_DEADLINE_RARE_PLUS);
+  return pickFromStickerTier(collectedIds, tier);
+}
+
 export function pickSpecialMissionReward(
   collectedIds: string[],
   rewardFloor: SpecialRewardFloor = "rare",
@@ -411,10 +423,11 @@ export function pickTreatReward(
 ): RewardItem {
   if (mode === "fullDayBonus") return pickFullDayBonusReward(collectedIds);
   if (mode === "threeDayStreak") return pickThreeDayReward(collectedIds);
+  if (mode === "deadline") return pickDeadlineReward(collectedIds, options?.rewardFloor ?? "rare");
   if (mode === "weekly") return pickWeeklyReward(collectedIds);
   if (mode === "specialMission") return pickSpecialMissionReward(collectedIds, options?.rewardFloor ?? "rare");
   if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds, options?.rewardFloor ?? "rare");
   return pickDailyReward(collectedIds);
 }
 
-export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "threeDayStreak" | "specialMission" | "oneOffSpecial";
+export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "threeDayStreak" | "deadline" | "specialMission" | "oneOffSpecial";

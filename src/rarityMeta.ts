@@ -49,6 +49,18 @@ export const TIER_WEIGHTS_THREE_DAY: Record<"rare" | "superRare" | "ultraRare" |
   legendary: 0.02,
 };
 
+/** 20:50まで全部クリア — レア以上確定 */
+export const TIER_WEIGHTS_DEADLINE_RARE_PLUS: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
+  ...TIER_WEIGHTS_FULL_DAY,
+};
+
+/** 20:30まで全部クリア — SR以上確定 */
+export const TIER_WEIGHTS_DEADLINE_SR_PLUS: Record<"superRare" | "ultraRare" | "legendary", number> = {
+  superRare: 0.65,
+  ultraRare: 0.28,
+  legendary: 0.07,
+};
+
 export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraRare", number> = {
   rare: 0.55,
   superRare: 0.30,
