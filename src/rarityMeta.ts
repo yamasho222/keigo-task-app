@@ -26,27 +26,27 @@ export const RARITY_META: Record<StickerRarity, {
 
 /** 日次シール抽選（絵文字30%の後） */
 export const TIER_WEIGHTS_DAILY: Record<StickerRarity, number> = {
-  normal: 0.36,
+  normal: 0.353,
   rare: 0.44,
   superRare: 0.15,
-  ultraRare: 0.05,
-  legendary: 0.002,
+  ultraRare: 0.047,
+  legendary: 0.01,
 };
 
 /** 1日全部クリアボーナス — レア以上確定 */
 export const TIER_WEIGHTS_FULL_DAY: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
   rare: 0.50,
   superRare: 0.35,
-  ultraRare: 0.14,
-  legendary: 0.01,
+  ultraRare: 0.12,
+  legendary: 0.03,
 };
 
 /** 3日連続ごほうび — レア以上確定 */
 export const TIER_WEIGHTS_THREE_DAY: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
   rare: 0.55,
   superRare: 0.32,
-  ultraRare: 0.11,
-  legendary: 0.02,
+  ultraRare: 0.08,
+  legendary: 0.05,
 };
 
 /** 20:50まで全部クリア — レア以上確定 */
@@ -57,8 +57,8 @@ export const TIER_WEIGHTS_DEADLINE_RARE_PLUS: Record<"rare" | "superRare" | "ult
 /** 20:30まで全部クリア — SR以上確定 */
 export const TIER_WEIGHTS_DEADLINE_SR_PLUS: Record<"superRare" | "ultraRare" | "legendary", number> = {
   superRare: 0.65,
-  ultraRare: 0.28,
-  legendary: 0.07,
+  ultraRare: 0.23,
+  legendary: 0.12,
 };
 
 export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraRare", number> = {
@@ -69,8 +69,8 @@ export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraR
 
 /** 7日連続ごほうび — UR以上確定 */
 export const TIER_WEIGHTS_WEEKLY: Record<"ultraRare" | "legendary", number> = {
-  ultraRare: 0.72,
-  legendary: 0.28,
+  ultraRare: 0.60,
+  legendary: 0.40,
 };
 
 export type LegendaryRevealMode = "cutin" | "direct";
