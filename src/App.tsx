@@ -50,6 +50,7 @@ import {
   resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
   maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
+  specialRewardFloorCompact, specialRewardFloorSetupHint,
 } from "./sharedTasks";
 
 // ── Types & Data ──────────────────────────────────────
@@ -3564,6 +3565,7 @@ export default function KeigoTaskApp() {
             emoji={oneOffSpecialAwaitingParent.emoji}
             title={oneOffSpecialAwaitingParent.title}
             phaseLabel={SESSION_META[oneOffSpecialAwaitingParent.session].label}
+            rewardFloor={oneOffSpecialAwaitingParent.rewardFloor}
             completedAt={oneOffSpecialCompletedAt}
             approved={oneOffSpecialStampApproved}
             onApprove={handleOneOffSpecialApprove}
@@ -4478,7 +4480,6 @@ function TaskListScreen({
           <TaskEditForm
             key={`list-add-${addMode}`}
             header={addHeaderLabel}
-            hint={addMode === "special" ? "クリアするとレア以上のシールがもらえるよ（親の確認が必要）" : undefined}
             initialTitle=""
             initialEmoji="🎯"
           isSpecialMission={addMode === "special"}
@@ -4873,8 +4874,10 @@ function TaskEditForm({
       {header && (
         <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>{header}</div>
       )}
-      {hint && (
-        <div style={{ fontSize: 11, color: theme.text.tertiary, lineHeight: 1.45 }}>{hint}</div>
+      {(hint || isSpecialMission) && (
+        <div style={{ fontSize: 11, color: theme.text.tertiary, lineHeight: 1.45 }}>
+          {isSpecialMission ? specialRewardFloorSetupHint(specialRewardFloor) : hint}
+        </div>
       )}
       <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>おすすめ</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -4950,8 +4953,11 @@ function TaskEditForm({
       )}
       {isSpecialMission && (
         <div style={{
-          display: "flex", gap: 8,
-          padding: 8, borderRadius: 10,
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: 6,
+          padding: 8,
+          borderRadius: 10,
           border: `1px solid ${theme.stroke.tertiary}`,
           backgroundColor: theme.fill.quaternary,
         }}>
@@ -4959,11 +4965,11 @@ function TaskEditForm({
             type="button"
             onClick={() => setSpecialRewardFloor("rare")}
             style={{
-              flex: 1, padding: "9px 8px", borderRadius: 9, cursor: "pointer",
+              padding: "9px 6px", borderRadius: 9, cursor: "pointer",
               border: specialRewardFloor === "rare" ? `2px solid ${theme.category.orange}` : `1px solid ${theme.stroke.secondary}`,
               backgroundColor: specialRewardFloor === "rare" ? `${theme.category.orange}16` : theme.bg.editor,
               color: specialRewardFloor === "rare" ? theme.category.orange : theme.text.secondary,
-              fontSize: 12, fontWeight: 800,
+              fontSize: 11, fontWeight: 800, lineHeight: 1.35,
             }}
           >
             レア以上
@@ -4972,14 +4978,27 @@ function TaskEditForm({
             type="button"
             onClick={() => setSpecialRewardFloor("superRare")}
             style={{
-              flex: 1, padding: "9px 8px", borderRadius: 9, cursor: "pointer",
+              padding: "9px 6px", borderRadius: 9, cursor: "pointer",
               border: specialRewardFloor === "superRare" ? `2px solid ${theme.category.purple}` : `1px solid ${theme.stroke.secondary}`,
               backgroundColor: specialRewardFloor === "superRare" ? `${theme.category.purple}16` : theme.bg.editor,
               color: specialRewardFloor === "superRare" ? theme.category.purple : theme.text.secondary,
-              fontSize: 12, fontWeight: 800,
+              fontSize: 11, fontWeight: 800, lineHeight: 1.35,
             }}
           >
             スーパーレア以上
+          </button>
+          <button
+            type="button"
+            onClick={() => setSpecialRewardFloor("ultraRare")}
+            style={{
+              padding: "9px 6px", borderRadius: 9, cursor: "pointer",
+              border: specialRewardFloor === "ultraRare" ? `2px solid ${theme.category.orange}` : `1px solid ${theme.stroke.secondary}`,
+              backgroundColor: specialRewardFloor === "ultraRare" ? `${theme.category.orange}16` : theme.bg.editor,
+              color: specialRewardFloor === "ultraRare" ? theme.category.orange : theme.text.secondary,
+              fontSize: 11, fontWeight: 800, lineHeight: 1.35,
+            }}
+          >
+            ウルトラレア以上
           </button>
         </div>
       )}
@@ -5558,7 +5577,6 @@ function TaskScreen({
                 ? "きょうだけのタスク"
                 : "レギュラータスク"
           }
-          hint={addMode === "special" ? "クリアするとレア以上のシールがもらえるよ（親の確認が必要）" : undefined}
           initialTitle=""
           initialEmoji={addMode === "special" ? "🎯" : "📝"}
           isSpecialMission={addMode === "special"}
@@ -6179,6 +6197,15 @@ function TaskRow({
             backgroundColor: `${theme.category.orange}18`, padding: "2px 6px", borderRadius: 6,
           }}>
             特別
+          </span>
+        )}
+        {task.scope === "special" && (
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 800, color: theme.text.secondary,
+            backgroundColor: theme.fill.quaternary, padding: "2px 6px", borderRadius: 6,
+            border: `1px solid ${theme.stroke.tertiary}`,
+          }}>
+            {specialRewardFloorCompact(task.specialRewardFloor)}
           </span>
         )}
         {task.scope === "today" && (

@@ -8,6 +8,7 @@ import {
   TIER_WEIGHTS_DEADLINE_UR_PLUS,
   TIER_WEIGHTS_FULL_DAY,
   TIER_WEIGHTS_ONE_OFF_SPECIAL,
+  TIER_WEIGHTS_ONE_OFF_SPECIAL_UR_PLUS,
   TIER_WEIGHTS_THREE_DAY,
   TIER_WEIGHTS_WEEKLY,
 } from "./rarityMeta";
@@ -385,6 +386,9 @@ export function pickOneOffSpecialReward(
   collectedIds: string[],
   rewardFloor: SpecialRewardFloor = "rare",
 ): StickerReward {
+  if (rewardFloor === "ultraRare") {
+    return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_ONE_OFF_SPECIAL_UR_PLUS));
+  }
   const tier = rewardFloor === "superRare"
     ? rollWeightedTier(ONE_OFF_SPECIAL_SR_PLUS_WEIGHTS)
     : rollWeightedTier(TIER_WEIGHTS_ONE_OFF_SPECIAL);

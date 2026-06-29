@@ -3,6 +3,26 @@ export type SessionId = "morning" | "daytime" | "home" | "evening";
 export type TaskScope = "regular" | "today" | "special";
 export type SpecialRewardFloor = "rare" | "superRare" | "ultraRare";
 
+export function specialRewardFloorLabel(floor: SpecialRewardFloor = "rare"): string {
+  if (floor === "ultraRare") return "ウルトラレア以上";
+  if (floor === "superRare") return "スーパーレア以上";
+  return "レア以上";
+}
+
+export function specialRewardFloorCompact(floor?: SpecialRewardFloor): string {
+  if (floor === "ultraRare") return "UR+";
+  if (floor === "superRare") return "SR+";
+  return "R+";
+}
+
+export function specialRewardFloorParentHint(floor: SpecialRewardFloor = "rare"): string {
+  return `クリアすると${specialRewardFloorLabel(floor)}のシールがもらえるよ！`;
+}
+
+export function specialRewardFloorSetupHint(floor: SpecialRewardFloor = "rare"): string {
+  return `クリアすると${specialRewardFloorLabel(floor)}のシールがもらえるよ（親の確認が必要）`;
+}
+
 export interface Task {
   id: number;
   title: string;

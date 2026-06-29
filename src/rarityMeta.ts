@@ -73,6 +73,12 @@ export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraR
   ultraRare: 0.15,
 };
 
+/** 単発特別ミッション — UR以上確定 */
+export const TIER_WEIGHTS_ONE_OFF_SPECIAL_UR_PLUS: Record<"ultraRare" | "legendary", number> = {
+  ultraRare: 0.70,
+  legendary: 0.30,
+};
+
 /** 7日連続ごほうび — UR以上確定 */
 export const TIER_WEIGHTS_WEEKLY: Record<"ultraRare" | "legendary", number> = {
   ultraRare: 0.60,

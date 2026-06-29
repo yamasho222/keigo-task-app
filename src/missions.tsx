@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { theme } from "./theme";
 import { MISSION_EMOJIS, MISSION_TEMPLATES, type MissionTemplate } from "./missionTemplates";
-import { SESSION_SHORT_LABELS, type SessionId, type SpecialRewardFloor } from "./sharedTasks";
+import { SESSION_SHORT_LABELS, type SessionId, type SpecialRewardFloor, specialRewardFloorParentHint } from "./sharedTasks";
 import {
   type MissionCardStatus,
   type MissionOverallStatus,
@@ -823,6 +823,7 @@ export function ShowParentOneOffScreen({
   emoji,
   title,
   phaseLabel,
+  rewardFloor = "rare",
   completedAt,
   approved,
   onApprove,
@@ -832,6 +833,7 @@ export function ShowParentOneOffScreen({
   emoji: string;
   title: string;
   phaseLabel: string;
+  rewardFloor?: SpecialRewardFloor;
   completedAt: string;
   approved: boolean;
   onApprove: () => void;
@@ -883,7 +885,7 @@ export function ShowParentOneOffScreen({
         backgroundColor: theme.fill.quaternary, border: `1px solid ${theme.stroke.tertiary}`,
         fontSize: 13, color: theme.text.secondary,
       }}>
-        クリアするとレア以上のシールがもらえるよ！
+        {specialRewardFloorParentHint(rewardFloor)}
       </div>
 
       {approved && (

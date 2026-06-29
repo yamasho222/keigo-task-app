@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { theme } from "./theme";
 import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
 import { pickLegendaryRevealMode, pickSrUrRevealMode, type LegendaryRevealMode, type SrUrRevealMode } from "./rarityMeta";
-import type { SpecialRewardFloor } from "./sharedTasks";
+import { specialRewardFloorLabel, type SpecialRewardFloor } from "./sharedTasks";
 import {
   pickTeaseVariant, shouldPlayTease,
   type TeaseVariant, type TeaseVariantId, type TeaseTier,
@@ -789,9 +789,13 @@ function TreatOverlay({
       : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
       : isOneOffSpecial
-        ? missionTitle ? `${missionTitle} — クリア！` : "ミッション達成！レア以上のシール！"
+        ? missionTitle
+          ? `${missionTitle} — クリア！`
+          : `ミッション達成！${specialRewardFloorLabel(rewardFloor)}のシール！`
         : isSpecialMission
-          ? missionTitle ? `${missionTitle} — クリア！` : "ミッション達成！レア以上のシール！"
+          ? missionTitle
+            ? `${missionTitle} — クリア！`
+            : `ミッション達成！${specialRewardFloorLabel(rewardFloor)}のシール！`
           : "この時間のやること、全部クリア！";
 
   const titleColor = isWeekly
