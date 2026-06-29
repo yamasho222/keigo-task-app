@@ -1,7 +1,7 @@
 export type SessionId = "morning" | "daytime" | "home" | "evening";
 
 export type TaskScope = "regular" | "today" | "special";
-export type SpecialRewardFloor = "rare" | "superRare";
+export type SpecialRewardFloor = "rare" | "superRare" | "ultraRare";
 
 export interface Task {
   id: number;

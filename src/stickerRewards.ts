@@ -5,6 +5,7 @@ import {
   TIER_WEIGHTS_DAILY,
   TIER_WEIGHTS_DEADLINE_RARE_PLUS,
   TIER_WEIGHTS_DEADLINE_SR_PLUS,
+  TIER_WEIGHTS_DEADLINE_UR_PLUS,
   TIER_WEIGHTS_FULL_DAY,
   TIER_WEIGHTS_ONE_OFF_SPECIAL,
   TIER_WEIGHTS_THREE_DAY,
@@ -361,6 +362,9 @@ export function pickDeadlineReward(
   collectedIds: string[],
   rewardFloor: SpecialRewardFloor = "rare",
 ): StickerReward {
+  if (rewardFloor === "ultraRare") {
+    return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_DEADLINE_UR_PLUS));
+  }
   const tier = rewardFloor === "superRare"
     ? rollWeightedTier(TIER_WEIGHTS_DEADLINE_SR_PLUS)
     : rollWeightedTier(TIER_WEIGHTS_DEADLINE_RARE_PLUS);

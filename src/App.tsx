@@ -421,6 +421,7 @@ function resolveDeadlineRewardFloor(completedAtIso?: string): SpecialRewardFloor
   const completedAt = new Date(completedAtIso);
   if (Number.isNaN(completedAt.getTime())) return undefined;
   const completedMinutes = completedAt.getHours() * 60 + completedAt.getMinutes();
+  if (completedMinutes <= 20 * 60) return "ultraRare";
   if (completedMinutes <= 20 * 60 + 30) return "superRare";
   if (completedMinutes <= 20 * 60 + 50) return "rare";
   return undefined;
@@ -3247,6 +3248,10 @@ export default function KeigoTaskApp() {
                 } },
                 { icon: "🎉", label: "3日連続 レア確定ごほうびテスト", action: () => {
                   openTreatQueue([{ mode: "threeDayStreak", threeDayMilestoneStreak: 3 }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🌟", label: "20:00締切 UR確定ごほうびテスト", action: () => {
+                  openTreatQueue([{ mode: "deadline", rewardFloor: "ultraRare", deadlineRewardFloor: "ultraRare" }]);
                   setShowMenu(false);
                 } },
                 { icon: "⏰", label: "20:50締切 R確定ごほうびテスト", action: () => {

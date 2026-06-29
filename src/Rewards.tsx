@@ -781,9 +781,11 @@ function TreatOverlay({
     : isThreeDayStreak
       ? "3日連続ですべてクリア！レア以上確定！"
       : isDeadline
-        ? rewardFloor === "superRare"
-          ? "20:30までに全部クリア！スーパーレア以上確定！"
-          : "20:50までに全部クリア！レア以上確定！"
+        ? rewardFloor === "ultraRare"
+          ? "20:00までに全部クリア！ウルトラレア以上確定！"
+          : rewardFloor === "superRare"
+            ? "20:30までに全部クリア！スーパーレア以上確定！"
+            : "20:50までに全部クリア！レア以上確定！"
       : isFullDayBonus
       ? "ボーナスごほうび！レア以上！"
       : isOneOffSpecial
