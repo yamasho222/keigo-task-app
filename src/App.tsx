@@ -25,8 +25,22 @@ import {
 } from "./Rewards";
 import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory } from "./stickerRewards";
 import {
-  getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate,
+  getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
+import {
+  type CatchUpDayState,
+  buildCatchUpAllSessionTasks,
+  catchUpApproved,
+  catchUpDoneSet,
+  catchUpSkippedSet,
+  emptyCatchUpDayState,
+  evaluateStreakMilestones,
+  formatCatchUpDateLabel,
+  isCatchUpEligible,
+  isCatchUpSessionResolved,
+  patchCatchUpSession,
+  visibleCatchUpTasksForSession,
+} from "./catchUp";
 import {
   type DailyMission, type FavoriteMission, type MissionCardStatus,
   MissionCard, MissionConfirmDialog, MissionBriefingOverlay,
@@ -306,6 +320,7 @@ interface StoredState {
   oneOffSpecialTreatPending?: Record<string, boolean>;
   missionHistory?: Record<string, { title: string; emoji: string }>;
   missionEveningNudgeDate?: string;
+  catchUpDays?: Record<string, CatchUpDayState>;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -586,6 +601,7 @@ function loadStoredState(): StoredState {
         favoriteMissions: hydrated.favoriteMissions,
         gamePlayTimes: hydrated.gamePlayTimes,
         missionHistory: hydrated.missionHistory,
+        catchUpDays: hydrated.catchUpDays,
       };
     }
   } catch { /* ignore */ }
@@ -1342,6 +1358,8 @@ export default function KeigoTaskApp() {
   const [missionEveningNudgeDate, setMissionEveningNudgeDate] = useState<string | undefined>(
     stored.missionEveningNudgeDate,
   );
+  const [catchUpDays, setCatchUpDays] = useState<Record<string, CatchUpDayState>>(stored.catchUpDays ?? {});
+  const [activeCatchUpDate, setActiveCatchUpDate] = useState<string | null>(null);
   const [showMissionSetup, setShowMissionSetup] = useState(false);
   const [showMissionConfirm, setShowMissionConfirm] = useState(false);
   const [missionConfirmSession, setMissionConfirmSession] = useState<SessionId | null>(null);
@@ -1517,16 +1535,126 @@ export default function KeigoTaskApp() {
     };
   };
 
-  const approved = sessionState[parentSession].approved;
+  const inCatchUp = activeCatchUpDate !== null;
+  const catchUpDate = activeCatchUpDate ? parseDateKey(activeCatchUpDate) : null;
+
+  const sessionTasksRecord = {
+    morning: morningTasks,
+    daytime: daytimeTasks,
+    home: homeTasks,
+    evening: eveningTasks,
+  } as const;
+
+  const getCatchUpDay = (dateKey: string) => catchUpDays[dateKey] ?? emptyCatchUpDayState();
+
+  const updateCatchUpDay = (dateKey: string, updater: (day: CatchUpDayState) => CatchUpDayState) => {
+    setCatchUpDays((prev) => ({
+      ...prev,
+      [dateKey]: updater(prev[dateKey] ?? emptyCatchUpDayState()),
+    }));
+  };
+
+  const getCatchUpAllSessionTasks = (
+    dateKey: string,
+    patch?: Partial<Record<SessionId, Partial<{ done: Set<number>; skipped: Set<number> }>>>,
+  ): AllSessionTasks => {
+    const day = getCatchUpDay(dateKey);
+    const base = buildCatchUpAllSessionTasks(day, sessionTasksRecord);
+    if (!patch) return base;
+    const pick = (sid: SessionId) => ({
+      tasks: base[sid].tasks,
+      done: patch[sid]?.done ?? base[sid].done,
+      skipped: patch[sid]?.skipped ?? base[sid].skipped,
+    });
+    return {
+      morning: pick("morning"),
+      daytime: pick("daytime"),
+      home: pick("home"),
+      evening: pick("evening"),
+    };
+  };
+
+  const getContextAllSessionTasks = (
+    patch?: Partial<Record<SessionId, Partial<{ done: Set<number>; skipped: Set<number> }>>>,
+  ) => (activeCatchUpDate ? getCatchUpAllSessionTasks(activeCatchUpDate, patch) : getAllSessionTasks(patch));
+
+  const getContextDone = (session: SessionId): Set<number> => {
+    if (!activeCatchUpDate) return sessionState[session].done;
+    return catchUpDoneSet(getCatchUpDay(activeCatchUpDate), session);
+  };
+
+  const getContextSkipped = (session: SessionId): Set<number> => {
+    if (!activeCatchUpDate) return sessionState[session].skipped;
+    return catchUpSkippedSet(getCatchUpDay(activeCatchUpDate), session);
+  };
+
+  const setContextDone = (session: SessionId, done: Set<number>) => {
+    if (!activeCatchUpDate) {
+      sessionState[session].setDone(done);
+      return;
+    }
+    updateCatchUpDay(activeCatchUpDate, (day) => patchCatchUpSession(day, session, { done }));
+  };
+
+  const setContextSkipped = (session: SessionId, skipped: Set<number>) => {
+    if (!activeCatchUpDate) {
+      sessionState[session].setSkipped(skipped);
+      return;
+    }
+    updateCatchUpDay(activeCatchUpDate, (day) => patchCatchUpSession(day, session, { skipped }));
+  };
+
+  const getContextApproved = (session: SessionId): boolean => {
+    if (!activeCatchUpDate) return sessionState[session].approved;
+    return catchUpApproved(getCatchUpDay(activeCatchUpDate), session);
+  };
+
+  const setContextApproved = (session: SessionId, approved: boolean) => {
+    if (!activeCatchUpDate) {
+      sessionState[session].setApproved(approved);
+      return;
+    }
+    updateCatchUpDay(activeCatchUpDate, (day) => patchCatchUpSession(day, session, { approved }));
+  };
+
+  const contextActiveSessionIds = catchUpDate
+    ? getVisibleSessionTabs(catchUpDate).map((t) => t.id)
+    : activeSessionIds;
+
+  const openCatchUpDay = (dateKey: string) => {
+    if (!isCatchUpEligible(dateKey, history)) return;
+    setCatchUpDays((prev) => ({
+      ...prev,
+      [dateKey]: prev[dateKey] ?? emptyCatchUpDayState(),
+    }));
+    setActiveCatchUpDate(dateKey);
+    setPrevScreen("record");
+    const date = parseDateKey(dateKey);
+    const firstTab = getVisibleSessionTabs(date)[0]?.id ?? "morning";
+    setScreen(firstTab);
+  };
+
+  const exitCatchUpMode = () => {
+    setActiveCatchUpDate(null);
+    setScreen("record");
+  };
+
+  const approved = getContextApproved(parentSession);
 
   useEffect(() => {
+    if (inCatchUp && catchUpDate) {
+      if (screen === "daytime" && !isDaytimeSessionDay(catchUpDate)) {
+        setScreen(getVisibleSessionTabs(catchUpDate)[0]?.id ?? "morning");
+      }
+      return;
+    }
     if (screen === "daytime" && !isDaytimeSessionDay()) {
       setScreen(getSessionScreen());
     }
     if (taskListSession === "daytime" && !isDaytimeSessionDay()) {
       setTaskListSession(getSessionScreen());
     }
-  }, [screen, taskListSession]);
+  }, [screen, taskListSession, inCatchUp, activeCatchUpDate]);
 
   // ── localStorage save ──
   useEffect(() => {
@@ -1574,6 +1702,7 @@ export default function KeigoTaskApp() {
       oneOffSpecialTreatPending,
       missionHistory,
       missionEveningNudgeDate,
+      catchUpDays,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1589,7 +1718,7 @@ export default function KeigoTaskApp() {
     customTaskEmojis, todayMission, favoriteMissions,
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
-    missionHistory, missionEveningNudgeDate,
+    missionHistory, missionEveningNudgeDate, catchUpDays,
   ]);
 
   useEffect(() => {
@@ -1734,6 +1863,15 @@ export default function KeigoTaskApp() {
   };
 
   const resetSessionApproval = (session: SessionId) => {
+    if (activeCatchUpDate) {
+      const dateKey = activeCatchUpDate;
+      const prev = history[dateKey] ?? emptyDayHistory();
+      setContextApproved(session, false);
+      const updatedDay = { ...prev, [session]: false };
+      setHistory({ ...history, [dateKey]: updatedDay });
+      setStampVisible(false);
+      return;
+    }
     const today = todayKey();
     const prev = history[today] ?? emptyDayHistory();
     sessionState[session].setApproved(false);
@@ -1973,16 +2111,20 @@ export default function KeigoTaskApp() {
     skipped: Set<number>,
     label: string,
   ) => {
-    const allSessions = getAllSessionTasks({ [session]: { done, skipped } });
-    const visible = visibleTasksForSession(session, allSessions);
-    if (isAllResolved(session, allSessions)) {
-      const names = visible.map((t) => {
-        if (skipped.has(t.id)) return `${t.title}（あとで）`;
-        return t.title;
-      });
-      setAnticipating(true);
-      setTimeout(() => fireCelebration({ label, taskNames: names }, session), 750);
-    }
+    const allSessions = getContextAllSessionTasks({ [session]: { done, skipped } });
+    const resolved = inCatchUp && catchUpDate
+      ? isCatchUpSessionResolved(session, allSessions, catchUpDate)
+      : isAllResolved(session, allSessions);
+    if (!resolved) return;
+    const visible = inCatchUp && catchUpDate
+      ? visibleCatchUpTasksForSession(session, allSessions, catchUpDate)
+      : visibleTasksForSession(session, allSessions);
+    const names = visible.map((t) => {
+      if (skipped.has(t.id)) return `${t.title}（あとで）`;
+      return t.title;
+    });
+    setAnticipating(true);
+    setTimeout(() => fireCelebration({ label, taskNames: names }, session), 750);
   };
 
   const applyTaskDone = (
@@ -2020,9 +2162,11 @@ export default function KeigoTaskApp() {
         fireOneOffSpecialCelebration(session, task);
       }
     } else {
-      maybeRecordDeadlineFullDayCompletion(getAllSessionTasks({
-        [session]: { done: nextDone, skipped: nextSkipped },
-      }));
+      if (!inCatchUp) {
+        maybeRecordDeadlineFullDayCompletion(getAllSessionTasks({
+          [session]: { done: nextDone, skipped: nextSkipped },
+        }));
+      }
       maybeCelebrate(session, nextDone, nextSkipped, label);
     }
   };
@@ -2763,7 +2907,63 @@ export default function KeigoTaskApp() {
     }, 950);
   };
 
+  const handleCatchUpApprove = () => {
+    if (!activeCatchUpDate || approved) return;
+    const dateKey = activeCatchUpDate;
+    const prev = history[dateKey] ?? emptyDayHistory();
+    setContextApproved(parentSession, true);
+    const updatedDay = { ...prev, [parentSession]: true };
+    const newHistory = { ...history, [dateKey]: updatedDay };
+    setHistory(newHistory);
+    triggerStamp();
+
+    const milestone = evaluateStreakMilestones(
+      newHistory,
+      dateKey,
+      lastThreeDayRewardStreak,
+      lastWeeklyRewardStreak,
+      threeDayTreatPending,
+      weeklyTreatPending,
+    );
+
+    if (!milestone) return;
+
+    if (milestone.lastThreeDay !== lastThreeDayRewardStreak) {
+      setLastThreeDayRewardStreak(milestone.lastThreeDay);
+    }
+    if (milestone.lastWeekly !== lastWeeklyRewardStreak) {
+      setLastWeeklyRewardStreak(milestone.lastWeekly);
+    }
+
+    const treatQueueToOpen = buildTreatQueue({
+      needsDaily: false,
+      specialMissionEligible: false,
+      fullDayBonusEligible: false,
+      threeDayMilestone: milestone.threeDayMilestone,
+      threeDayMilestoneStreak: milestone.threeDayMilestoneStreak,
+      weeklyMilestone: milestone.weeklyMilestone,
+      weeklyMilestoneStreak: milestone.weeklyMilestoneStreak,
+    });
+
+    setTimeout(() => {
+      if (treatQueueToOpen.length > 0) openTreatQueue(treatQueueToOpen);
+    }, 950);
+  };
+
+  const handleParentApprove = () => {
+    if (activeCatchUpDate) handleCatchUpApprove();
+    else handleApprove();
+  };
+
   const resetApproval = () => {
+    if (activeCatchUpDate) {
+      const dateKey = activeCatchUpDate;
+      const prev = history[dateKey] ?? emptyDayHistory();
+      setContextApproved(parentSession, false);
+      setHistory({ ...history, [dateKey]: { ...prev, [parentSession]: false } });
+      setStampVisible(false);
+      return;
+    }
     sessionState[parentSession].setApproved(false);
     setStampVisible(false);
   };
@@ -2785,9 +2985,12 @@ export default function KeigoTaskApp() {
 
   const goToScreen = (id: ScreenId) => {
     if (isWorkTimerLocked) return;
-    if (id === "daytime" && !isDaytimeSessionDay()) {
-      setScreen(getSessionScreen());
-      return;
+    if (id === "daytime") {
+      if (inCatchUp && catchUpDate && !isDaytimeSessionDay(catchUpDate)) return;
+      if (!inCatchUp && !isDaytimeSessionDay()) {
+        setScreen(getSessionScreen());
+        return;
+      }
     }
     if (id === "timer") {
       goToTimer();
@@ -2803,6 +3006,14 @@ export default function KeigoTaskApp() {
   };
 
   const goHome = () => {
+    if (activeCatchUpDate) {
+      if (screen === "show_parent" && isSessionScreen(prevScreen)) {
+        setScreen(prevScreen);
+        return;
+      }
+      exitCatchUpMode();
+      return;
+    }
     if (isSessionScreen(prevScreen)) {
       setScreen(prevScreen);
       return;
@@ -3027,8 +3238,10 @@ export default function KeigoTaskApp() {
       const nextSkipped = new Set(skipped);
       nextSkipped.delete(id);
       setSkipped(nextSkipped);
-      if (!isAllDayResolved(getAllSessionTasks({ [session]: { done, skipped: nextSkipped } }))) {
-        clearDeadlineFullDayCompletion();
+      if (!inCatchUp) {
+        if (!isAllDayResolved(getAllSessionTasks({ [session]: { done, skipped: nextSkipped } }))) {
+          clearDeadlineFullDayCompletion();
+        }
       }
       return;
     }
@@ -3049,9 +3262,11 @@ export default function KeigoTaskApp() {
       cancelWorkTask();
     }
 
-    maybeRecordDeadlineFullDayCompletion(getAllSessionTasks({
-      [session]: { done: nextDone, skipped: nextSkipped },
-    }));
+    if (!inCatchUp) {
+      maybeRecordDeadlineFullDayCompletion(getContextAllSessionTasks({
+        [session]: { done: nextDone, skipped: nextSkipped },
+      }));
+    }
     maybeCelebrate(session, nextDone, nextSkipped, label);
   };
 
@@ -3436,23 +3651,54 @@ export default function KeigoTaskApp() {
           pointerEvents: (anticipating || !!celebType) ? "none" : "auto",
         }}
       >
-        {isSessionScreen(screen) && activeSessionIds.includes(screen) && (
+        {isSessionScreen(screen) && contextActiveSessionIds.includes(screen) && (
           <SessionPhaseSwipe
             session={screen}
             onSwitch={goToScreen}
             disabled={isWorkTimerLocked || anticipating || !!celebType}
+            contextDate={catchUpDate ?? undefined}
           >
-            <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} />
-            {activeSessionIds.map((sid) => screen === sid && (
+            {inCatchUp && activeCatchUpDate && (
+              <div style={{
+                padding: "10px 12px", borderRadius: 12,
+                backgroundColor: `${theme.category.orange}18`,
+                border: `1.5px solid ${theme.category.orange}55`,
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: theme.category.orange, lineHeight: 1.4 }}>
+                  {formatCatchUpDateLabel(activeCatchUpDate)} のやり直し
+                  <div style={{ fontWeight: 600, fontSize: 11, color: theme.text.secondary }}>
+                    日次ごほうびなし
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={exitCatchUpMode}
+                  style={{
+                    flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "none",
+                    backgroundColor: theme.fill.secondary, color: theme.text.secondary,
+                    fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  }}
+                >
+                  記録へ
+                </button>
+              </div>
+            )}
+            <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} contextDate={catchUpDate ?? undefined} />
+            {contextActiveSessionIds.map((sid) => screen === sid && (
               <TaskScreen
                 key={sid}
                 session={sid}
                 interactionLocked={isWorkTimerLocked}
                 label={SESSION_META[sid].label}
-                timeLabel={`${dayLabel} ${SESSION_META[sid].timeSuffix}`}
+                timeLabel={inCatchUp && activeCatchUpDate
+                  ? `${formatCatchUpDateLabel(activeCatchUpDate)} ${SESSION_META[sid].timeSuffix}`
+                  : `${dayLabel} ${SESSION_META[sid].timeSuffix}`}
                 tasks={sessionState[sid].tasks}
-                done={sessionState[sid].done}
-                skipped={sessionState[sid].skipped}
+                done={getContextDone(sid)}
+                skipped={getContextSkipped(sid)}
+                catchUpMode={inCatchUp}
+                taskFilterDate={catchUpDate ?? undefined}
                 justChecked={justChecked}
                 floatColor={floatColor}
                 bestTimes={bestTimes}
@@ -3461,7 +3707,7 @@ export default function KeigoTaskApp() {
                 workTimerElapsed={workTimerElapsed}
                 workTimerRunning={workTimerRunning}
                 newRecordTaskId={newRecordTaskId}
-                allSessionTasks={getAllSessionTasks()}
+                allSessionTasks={getContextAllSessionTasks()}
                 onReorder={sessionState[sid].setTasks}
                 onAddTask={(title, emoji, scope, weekdays, targetSessions, specialRewardFloor) => addTask(sid, title, emoji, scope, weekdays, targetSessions, specialRewardFloor)}
                 onEditTask={(id, title, emoji, weekdays, targetSessions, specialRewardFloor) => updateTask(sid, id, title, emoji, weekdays, targetSessions, specialRewardFloor)}
@@ -3469,17 +3715,17 @@ export default function KeigoTaskApp() {
                 onSkipTask={(id) => skipTask(
                   sid, id,
                   sessionState[sid].tasks,
-                  sessionState[sid].done,
-                  sessionState[sid].skipped,
-                  sessionState[sid].setDone,
-                  sessionState[sid].setSkipped,
+                  getContextDone(sid),
+                  getContextSkipped(sid),
+                  (d) => setContextDone(sid, d),
+                  (s) => setContextSkipped(sid, s),
                   SESSION_META[sid].label,
                 )}
                 onSelectTask={(id) => selectWorkTask(
                   sid, id,
-                  sessionState[sid].done,
-                  sessionState[sid].skipped,
-                  sessionState[sid].setDone,
+                  getContextDone(sid),
+                  getContextSkipped(sid),
+                  (d) => setContextDone(sid, d),
                 )}
                 onStartTimer={startWorkTimer}
                 onPauseTimer={pauseWorkTimer}
@@ -3487,26 +3733,26 @@ export default function KeigoTaskApp() {
                 onQuickCompleteTask={(id) => quickCompleteTask(
                   sid, id,
                   sessionState[sid].tasks,
-                  sessionState[sid].done,
-                  sessionState[sid].skipped,
-                  sessionState[sid].setDone,
-                  sessionState[sid].setSkipped,
+                  getContextDone(sid),
+                  getContextSkipped(sid),
+                  (d) => setContextDone(sid, d),
+                  (s) => setContextSkipped(sid, s),
                   SESSION_META[sid].label,
                 )}
                 onCompleteTask={() => completeWorkTask(
                   sid,
                   sessionState[sid].tasks,
-                  sessionState[sid].done,
-                  sessionState[sid].skipped,
-                  sessionState[sid].setDone,
-                  sessionState[sid].setSkipped,
+                  getContextDone(sid),
+                  getContextSkipped(sid),
+                  (d) => setContextDone(sid, d),
+                  (s) => setContextSkipped(sid, s),
                   SESSION_META[sid].label,
                 )}
                 onClearBestTime={(id) => clearBestTime(sid, id)}
                 customTaskEmojis={customTaskEmojis}
                 onAddCustomTaskEmoji={addCustomTaskEmoji}
-                todayMission={todayMission}
-                missionCardStatus={getMissionCardStatus(
+                todayMission={inCatchUp ? null : todayMission}
+                missionCardStatus={inCatchUp ? null : getMissionCardStatus(
                   todayMission,
                   currentTaskDay,
                   missionDoneSessions,
@@ -3517,7 +3763,7 @@ export default function KeigoTaskApp() {
                 activeMissionSessions={activeMissionSessions}
                 missionDoneSessions={missionDoneSessions}
                 missionApprovedSessions={missionApprovedSessions}
-                showEveningMissionNudge={showEveningMissionNudge}
+                showEveningMissionNudge={!inCatchUp && showEveningMissionNudge}
                 onMissionDone={() => {
                   setMissionConfirmSession(sid);
                   setShowMissionConfirm(true);
@@ -3526,17 +3772,17 @@ export default function KeigoTaskApp() {
                 onMissionSetup={() => setShowMissionSetup(true)}
                 onOpenMissionReward={openMissionReward}
                 onOpenMissionParentCheck={() => openMissionParentCheck(sid)}
-                showDailyRewardButton={hasUnclaimedSessionDailyReward(sid)}
+                showDailyRewardButton={!inCatchUp && hasUnclaimedSessionDailyReward(sid)}
                 onOpenDailyReward={() => openSessionDailyReward(sid)}
-                showDeadlineRewardButton={hasUnclaimedDeadlineReward()}
+                showDeadlineRewardButton={!inCatchUp && hasUnclaimedDeadlineReward()}
                 onOpenDeadlineReward={openDeadlineReward}
-                showWeeklyRewardButton={hasUnclaimedWeeklyReward()}
+                showWeeklyRewardButton={!inCatchUp && hasUnclaimedWeeklyReward()}
                 onOpenWeeklyReward={openWeeklyReward}
-                showThreeDayRewardButton={hasUnclaimedThreeDayReward()}
+                showThreeDayRewardButton={!inCatchUp && hasUnclaimedThreeDayReward()}
                 onOpenThreeDayReward={openThreeDayReward}
-                showOneOffSpecialRewardButton={hasUnclaimedOneOffSpecialReward()}
+                showOneOffSpecialRewardButton={!inCatchUp && hasUnclaimedOneOffSpecialReward()}
                 onOpenOneOffSpecialReward={openFirstPendingOneOffSpecialReward}
-                showOneOffParentCheckButton={oneOffSpecialAwaitingParent !== null}
+                showOneOffParentCheckButton={!inCatchUp && oneOffSpecialAwaitingParent !== null}
                 onOpenOneOffParentCheck={openOneOffParentCheck}
                 gamePlaySec={gamePlayTimes[gamePlayKey(todayKey(), sid)]}
               />
@@ -3580,10 +3826,11 @@ export default function KeigoTaskApp() {
             approved={approved}
             timerDuration={timerDuration}
             onSetDuration={setTimerDuration}
-            onApprove={handleApprove}
+            onApprove={handleParentApprove}
             onReset={resetApproval}
             onGoTimer={startAndGoTimer}
             onHome={goHome}
+            catchUpMode={inCatchUp}
           />
         )}
 
@@ -3624,7 +3871,13 @@ export default function KeigoTaskApp() {
         )}
 
         {screen === "record" && (
-          <RecordScreen history={history} streak={streak} stickerAlbum={stickerAlbum} onBack={goHome} />
+          <RecordScreen
+            history={history}
+            streak={streak}
+            stickerAlbum={stickerAlbum}
+            onBack={goHome}
+            onSelectCatchUpDay={openCatchUpDay}
+          />
         )}
 
         {screen === "task_list" && (
@@ -4563,12 +4816,13 @@ function TaskListScreen({
 }
 
 function SessionPhaseSwipe({
-  session, onSwitch, disabled = false, children,
+  session, onSwitch, disabled = false, children, contextDate,
 }: {
   session: SessionId;
   onSwitch: (id: ScreenId) => void;
   disabled?: boolean;
   children: ReactNode;
+  contextDate?: Date;
 }) {
   const gesture = useRef<{ startX: number; startY: number; tracking: boolean; decided: boolean }>({
     startX: 0, startY: 0, tracking: false, decided: false,
@@ -4620,8 +4874,8 @@ function SessionPhaseSwipe({
     if (Math.abs(dx) < PHASE_SWIPE_MIN || Math.abs(dy) >= Math.abs(dx)) return;
 
     const next = dx < 0
-      ? getAdjacentSession(session, "next")
-      : getAdjacentSession(session, "prev");
+      ? getAdjacentSession(session, "next", contextDate)
+      : getAdjacentSession(session, "prev", contextDate);
     if (next) {
       navigator.vibrate?.(8);
       onSwitch(next);
@@ -4642,11 +4896,11 @@ function SessionPhaseSwipe({
 }
 
 function InAppTabs({
-  screen, onSwitch, disabled = false,
+  screen, onSwitch, disabled = false, contextDate,
 }: {
-  screen: ScreenId; onSwitch: (s: ScreenId) => void; disabled?: boolean;
+  screen: ScreenId; onSwitch: (s: SessionId) => void; disabled?: boolean; contextDate?: Date;
 }) {
-  const tabs = getVisibleSessionTabs();
+  const tabs = getVisibleSessionTabs(contextDate);
   return (
     <div style={{ display: "flex", gap: 4, padding: "2px 0 4px", opacity: disabled ? 0.45 : 1 }}>
       {tabs.map((t) => {
@@ -5133,6 +5387,8 @@ interface TaskScreenProps {
   showOneOffParentCheckButton: boolean;
   onOpenOneOffParentCheck: () => void;
   gamePlaySec?: number;
+  catchUpMode?: boolean;
+  taskFilterDate?: Date;
 }
 
 function TaskScreen({
@@ -5149,6 +5405,8 @@ function TaskScreen({
   showOneOffSpecialRewardButton, onOpenOneOffSpecialReward,
   showOneOffParentCheckButton, onOpenOneOffParentCheck,
   gamePlaySec,
+  catchUpMode = false,
+  taskFilterDate,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
@@ -5165,7 +5423,9 @@ function TaskScreen({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
 
-  const shownTasks = visibleTasksForSession(session, allSessionTasks);
+  const shownTasks = catchUpMode && taskFilterDate
+    ? visibleCatchUpTasksForSession(session, allSessionTasks, taskFilterDate)
+    : visibleTasksForSession(session, allSessionTasks);
   const listTasks = sortTasksForSessionDisplay(tasksForSessionList(shownTasks));
   const sortableListTasks = listTasks.filter((task) => !isOneOffSpecialTask(task));
   const progressTasks = tasksForProgress(shownTasks);
@@ -5291,7 +5551,7 @@ function TaskScreen({
         </SortableContext>
       </DndContext>
 
-      {todayMission && missionCardStatus && (
+      {todayMission && missionCardStatus && !catchUpMode && (
         <MissionCard
           mission={todayMission}
           status={missionCardStatus}
@@ -5311,7 +5571,7 @@ function TaskScreen({
         />
       )}
 
-      {gameTask && (
+      {gameTask && !catchUpMode && (
         <TaskRow
           task={gameTask}
           isDone={false}
@@ -5567,7 +5827,7 @@ function TaskScreen({
       )}
 
       {/* タスク追加エリア */}
-      {isAdding ? (
+      {!catchUpMode && (isAdding ? (
         <TaskEditForm
           key={`add-${addMode}`}
           header={
@@ -5614,7 +5874,7 @@ function TaskScreen({
             <span style={{ fontSize: 18 }}>＋</span> {todayMission ? "特別ミッションを変更" : "特別ミッションを設定"}
           </button>
         </div>
-      )}
+      ))}
 
       {actionSheetTask && (
         <TaskActionSheet
@@ -6364,6 +6624,7 @@ function HanamaruStamp({ message }: { message: string }) {
 function ShowParentScreen({
   context, approved, timerDuration, onSetDuration,
   onApprove, onReset, onGoTimer, onHome,
+  catchUpMode = false,
 }: {
   context: { label: string; taskNames: string[]; completedAt: string };
   approved: boolean;
@@ -6373,6 +6634,7 @@ function ShowParentScreen({
   onReset: () => void;
   onGoTimer: () => void;
   onHome: () => void;
+  catchUpMode?: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
@@ -6457,14 +6719,16 @@ function ShowParentScreen({
         </div>
       </div>
 
-      <TimerDurationPanel
-        duration={timerDuration}
-        onSetDuration={onSetDuration}
-        disabled={!approved}
-        needsApprovalMessage={!approved}
-        showStartButton
-        onStart={onGoTimer}
-      />
+      {!catchUpMode && (
+        <TimerDurationPanel
+          duration={timerDuration}
+          onSetDuration={onSetDuration}
+          disabled={!approved}
+          needsApprovalMessage={!approved}
+          showStartButton
+          onStart={onGoTimer}
+        />
+      )}
     </div>
   );
 }

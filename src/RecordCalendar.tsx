@@ -9,6 +9,7 @@ import {
   completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
   requiredSessionCount,
 } from "./japaneseCalendar";
+import { formatCatchUpDateLabel, isCatchUpEligible } from "./catchUp";
 
 export interface DayHistory { morning: boolean; daytime: boolean; home: boolean; evening: boolean; }
 
@@ -167,13 +168,15 @@ interface Props {
   streak: number;
   stickerAlbum: string[];
   onBack: () => void;
+  onSelectCatchUpDay?: (dateKey: string) => void;
 }
 
-export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
+export function RecordScreen({ history, streak, stickerAlbum, onBack, onSelectCatchUpDay }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [confirmCatchUpKey, setConfirmCatchUpKey] = useState<string | null>(null);
 
   const firstDay = new Date(year, month, 1);
   const lastDate = new Date(year, month + 1, 0).getDate();
@@ -273,8 +276,27 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
           const cellDate = parseDateKey(key);
           const flags = getSessionFlags(history[key]);
           const isToday = key === todayStr;
+          const catchUpEligible = !!onSelectCatchUpDay && isCatchUpEligible(key, history);
+          const baseStyle = cellStyle(flags, isToday, cellDate);
           return (
-            <div key={key} style={cellStyle(flags, isToday, cellDate)}>
+            <div
+              key={key}
+              role={catchUpEligible ? "button" : undefined}
+              tabIndex={catchUpEligible ? 0 : undefined}
+              onClick={catchUpEligible ? () => setConfirmCatchUpKey(key) : undefined}
+              onKeyDown={catchUpEligible ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setConfirmCatchUpKey(key);
+                }
+              } : undefined}
+              style={{
+                ...baseStyle,
+                cursor: catchUpEligible ? "pointer" : undefined,
+                outline: catchUpEligible ? `2px dashed ${theme.accent.primary}66` : undefined,
+                outlineOffset: catchUpEligible ? -1 : undefined,
+              }}
+            >
               {cellIcon(flags, day, cellDate)}
             </div>
           );
@@ -284,6 +306,12 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
       <div style={{ fontSize: 12, color: theme.text.secondary, textAlign: "center" }}>
         この月 全部クリアした日: <strong>{monthFull}</strong>日
       </div>
+
+      {onSelectCatchUpDay && (
+        <div style={{ fontSize: 11, color: theme.text.tertiary, textAlign: "center" }}>
+          点線の日をタップ → やり直し
+        </div>
+      )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", fontSize: 11, color: theme.text.tertiary }}>
         <span>🌅 朝</span>
@@ -372,6 +400,67 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack }: Props) {
           ？＝まだ集めていないごほうび
         </div>
       </div>
+
+      {confirmCatchUpKey && onSelectCatchUpDay && (
+        <div
+          data-modal-overlay
+          onClick={() => setConfirmCatchUpKey(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 120,
+            backgroundColor: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 340, borderRadius: 20, padding: "24px 20px",
+              backgroundColor: theme.bg.editor,
+              boxShadow: "0 12px 48px rgba(0,0,0,0.3)",
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, marginBottom: 8, textAlign: "center" }}>
+              {formatCatchUpDateLabel(confirmCatchUpKey)} のやり直し
+            </div>
+            <div style={{ fontSize: 13, color: theme.text.secondary, lineHeight: 1.6, marginBottom: 16 }}>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                <li>きょう限定・特別ミッションは復元できません</li>
+                <li>日次・締切・1日ボーナスのごほうびは出ません</li>
+                <li>連続記録がつながった場合のみ 3日/7日ボーナスがあります</li>
+              </ul>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setConfirmCatchUpKey(null)}
+                style={{
+                  flex: 1, padding: "13px 0", borderRadius: 12,
+                  border: `1.5px solid ${theme.stroke.secondary}`,
+                  backgroundColor: theme.fill.secondary, color: theme.text.secondary,
+                  fontSize: 14, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectCatchUpDay(confirmCatchUpKey);
+                  setConfirmCatchUpKey(null);
+                }}
+                style={{
+                  flex: 1, padding: "13px 0", borderRadius: 12, border: "none",
+                  backgroundColor: theme.accent.primary, color: "#fff",
+                  fontSize: 14, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                やり直す
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {previewItem && previewId && (
         <div
