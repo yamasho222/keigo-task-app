@@ -66,6 +66,16 @@ import {
   buildSharedTaskRow,
   specialRewardFloorCompact, specialRewardFloorSetupHint,
 } from "./sharedTasks";
+import {
+  getPendingRewardItems,
+  pendingRewardCount,
+  type PendingRewardItem,
+} from "./pendingRewards";
+import {
+  PendingRewardsSheet,
+  PendingRewardsBanner,
+  DeferRewardHintToast,
+} from "./PendingRewardsSheet";
 
 // ── Types & Data ──────────────────────────────────────
 
@@ -301,6 +311,7 @@ interface StoredState {
   dailyTreatClaimed?: Record<string, boolean>;
   dailyTreatPending?: Record<string, boolean>;
   fullDayBonusClaimed?: Record<string, boolean>;
+  fullDayBonusTreatPending?: Record<string, boolean>;
   deadlineFullDayCompletedAt?: Record<string, string>;
   deadlineTreatClaimed?: Record<string, SpecialRewardFloor>;
   deadlineTreatPending?: Record<string, SpecialRewardFloor>;
@@ -1382,6 +1393,9 @@ export default function KeigoTaskApp() {
   const [dailyTreatClaimed, setDailyTreatClaimed] = useState<Record<string, boolean>>(stored.dailyTreatClaimed ?? {});
   const [dailyTreatPending, setDailyTreatPending] = useState<Record<string, boolean>>(stored.dailyTreatPending ?? {});
   const [fullDayBonusClaimed, setFullDayBonusClaimed] = useState<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
+  const [fullDayBonusTreatPending, setFullDayBonusTreatPending] = useState<Record<string, boolean>>(
+    stored.fullDayBonusTreatPending ?? {},
+  );
   const [deadlineFullDayCompletedAt, setDeadlineFullDayCompletedAt] = useState<Record<string, string>>(
     stored.deadlineFullDayCompletedAt ?? {},
   );
@@ -1418,6 +1432,8 @@ export default function KeigoTaskApp() {
   const weeklyCollectedRef = useRef(false);
   const lastThreeDayRewardStreakRef = useRef(stored.lastThreeDayRewardStreak ?? 0);
   const threeDayCollectedRef = useRef(false);
+  const fullDayBonusCollectedRef = useRef(false);
+  const fullDayBonusClaimedRef = useRef<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
   const gameTimerStartRef = useRef<number | null>(null);
   const gameTimerPausedTotalRef = useRef(0);
   const gameTimerPauseStartRef = useRef<number | null>(null);
@@ -1437,6 +1453,8 @@ export default function KeigoTaskApp() {
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>(getInitialScreen());
   const [showMenu,     setShowMenu]     = useState(false);
+  const [showPendingRewardsSheet, setShowPendingRewardsSheet] = useState(false);
+  const [deferHintVisible, setDeferHintVisible] = useState(false);
   const [taskListSession, setTaskListSession] = useState<SessionId>(getSessionScreen());
   const [parentSession, setParentSession] = useState<SessionId>("morning");
   const [parentCtx, setParentCtx] = useState<{ label: string; taskNames: string[]; completedAt: string }>({
@@ -1683,6 +1701,7 @@ export default function KeigoTaskApp() {
       dailyTreatClaimed,
       dailyTreatPending,
       fullDayBonusClaimed,
+      fullDayBonusTreatPending,
       deadlineFullDayCompletedAt,
       deadlineTreatClaimed,
       deadlineTreatPending,
@@ -1712,7 +1731,7 @@ export default function KeigoTaskApp() {
     morningApproved, daytimeApproved, eveningApproved, homeApproved,
     morningTasks, daytimeTasks, eveningTasks, homeTasks,
     history, bestTimes, taskCompletedAt, gamePlayTimes,
-    dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed,
+    dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, fullDayBonusTreatPending,
     deadlineFullDayCompletedAt, deadlineTreatClaimed, deadlineTreatPending,
     lastWeeklyRewardStreak, weeklyTreatPending, lastThreeDayRewardStreak, threeDayTreatPending, stickerAlbum,
     customTaskEmojis, todayMission, favoriteMissions,
@@ -1983,12 +2002,27 @@ export default function KeigoTaskApp() {
           setThreeDayTreatPending((p) => ({ ...p, [milestoneDay]: milestoneStreak }));
         }
       }
+      if (closing?.mode === "fullDayBonus") {
+        const dayKey = todayKey();
+        if (fullDayBonusCollectedRef.current) {
+          setFullDayBonusClaimed((c) => (c[dayKey] ? c : { ...c, [dayKey]: true }));
+          setFullDayBonusTreatPending((p) => {
+            if (!p[dayKey]) return p;
+            const next = { ...p };
+            delete next[dayKey];
+            return next;
+          });
+        } else {
+          setFullDayBonusTreatPending((p) => ({ ...p, [dayKey]: true }));
+        }
+      }
       specialMissionCollectedRef.current = false;
       oneOffSpecialCollectedRef.current = false;
       dailyTreatCollectedRef.current = false;
       deadlineCollectedRef.current = false;
       weeklyCollectedRef.current = false;
       threeDayCollectedRef.current = false;
+      fullDayBonusCollectedRef.current = false;
       return null;
     });
     setTreatQueue((queue) => {
@@ -2387,6 +2421,21 @@ export default function KeigoTaskApp() {
   deadlineTreatClaimedRef.current = deadlineTreatClaimed;
   lastWeeklyRewardStreakRef.current = lastWeeklyRewardStreak;
   lastThreeDayRewardStreakRef.current = lastThreeDayRewardStreak;
+  fullDayBonusClaimedRef.current = fullDayBonusClaimed;
+
+  const openFullDayBonusReward = () => {
+    const dayKey = todayKey();
+    if (fullDayBonusClaimedRef.current[dayKey]) return;
+    if (pendingTreatRef.current?.mode === "fullDayBonus") return;
+    fullDayBonusCollectedRef.current = false;
+    setFullDayBonusTreatPending((p) => {
+      if (!p[dayKey]) return p;
+      const next = { ...p };
+      delete next[dayKey];
+      return next;
+    });
+    openTreatQueue([{ mode: "fullDayBonus" }]);
+  };
 
   const handleTreatCollect = (rewardId: string) => {
     const treat = pendingTreatRef.current;
@@ -2464,6 +2513,17 @@ export default function KeigoTaskApp() {
         if (!(milestoneDay in p)) return p;
         const next = { ...p };
         delete next[milestoneDay];
+        return next;
+      });
+    } else if (treat.mode === "fullDayBonus") {
+      const dayKey = todayKey();
+      if (fullDayBonusClaimedRef.current[dayKey]) return;
+      fullDayBonusCollectedRef.current = true;
+      setFullDayBonusClaimed((c) => (c[dayKey] ? c : { ...c, [dayKey]: true }));
+      setFullDayBonusTreatPending((p) => {
+        if (!p[dayKey]) return p;
+        const next = { ...p };
+        delete next[dayKey];
         return next;
       });
     }
@@ -2691,6 +2751,95 @@ export default function KeigoTaskApp() {
     missionRewardClaimedToday,
   );
 
+  const oneOffPendingLabels = Object.fromEntries(
+    Object.keys(oneOffSpecialTreatPending)
+      .filter((k) => oneOffSpecialTreatPending[k] && !oneOffSpecialClaimed[k])
+      .map((k) => {
+        const info = findOneOffSpecialPendingInfo(k);
+        return [k, info ? `${info.emoji} ${info.title}` : "特別ミッションのごほうび"] as const;
+      }),
+  );
+
+  const pendingRewardsCtx = {
+    todayKey: currentTodayKey,
+    taskDayKey: currentTaskDay,
+    sessionApproved: {
+      morning: morningApproved,
+      daytime: daytimeApproved,
+      home: homeApproved,
+      evening: eveningApproved,
+    },
+    dailyTreatClaimed,
+    dailyTreatPending,
+    fullDayBonusClaimed,
+    fullDayBonusTreatPending,
+    deadlineTreatClaimed,
+    deadlineTreatPending,
+    weeklyTreatPending,
+    lastWeeklyRewardStreak,
+    threeDayTreatPending,
+    lastThreeDayRewardStreak,
+    specialMissionRewardClaimed,
+    specialMissionTreatPending,
+    oneOffSpecialClaimed,
+    oneOffSpecialTreatPending,
+    todayMission,
+    currentTaskDay,
+    missionRewardClaimedToday,
+    oneOffLabels: oneOffPendingLabels,
+  };
+
+  const pendingRewardItems = getPendingRewardItems(pendingRewardsCtx);
+  const unclaimedRewardCount = pendingRewardCount(pendingRewardsCtx);
+
+  const hasAnyUnclaimedDailyReward = () =>
+    SESSION_IDS.some((sid) => hasUnclaimedSessionDailyReward(sid));
+
+  const openDailyRewardEntry = () => {
+    const dailyItems = pendingRewardItems.filter((i) => i.kind === "daily");
+    if (dailyItems.length === 1 && dailyItems[0].session) {
+      openSessionDailyReward(dailyItems[0].session);
+      return;
+    }
+    setShowPendingRewardsSheet(true);
+  };
+
+  const claimPendingReward = (item: PendingRewardItem) => {
+    setShowPendingRewardsSheet(false);
+    switch (item.kind) {
+      case "daily":
+        if (item.session) openSessionDailyReward(item.session);
+        break;
+      case "deadline":
+        openDeadlineReward();
+        break;
+      case "threeDay":
+        openThreeDayReward();
+        break;
+      case "weekly":
+        openWeeklyReward();
+        break;
+      case "fullDayBonus":
+        openFullDayBonusReward();
+        break;
+      case "specialMission":
+        openMissionReward();
+        break;
+      case "oneOffSpecial":
+        if (item.claimKey) {
+          const info = findOneOffSpecialPendingInfo(item.claimKey);
+          if (info) openOneOffSpecialReward(info);
+        }
+        break;
+    }
+  };
+
+  useEffect(() => {
+    if (!deferHintVisible) return;
+    const id = setTimeout(() => setDeferHintVisible(false), 4500);
+    return () => clearTimeout(id);
+  }, [deferHintVisible]);
+
   const saveTodayMission = (
     partial: Omit<DailyMission, "dateKey">,
     addToFavorites: boolean,
@@ -2861,7 +3010,9 @@ export default function KeigoTaskApp() {
 
     const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
     const isFullDayToday = isFullDay(updatedDay, new Date());
-    const fullDayBonusEligible = isFullDayToday && !fullDayBonusClaimed[today];
+    const fullDayBonusEligible = isFullDayToday
+      && !fullDayBonusClaimed[today]
+      && !fullDayBonusTreatPending[today];
     const deadlineRewardFloor = isFullDayToday && !deadlineTreatClaimed[today]
       ? resolveDeadlineRewardFloor(deadlineFullDayCompletedAt[today])
       : undefined;
@@ -2900,9 +3051,6 @@ export default function KeigoTaskApp() {
     setTimeout(() => {
       if (treatQueueToOpen.length > 0) {
         openTreatQueue(treatQueueToOpen);
-      }
-      if (fullDayBonusEligible) {
-        setFullDayBonusClaimed((c) => ({ ...c, [today]: true }));
       }
     }, 950);
   };
@@ -3301,8 +3449,22 @@ export default function KeigoTaskApp() {
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
           onCollect={handleTreatCollect}
+          onDefer={() => setDeferHintVisible(true)}
         />
       )}
+
+      {showPendingRewardsSheet && pendingRewardItems.length > 0 && (
+        <PendingRewardsSheet
+          items={pendingRewardItems}
+          onClaim={claimPendingReward}
+          onClose={() => setShowPendingRewardsSheet(false)}
+        />
+      )}
+
+      <DeferRewardHintToast
+        visible={deferHintVisible}
+        onDismiss={() => setDeferHintVisible(false)}
+      />
 
       {showMissionConfirm && todayMission && missionConfirmSession && (
         <MissionConfirmDialog
@@ -3359,6 +3521,17 @@ export default function KeigoTaskApp() {
           alignItems: "center", justifyContent: "center", gap: 5,
         }}
       >
+        {unclaimedRewardCount > 0 && (
+          <span style={{
+            position: "absolute", top: -4, right: -4,
+            minWidth: 18, height: 18, borderRadius: 9,
+            backgroundColor: theme.category.orange, color: "#fff",
+            fontSize: 10, fontWeight: 800, lineHeight: "18px",
+            textAlign: "center", padding: "0 4px",
+          }}>
+            {unclaimedRewardCount}
+          </span>
+        )}
         {[0,1,2].map((i) => (
           <span key={i} style={{ display: "block", width: 18, height: 2, borderRadius: 2, backgroundColor: theme.text.secondary }} />
         ))}
@@ -3402,6 +3575,11 @@ export default function KeigoTaskApp() {
               overscrollBehavior: "contain",
             }}>
             {[
+              ...(unclaimedRewardCount > 0 && !inCatchUp ? [{
+                icon: "🎁",
+                label: `もらえるごほうび (${unclaimedRewardCount})`,
+                action: () => { setShowPendingRewardsSheet(true); setShowMenu(false); },
+              }] : []),
               ...activeSessionIds.map((sid) => ({
                 icon: SESSION_META[sid].menuIcon,
                 label: SESSION_META[sid].menuLabel,
@@ -3685,6 +3863,12 @@ export default function KeigoTaskApp() {
               </div>
             )}
             <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} contextDate={catchUpDate ?? undefined} />
+            {!inCatchUp && (
+              <PendingRewardsBanner
+                count={unclaimedRewardCount}
+                onOpen={() => setShowPendingRewardsSheet(true)}
+              />
+            )}
             {contextActiveSessionIds.map((sid) => screen === sid && (
               <TaskScreen
                 key={sid}
@@ -3772,8 +3956,8 @@ export default function KeigoTaskApp() {
                 onMissionSetup={() => setShowMissionSetup(true)}
                 onOpenMissionReward={openMissionReward}
                 onOpenMissionParentCheck={() => openMissionParentCheck(sid)}
-                showDailyRewardButton={!inCatchUp && hasUnclaimedSessionDailyReward(sid)}
-                onOpenDailyReward={() => openSessionDailyReward(sid)}
+                showDailyRewardButton={!inCatchUp && hasAnyUnclaimedDailyReward()}
+                onOpenDailyReward={openDailyRewardEntry}
                 showDeadlineRewardButton={!inCatchUp && hasUnclaimedDeadlineReward()}
                 onOpenDeadlineReward={openDeadlineReward}
                 showWeeklyRewardButton={!inCatchUp && hasUnclaimedWeeklyReward()}

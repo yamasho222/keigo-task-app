@@ -554,13 +554,14 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 }
 
 function TreatOverlay({
-  mode, collectedIds, onClose, onCollect, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
+  mode, collectedIds, onClose, onCollect, onDefer, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
   missionTitle,
 }: {
   mode: TreatMode;
   collectedIds: string[];
   onClose: () => void;
   onCollect: (rewardId: string) => void;
+  onDefer?: () => void;
   devForceTier?: StickerRarity;
   devForceStickerId?: string;
   devForceTease?: boolean;
@@ -975,7 +976,14 @@ function TreatOverlay({
           )}
         </div>
 
-        <button type="button" onClick={onClose} disabled={isBusy} style={{
+        <button type="button" onClick={() => {
+          if (phase === "revealed") {
+            onClose();
+          } else if (!isBusy) {
+            onDefer?.();
+            onClose();
+          }
+        }} disabled={isBusy} style={{
           width: "100%", padding: "14px", borderRadius: 12,
           border: isImmersive ? "1px solid rgba(255,255,255,0.28)" : "none",
           marginTop: isImmersive ? 176 : 0,
