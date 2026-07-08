@@ -376,6 +376,9 @@ export function pickSpecialMissionReward(
   collectedIds: string[],
   rewardFloor: SpecialRewardFloor = "rare",
 ): StickerReward {
+  if (rewardFloor === "ultraRare") {
+    return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_ONE_OFF_SPECIAL_UR_PLUS));
+  }
   if (rewardFloor === "superRare") {
     return pickFromStickerTier(collectedIds, rollWeightedTier(SPECIAL_MISSION_SR_PLUS_WEIGHTS));
   }

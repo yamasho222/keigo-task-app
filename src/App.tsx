@@ -65,6 +65,7 @@ import {
   maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
   specialRewardFloorCompact, specialRewardFloorSetupHint,
+  isSpecialRewardFloor, normalizeOneOffSpecialTreatPending,
 } from "./sharedTasks";
 import {
   getPendingRewardItems,
@@ -328,7 +329,8 @@ interface StoredState {
   specialMissionRewardClaimed?: Record<string, boolean>;
   specialMissionTreatPending?: Record<string, boolean>;
   oneOffSpecialClaimed?: Record<string, boolean>;
-  oneOffSpecialTreatPending?: Record<string, boolean>;
+  /** claimKey → rewardFloor（旧データは boolean の可能性あり） */
+  oneOffSpecialTreatPending?: Record<string, SpecialRewardFloor | boolean>;
   missionHistory?: Record<string, { title: string; emoji: string }>;
   missionEveningNudgeDate?: string;
   catchUpDays?: Record<string, CatchUpDayState>;
@@ -563,6 +565,20 @@ function stripEphemeralTasks(tasks: Task[]): Task[] {
   return normalizeTasks(tasks).filter((t) => t.scope !== "today" && t.scope !== "special");
 }
 
+function resolveOneOffFloorFromTaskLists(
+  lists: Pick<StoredState, "morningTasks" | "daytimeTasks" | "eveningTasks" | "homeTasks">,
+  claimKey: string,
+): SpecialRewardFloor | undefined {
+  for (const tasks of [lists.morningTasks, lists.daytimeTasks, lists.eveningTasks, lists.homeTasks]) {
+    for (const t of tasks) {
+      if (isOneOffSpecialTask(t) && oneOffSpecialClaimKey(t) === claimKey) {
+        return t.specialRewardFloor ?? "rare";
+      }
+    }
+  }
+  return undefined;
+}
+
 function hydrateStoredState(data: StoredState): StoredState {
   const lists = normalizeAllTaskLists(data);
   return {
@@ -580,6 +596,10 @@ function hydrateStoredState(data: StoredState): StoredState {
     daytimeApproved: data.daytimeApproved ?? false,
     eveningApproved: data.eveningApproved ?? false,
     homeApproved: data.homeApproved ?? false,
+    oneOffSpecialTreatPending: normalizeOneOffSpecialTreatPending(
+      data.oneOffSpecialTreatPending as Record<string, unknown> | undefined,
+      (claimKey) => resolveOneOffFloorFromTaskLists(lists, claimKey),
+    ),
   };
 }
 
@@ -1357,8 +1377,11 @@ export default function KeigoTaskApp() {
   const [oneOffSpecialClaimed, setOneOffSpecialClaimed] = useState<Record<string, boolean>>(
     stored.oneOffSpecialClaimed ?? {},
   );
-  const [oneOffSpecialTreatPending, setOneOffSpecialTreatPending] = useState<Record<string, boolean>>(
-    stored.oneOffSpecialTreatPending ?? {},
+  const [oneOffSpecialTreatPending, setOneOffSpecialTreatPending] = useState<Record<string, SpecialRewardFloor>>(
+    normalizeOneOffSpecialTreatPending(
+      stored.oneOffSpecialTreatPending as Record<string, unknown> | undefined,
+      (claimKey) => resolveOneOffFloorFromTaskLists(stored, claimKey),
+    ),
   );
   const [oneOffSpecialAwaitingParent, setOneOffSpecialAwaitingParent] = useState<OneOffSpecialPending | null>(null);
   const [oneOffSpecialStampApproved, setOneOffSpecialStampApproved] = useState(false);
@@ -1938,16 +1961,17 @@ export default function KeigoTaskApp() {
       }
       if (closing?.mode === "oneOffSpecial" && closing.oneOffSpecialClaimKey) {
         const claimKey = closing.oneOffSpecialClaimKey;
+        const floor = isSpecialRewardFloor(closing.rewardFloor) ? closing.rewardFloor : "rare";
         if (oneOffSpecialCollectedRef.current) {
           setOneOffSpecialClaimed((c) => (c[claimKey] ? c : { ...c, [claimKey]: true }));
           setOneOffSpecialTreatPending((p) => {
-            if (!p[claimKey]) return p;
+            if (!(claimKey in p)) return p;
             const next = { ...p };
             delete next[claimKey];
             return next;
           });
         } else {
-          setOneOffSpecialTreatPending((p) => ({ ...p, [claimKey]: true }));
+          setOneOffSpecialTreatPending((p) => ({ ...p, [claimKey]: floor }));
         }
       }
       if (closing?.mode === "daily" && closing.session && !dailyTreatCollectedRef.current) {
@@ -2464,7 +2488,7 @@ export default function KeigoTaskApp() {
         return { ...c, [key]: true };
       });
       setOneOffSpecialTreatPending((p) => {
-        if (!p[key]) return p;
+        if (!(key in p)) return p;
         const next = { ...p };
         delete next[key];
         return next;
@@ -2625,6 +2649,7 @@ export default function KeigoTaskApp() {
   };
 
   const findOneOffSpecialPendingInfo = (claimKey: string): OneOffSpecialPending | null => {
+    const pendingFloor = oneOffSpecialTreatPending[claimKey];
     for (const sid of SESSION_IDS) {
       for (const t of sessionState[sid].tasks) {
         if (isOneOffSpecialTask(t) && oneOffSpecialClaimKey(t) === claimKey) {
@@ -2634,10 +2659,21 @@ export default function KeigoTaskApp() {
             session: sid,
             title: t.title,
             emoji: t.emoji,
-            rewardFloor: t.specialRewardFloor ?? "rare",
+            rewardFloor: pendingFloor ?? t.specialRewardFloor ?? "rare",
           };
         }
       }
+    }
+    // タスクが日次リセットで消えても、保留ごほうびのフロアは残す
+    if (isSpecialRewardFloor(pendingFloor)) {
+      return {
+        claimKey,
+        taskId: -1,
+        session: "evening",
+        title: "特別ミッション",
+        emoji: "🎯",
+        rewardFloor: pendingFloor,
+      };
     }
     return null;
   };
@@ -2652,7 +2688,7 @@ export default function KeigoTaskApp() {
     }
     oneOffSpecialCollectedRef.current = false;
     setOneOffSpecialTreatPending((p) => {
-      if (!p[pending.claimKey]) return p;
+      if (!(pending.claimKey in p)) return p;
       const next = { ...p };
       delete next[pending.claimKey];
       return next;
@@ -2667,7 +2703,7 @@ export default function KeigoTaskApp() {
 
   const openFirstPendingOneOffSpecialReward = () => {
     const claimKey = Object.keys(oneOffSpecialTreatPending).find(
-      (k) => oneOffSpecialTreatPending[k] && !oneOffSpecialClaimed[k],
+      (k) => oneOffSpecialTreatPending[k] !== undefined && !oneOffSpecialClaimed[k],
     );
     if (!claimKey) return;
     const info = findOneOffSpecialPendingInfo(claimKey);
@@ -2676,7 +2712,7 @@ export default function KeigoTaskApp() {
 
   const hasUnclaimedOneOffSpecialReward = () =>
     Object.keys(oneOffSpecialTreatPending).some(
-      (k) => oneOffSpecialTreatPending[k] && !oneOffSpecialClaimed[k],
+      (k) => oneOffSpecialTreatPending[k] !== undefined && !oneOffSpecialClaimed[k],
     );
 
   const openOneOffParentCheck = () => {
@@ -2753,7 +2789,7 @@ export default function KeigoTaskApp() {
 
   const oneOffPendingLabels = Object.fromEntries(
     Object.keys(oneOffSpecialTreatPending)
-      .filter((k) => oneOffSpecialTreatPending[k] && !oneOffSpecialClaimed[k])
+      .filter((k) => oneOffSpecialTreatPending[k] !== undefined && !oneOffSpecialClaimed[k])
       .map((k) => {
         const info = findOneOffSpecialPendingInfo(k);
         return [k, info ? `${info.emoji} ${info.title}` : "特別ミッションのごほうび"] as const;
@@ -3341,7 +3377,7 @@ export default function KeigoTaskApp() {
       if (!isOneOffSpecialTask(t)) return;
       const claimKey = oneOffSpecialClaimKey(t);
       setOneOffSpecialTreatPending((p) => {
-        if (!p[claimKey]) return p;
+        if (!(claimKey in p)) return p;
         const next = { ...p };
         delete next[claimKey];
         return next;
@@ -3436,7 +3472,7 @@ export default function KeigoTaskApp() {
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           devForceTier={pendingTreat.devForceTier}
           devForceStickerId={pendingTreat.devForceStickerId}

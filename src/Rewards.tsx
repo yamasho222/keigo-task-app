@@ -791,11 +791,11 @@ function TreatOverlay({
       ? "ボーナスごほうび！レア以上！"
       : isOneOffSpecial
         ? missionTitle
-          ? `${missionTitle} — クリア！`
+          ? `${missionTitle} — ${specialRewardFloorLabel(rewardFloor)}確定！`
           : `ミッション達成！${specialRewardFloorLabel(rewardFloor)}のシール！`
         : isSpecialMission
           ? missionTitle
-            ? `${missionTitle} — クリア！`
+            ? `${missionTitle} — ${specialRewardFloorLabel(rewardFloor)}確定！`
             : `ミッション達成！${specialRewardFloorLabel(rewardFloor)}のシール！`
           : "この時間のやること、全部クリア！";
 

@@ -3,6 +3,29 @@ export type SessionId = "morning" | "daytime" | "home" | "evening";
 export type TaskScope = "regular" | "today" | "special";
 export type SpecialRewardFloor = "rare" | "superRare" | "ultraRare";
 
+export function isSpecialRewardFloor(value: unknown): value is SpecialRewardFloor {
+  return value === "rare" || value === "superRare" || value === "ultraRare";
+}
+
+/** 旧形式 `true` や不正値を SpecialRewardFloor に正規化する */
+export function normalizeOneOffSpecialTreatPending(
+  raw: Record<string, unknown> | undefined,
+  resolveFloor?: (claimKey: string) => SpecialRewardFloor | undefined,
+): Record<string, SpecialRewardFloor> {
+  if (!raw) return {};
+  const next: Record<string, SpecialRewardFloor> = {};
+  for (const [claimKey, value] of Object.entries(raw)) {
+    if (isSpecialRewardFloor(value)) {
+      next[claimKey] = value;
+      continue;
+    }
+    if (value === true) {
+      next[claimKey] = resolveFloor?.(claimKey) ?? "rare";
+    }
+  }
+  return next;
+}
+
 export function specialRewardFloorLabel(floor: SpecialRewardFloor = "rare"): string {
   if (floor === "ultraRare") return "ウルトラレア以上";
   if (floor === "superRare") return "スーパーレア以上";

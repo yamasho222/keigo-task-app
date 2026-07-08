@@ -36,7 +36,7 @@ export interface PendingRewardsContext {
   specialMissionRewardClaimed: Record<string, boolean>;
   specialMissionTreatPending: Record<string, boolean>;
   oneOffSpecialClaimed: Record<string, boolean>;
-  oneOffSpecialTreatPending: Record<string, boolean>;
+  oneOffSpecialTreatPending: Record<string, SpecialRewardFloor>;
   todayMission: DailyMission | null;
   currentTaskDay: string;
   missionApprovedSessions?: SessionId[];
@@ -129,7 +129,7 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
   }
 
   for (const claimKey of Object.keys(ctx.oneOffSpecialTreatPending)) {
-    if (!ctx.oneOffSpecialTreatPending[claimKey] || ctx.oneOffSpecialClaimed[claimKey]) continue;
+    if (ctx.oneOffSpecialTreatPending[claimKey] === undefined || ctx.oneOffSpecialClaimed[claimKey]) continue;
     items.push({
       id: `oneOff:${claimKey}`,
       kind: "oneOffSpecial",
