@@ -23,7 +23,7 @@ import {
   NewRecordOverlay, TreatOverlay,
   type NewRecordCelebration, type TreatMode,
 } from "./Rewards";
-import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory } from "./stickerRewards";
+import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory, PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE } from "./stickerRewards";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
@@ -77,6 +77,7 @@ import {
   PendingRewardsBanner,
   DeferRewardHintToast,
 } from "./PendingRewardsSheet";
+import type { ActiveChildContext } from "./cloudStorage";
 
 // ── Types & Data ──────────────────────────────────────
 
@@ -334,6 +335,10 @@ interface StoredState {
   missionHistory?: Record<string, { title: string; emoji: string }>;
   missionEveningNudgeDate?: string;
   catchUpDays?: Record<string, CatchUpDayState>;
+  /** かぶり連続回数（weekly 以外） */
+  duplicateStreak?: number;
+  /** 次の通常ごほうびで天井救済を試す */
+  pityArmed?: boolean;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -363,6 +368,9 @@ interface PendingTreat {
   deadlineRewardFloor?: SpecialRewardFloor;
   weeklyMilestoneStreak?: number;
   threeDayMilestoneStreak?: number;
+  /** 天井武装中の開封（未所持 50%） */
+  forceUncollectedChance?: number;
+  pityAttempt?: boolean;
 }
 
 interface OneOffSpecialPending {
@@ -1327,7 +1335,7 @@ function rememberCustomTaskEmoji(prev: string[], emoji: string): string[] {
   return [emoji, ...prev].slice(0, CUSTOM_TASK_EMOJI_LIMIT);
 }
 
-export default function KeigoTaskApp() {
+export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) {
   const stored = loadStoredState();
 
   const [screen,         setScreen]         = useState<ScreenId>(getInitialScreen());
@@ -1439,6 +1447,8 @@ export default function KeigoTaskApp() {
     if (merged.length > 0) saveStickerAlbum(merged);
     return merged;
   });
+  const [duplicateStreak, setDuplicateStreak] = useState(stored.duplicateStreak ?? 0);
+  const [pityArmed, setPityArmed] = useState(stored.pityArmed ?? false);
   const taskDayRef = useRef(stored.date);
   const screenRef = useRef<ScreenId>(getInitialScreen());
   const specialMissionCollectedRef = useRef(false);
@@ -1457,6 +1467,8 @@ export default function KeigoTaskApp() {
   const threeDayCollectedRef = useRef(false);
   const fullDayBonusCollectedRef = useRef(false);
   const fullDayBonusClaimedRef = useRef<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
+  const pityArmedRef = useRef(stored.pityArmed ?? false);
+  const stickerAlbumRef = useRef(stickerAlbum);
   const gameTimerStartRef = useRef<number | null>(null);
   const gameTimerPausedTotalRef = useRef(0);
   const gameTimerPauseStartRef = useRef<number | null>(null);
@@ -1745,10 +1757,14 @@ export default function KeigoTaskApp() {
       missionHistory,
       missionEveningNudgeDate,
       catchUpDays,
+      duplicateStreak,
+      pityArmed,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
+    cloud?.saveState(state, stickerAlbum);
   }, [
+    cloud?.saveState,
     morningDone, daytimeDone, eveningDone, homeDone,
     morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
     morningApproved, daytimeApproved, eveningApproved, homeApproved,
@@ -1761,6 +1777,7 @@ export default function KeigoTaskApp() {
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
     missionHistory, missionEveningNudgeDate, catchUpDays,
+    duplicateStreak, pityArmed,
   ]);
 
   useEffect(() => {
@@ -2054,7 +2071,7 @@ export default function KeigoTaskApp() {
         return [];
       }
       const [next, ...rest] = queue;
-      setPendingTreat(next);
+      setPendingTreat(applyPityToTreat(next));
       return rest;
     });
     if (screenRef.current === "show_parent_oneoff") {
@@ -2066,9 +2083,22 @@ export default function KeigoTaskApp() {
     }
   };
 
+  const applyPityToTreat = (treat: PendingTreat): PendingTreat => {
+    if (treat.pityAttempt) return treat;
+    if (treat.mode === "weekly") return treat;
+    if (treat.devForceTier || treat.devForceStickerId) return treat;
+    if (!pityArmedRef.current) return treat;
+    return {
+      ...treat,
+      forceUncollectedChance: PITY_UNCOLLECTED_CHANCE,
+      pityAttempt: true,
+    };
+  };
+
   const openTreatQueue = (queue: PendingTreat[]) => {
     if (queue.length === 0) return;
-    const [first, ...rest] = queue;
+    const [rawFirst, ...rest] = queue;
+    const first = applyPityToTreat(rawFirst);
     setPendingTreat(first);
     setTreatQueue(rest);
   };
@@ -2446,6 +2476,8 @@ export default function KeigoTaskApp() {
   lastWeeklyRewardStreakRef.current = lastWeeklyRewardStreak;
   lastThreeDayRewardStreakRef.current = lastThreeDayRewardStreak;
   fullDayBonusClaimedRef.current = fullDayBonusClaimed;
+  pityArmedRef.current = pityArmed;
+  stickerAlbumRef.current = stickerAlbum;
 
   const openFullDayBonusReward = () => {
     const dayKey = todayKey();
@@ -2461,7 +2493,7 @@ export default function KeigoTaskApp() {
     openTreatQueue([{ mode: "fullDayBonus" }]);
   };
 
-  const handleTreatCollect = (rewardId: string) => {
+  const handleTreatCollect = (rewardId: string, meta?: { isNew: boolean }) => {
     const treat = pendingTreatRef.current;
     if (!treat) return;
 
@@ -2550,6 +2582,29 @@ export default function KeigoTaskApp() {
         delete next[dayKey];
         return next;
       });
+    }
+
+    const isDevForce = !!(treat.devForceTier || treat.devForceStickerId);
+    const isNew = meta?.isNew ?? !stickerAlbumRef.current.includes(rewardId);
+
+    if (treat.pityAttempt) {
+      setPityArmed(false);
+      pityArmedRef.current = false;
+    }
+
+    if (!isDevForce && treat.mode !== "weekly") {
+      if (isNew) {
+        setDuplicateStreak(0);
+      } else {
+        setDuplicateStreak((prev) => {
+          const next = prev + 1;
+          if (next >= PITY_DUPLICATE_THRESHOLD) {
+            setPityArmed(true);
+            pityArmedRef.current = true;
+          }
+          return next;
+        });
+      }
     }
 
     collectSticker(rewardId);
@@ -3460,6 +3515,31 @@ export default function KeigoTaskApp() {
     <div style={{ width: "100%", minHeight: "100dvh", backgroundColor: theme.bg.editor, position: "relative", overflow: "hidden" }}>
       <AnimStyles />
 
+      {cloud && (
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 70,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 14px",
+            paddingTop: "max(env(safe-area-inset-top, 8px), 8px)",
+            backgroundColor: theme.fill.secondary,
+            borderBottom: `1px solid ${theme.stroke.secondary}`,
+          }}
+        >
+          <span style={{ fontSize: 18 }} aria-hidden>{cloud.avatarEmoji}</span>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: theme.text.primary }}>
+            {cloud.childName}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>
+            {cloud.syncStatus}
+          </span>
+        </div>
+      )}
+
       {anticipating && <AnticipationOverlay />}
       {celebType && <CelebrationOverlay key={celebKey} type={celebType} celebKey={celebKey} />}
       {newRecordCelebration && (
@@ -3472,7 +3552,7 @@ export default function KeigoTaskApp() {
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           devForceTier={pendingTreat.devForceTier}
           devForceStickerId={pendingTreat.devForceStickerId}
@@ -3482,6 +3562,8 @@ export default function KeigoTaskApp() {
           devForceSrUrMode={pendingTreat.devForceSrUrMode}
           rewardFloor={pendingTreat.rewardFloor}
           missionTitle={pendingTreat.missionTitle}
+          forceUncollectedChance={pendingTreat.forceUncollectedChance}
+          pityAttempt={pendingTreat.pityAttempt}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
           onCollect={handleTreatCollect}
@@ -3641,6 +3723,23 @@ export default function KeigoTaskApp() {
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
+              ...(cloud ? [
+                {
+                  icon: "👤",
+                  label: `プロフィール切替（${cloud.childName}）`,
+                  action: () => { setShowMenu(false); cloud.onSwitchProfile(); },
+                },
+                {
+                  icon: "☁",
+                  label: `同期: ${cloud.syncStatus}`,
+                  action: () => { setShowMenu(false); },
+                },
+                {
+                  icon: "🚪",
+                  label: "クラウドからログアウト",
+                  action: () => { setShowMenu(false); void cloud.onSignOut(); },
+                },
+              ] : []),
               ...(import.meta.env.DEV ? [
                 { icon: "⛏️", label: "MCシールプレビュー（全16枚）", action: () => {
                   openTreatQueue(getStickersByCategory("minecraft").map((s) => ({
@@ -3672,8 +3771,21 @@ export default function KeigoTaskApp() {
                   openTreatQueue([{ mode: "specialMission", missionTitle: "📚 テストミッション" }]);
                   setShowMenu(false);
                 } },
-                { icon: "🎊", label: "7日連続 UR確定ごほうびテスト", action: () => {
+                { icon: "🎊", label: "7日連続 LR確定ごほうびテスト", action: () => {
                   openTreatQueue([{ mode: "weekly", weeklyMilestoneStreak: 7 }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🔁", label: "かぶり天井を武装（テスト）", action: () => {
+                  setDuplicateStreak(PITY_DUPLICATE_THRESHOLD);
+                  setPityArmed(true);
+                  pityArmedRef.current = true;
+                  setShowMenu(false);
+                } },
+                { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {
+                  setDuplicateStreak(PITY_DUPLICATE_THRESHOLD);
+                  setPityArmed(true);
+                  pityArmedRef.current = true;
+                  openTreatQueue([{ mode: "daily" }]);
                   setShowMenu(false);
                 } },
                 { icon: "🎉", label: "3日連続 レア確定ごほうびテスト", action: () => {
@@ -3904,6 +4016,22 @@ export default function KeigoTaskApp() {
                 count={unclaimedRewardCount}
                 onOpen={() => setShowPendingRewardsSheet(true)}
               />
+            )}
+            {!inCatchUp && (pityArmed || duplicateStreak > 0) && (
+              <div style={{
+                margin: "0 0 8px",
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: `1px solid ${pityArmed ? `${theme.category.orange}66` : theme.stroke.tertiary}`,
+                backgroundColor: pityArmed ? `${theme.category.orange}12` : theme.fill.quaternary,
+                fontSize: 12,
+                fontWeight: 700,
+                color: pityArmed ? theme.category.orange : theme.text.secondary,
+              }}>
+                {pityArmed
+                  ? "かぶり救済チャンス！つぎの宝箱があたりやすいかも"
+                  : `かぶり ${duplicateStreak}/${PITY_DUPLICATE_THRESHOLD}`}
+              </div>
             )}
             {contextActiveSessionIds.map((sid) => screen === sid && (
               <TaskScreen

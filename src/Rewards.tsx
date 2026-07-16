@@ -555,12 +555,12 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 
 function TreatOverlay({
   mode, collectedIds, onClose, onCollect, onDefer, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
-  missionTitle,
+  missionTitle, forceUncollectedChance, pityAttempt,
 }: {
   mode: TreatMode;
   collectedIds: string[];
   onClose: () => void;
-  onCollect: (rewardId: string) => void;
+  onCollect: (rewardId: string, meta?: { isNew: boolean }) => void;
   onDefer?: () => void;
   devForceTier?: StickerRarity;
   devForceStickerId?: string;
@@ -570,6 +570,8 @@ function TreatOverlay({
   devForceSrUrMode?: SrUrRevealMode;
   rewardFloor?: SpecialRewardFloor;
   missionTitle?: string;
+  forceUncollectedChance?: number;
+  pityAttempt?: boolean;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
   type UpgradeStep = "fakeNormal" | "fakeNormalCrush" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
@@ -609,7 +611,10 @@ function TreatOverlay({
     setDecoy(null);
     setFakeUrDecoy(null);
     setActiveTease(null);
-    if (!devForceStickerId || import.meta.env.DEV) onCollect(picked.id);
+    if (!devForceStickerId || import.meta.env.DEV) {
+      const isNew = !collectedIds.includes(picked.id);
+      onCollect(picked.id, { isNew });
+    }
     window.setTimeout(() => {
       vibrateTreat(getRarityRevealConfig(picked.rarity).vibratePattern);
     }, 200);
@@ -722,7 +727,10 @@ function TreatOverlay({
     const picked = forced
       ?? (devForceTier
         ? pickStickerByTier(collectedIds, devForceTier)
-        : pickTreatReward(collectedIds, mode, { rewardFloor }));
+        : pickTreatReward(collectedIds, mode, {
+          rewardFloor,
+          forceUncollectedChance,
+        }));
     if (!picked) return;
 
     // DEV: 開封前teaseの単体プレビュー（昇格カットインなし）
@@ -778,7 +786,9 @@ function TreatOverlay({
           : "⭐ きょうのごほうび ⭐";
 
   const subtitle = isWeekly
-    ? "7日連続ですべてクリア！ウルトラレア以上確定！"
+    ? "7日連続ですべてクリア！レジェンドレア確定！"
+    : pityAttempt
+      ? "かぶり救済チャンス！新しいシールが出やすいかも！"
     : isThreeDayStreak
       ? "3日連続ですべてクリア！レア以上確定！"
       : isDeadline

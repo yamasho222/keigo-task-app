@@ -398,9 +398,30 @@ export function pickOneOffSpecialReward(
   return pickFromStickerTier(collectedIds, tier);
 }
 
+/** かぶり連続で天井武装する回数 */
+export const PITY_DUPLICATE_THRESHOLD = 20;
+/** 天井武装時、未所持を引く確率 */
+export const PITY_UNCOLLECTED_CHANCE = 0.5;
+
+/** 未所持シールから1枚。minFloor 以上を優先し、無ければ未所持全体 */
+export function pickUncollectedReward(
+  collectedIds: string[],
+  minFloor?: SpecialRewardFloor,
+): StickerReward | null {
+  const exclude = new Set(dedupeStickerIds(collectedIds));
+  let pool = STICKER_REWARDS.filter((r) => !exclude.has(r.id));
+  if (pool.length === 0) return null;
+  if (minFloor) {
+    const minRank = RARITY_META[minFloor].rank;
+    const floored = pool.filter((r) => RARITY_META[r.rarity].rank >= minRank);
+    if (floored.length > 0) pool = floored;
+  }
+  return pickRandom(pool);
+}
+
+/** 7日連続ごほうび — レジェンドレア確定（未所持 LR 優先） */
 export function pickWeeklyReward(collectedIds: string[]): StickerReward {
-  const tier = rollWeightedTier(TIER_WEIGHTS_WEEKLY);
-  return pickFromStickerTier(collectedIds, tier);
+  return pickFromStickerTier(collectedIds, "legendary");
 }
 
 /** DEV: 指定ティアから1枚抽選 */
@@ -430,8 +451,13 @@ export function pickDecoyUltraRareReward(): StickerReward {
 export function pickTreatReward(
   collectedIds: string[],
   mode: TreatMode,
-  options?: { rewardFloor?: SpecialRewardFloor },
+  options?: { rewardFloor?: SpecialRewardFloor; forceUncollectedChance?: number },
 ): RewardItem {
+  const chance = options?.forceUncollectedChance ?? 0;
+  if (chance > 0 && mode !== "weekly" && Math.random() < chance) {
+    const uncollected = pickUncollectedReward(collectedIds, options?.rewardFloor);
+    if (uncollected) return uncollected;
+  }
   if (mode === "fullDayBonus") return pickFullDayBonusReward(collectedIds);
   if (mode === "threeDayStreak") return pickThreeDayReward(collectedIds);
   if (mode === "deadline") return pickDeadlineReward(collectedIds, options?.rewardFloor ?? "rare");

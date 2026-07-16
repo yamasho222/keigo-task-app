@@ -79,10 +79,13 @@ export const TIER_WEIGHTS_ONE_OFF_SPECIAL_UR_PLUS: Record<"ultraRare" | "legenda
   legendary: 0.30,
 };
 
-/** 7日連続ごほうび — UR以上確定 */
+/**
+ * 7日連続ごほうび — 旧ウェイト（現行は pickWeeklyReward で LR 固定）。
+ * 互換・参照用に残す。
+ */
 export const TIER_WEIGHTS_WEEKLY: Record<"ultraRare" | "legendary", number> = {
-  ultraRare: 0.60,
-  legendary: 0.40,
+  ultraRare: 0,
+  legendary: 1,
 };
 
 export type LegendaryRevealMode = "cutin" | "direct";
