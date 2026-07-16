@@ -403,6 +403,39 @@ export const PITY_DUPLICATE_THRESHOLD = 20;
 /** 天井武装時、未所持を引く確率 */
 export const PITY_UNCOLLECTED_CHANCE = 0.5;
 
+/** かぶりトークンで交換できるレア（ノーマルは対象外） */
+export type DuplicateTokenExchangeTier = "rare" | "superRare" | "ultraRare" | "legendary";
+
+export const DUPLICATE_TOKEN_EXCHANGE_TIERS: readonly DuplicateTokenExchangeTier[] = [
+  "rare", "superRare", "ultraRare", "legendary",
+] as const;
+
+/** 案A: R50 / SR90 / UR140 / LR220（ノーマル交換なし） */
+export const DUPLICATE_TOKEN_COSTS: Record<DuplicateTokenExchangeTier, number> = {
+  rare: 50,
+  superRare: 90,
+  ultraRare: 140,
+  legendary: 220,
+};
+
+export function countUncollectedStickersByRarity(
+  collectedIds: string[],
+  rarity: StickerRarity,
+): number {
+  const exclude = new Set(dedupeStickerIds(collectedIds));
+  return STICKER_REWARDS.filter((r) => r.rarity === rarity && !exclude.has(r.id)).length;
+}
+
+export function pickUncollectedByRarity(
+  collectedIds: string[],
+  rarity: StickerRarity,
+): StickerReward | null {
+  const exclude = new Set(dedupeStickerIds(collectedIds));
+  const pool = STICKER_REWARDS.filter((r) => r.rarity === rarity && !exclude.has(r.id));
+  if (pool.length === 0) return null;
+  return pickRandom(pool);
+}
+
 /** 未所持シールから1枚。minFloor 以上を優先し、無ければ未所持全体 */
 export function pickUncollectedReward(
   collectedIds: string[],

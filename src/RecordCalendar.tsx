@@ -2,9 +2,13 @@ import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 import {
   REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, getAlbumCategoryGroups,
+  DUPLICATE_TOKEN_COSTS, DUPLICATE_TOKEN_EXCHANGE_TIERS, RARITY_LABELS,
+  countUncollectedStickersByRarity,
+  type DuplicateTokenExchangeTier,
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { RarityBadge, StickerFrameWithBadge, StickerImg } from "./Rewards";
+import { RARITY_META } from "./rarityMeta";
 import {
   completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
   requiredSessionCount,
@@ -167,11 +171,15 @@ interface Props {
   history: Record<string, DayHistory>;
   streak: number;
   stickerAlbum: string[];
+  duplicateTokens?: number;
+  onRedeemDuplicateToken?: (tier: DuplicateTokenExchangeTier) => void;
   onBack: () => void;
   onSelectCatchUpDay?: (dateKey: string) => void;
 }
 
-export function RecordScreen({ history, streak, stickerAlbum, onBack, onSelectCatchUpDay }: Props) {
+export function RecordScreen({
+  history, streak, stickerAlbum, duplicateTokens = 0, onRedeemDuplicateToken, onBack, onSelectCatchUpDay,
+}: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -319,6 +327,61 @@ export function RecordScreen({ history, streak, stickerAlbum, onBack, onSelectCa
         <span>🏠 帰宅後</span>
         <span>🌙 夜</span>
         <span>⭐ きょうは{todayRequired}つ全部</span>
+      </div>
+
+      <div style={{
+        padding: 14, borderRadius: 14,
+        backgroundColor: `${theme.category.orange}0A`,
+        border: `1.5px solid ${theme.category.orange}33`,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: theme.category.orange, marginBottom: 4, textAlign: "center" }}>
+          かぶりトークン
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 900, color: theme.text.primary, textAlign: "center", marginBottom: 6 }}>
+          {duplicateTokens}
+        </div>
+        <div style={{ fontSize: 11, color: theme.text.tertiary, textAlign: "center", marginBottom: 12, lineHeight: 1.45 }}>
+          かぶると1つたまる。使って未所持シールを確定でもらえるよ
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {DUPLICATE_TOKEN_EXCHANGE_TIERS.map((tier) => {
+            const cost = DUPLICATE_TOKEN_COSTS[tier];
+            const remaining = countUncollectedStickersByRarity(uniqueAlbum, tier);
+            const canAfford = duplicateTokens >= cost;
+            const enabled = remaining > 0 && canAfford && !!onRedeemDuplicateToken;
+            return (
+              <button
+                key={tier}
+                type="button"
+                disabled={!enabled}
+                onClick={() => {
+                  if (!enabled || !onRedeemDuplicateToken) return;
+                  if (!window.confirm(`${RARITY_LABELS[tier]}の未所持シールを1枚もらう？（${cost}トークン）`)) return;
+                  onRedeemDuplicateToken(tier);
+                }}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  padding: "10px 12px", borderRadius: 10, cursor: enabled ? "pointer" : "default",
+                  border: `1.5px solid ${enabled ? RARITY_META[tier].color : theme.stroke.secondary}`,
+                  backgroundColor: enabled ? `${RARITY_META[tier].color}14` : theme.fill.quaternary,
+                  color: enabled ? theme.text.primary : theme.text.tertiary,
+                  opacity: remaining === 0 ? 0.55 : 1,
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 800, color: enabled ? RARITY_META[tier].color : theme.text.tertiary }}>
+                  {RARITY_LABELS[tier]}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 700 }}>
+                  {remaining === 0
+                    ? "コンプ済み"
+                    : canAfford
+                      ? `${cost} → 未所持あと${remaining}`
+                      : `${cost}必要（あと${cost - duplicateTokens}）`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div style={{

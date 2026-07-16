@@ -555,7 +555,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 
 function TreatOverlay({
   mode, collectedIds, onClose, onCollect, onDefer, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
-  missionTitle, forceUncollectedChance, pityAttempt,
+  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem,
 }: {
   mode: TreatMode;
   collectedIds: string[];
@@ -572,6 +572,7 @@ function TreatOverlay({
   missionTitle?: string;
   forceUncollectedChance?: number;
   pityAttempt?: boolean;
+  tokenRedeem?: boolean;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
   type UpgradeStep = "fakeNormal" | "fakeNormalCrush" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
@@ -773,6 +774,8 @@ function TreatOverlay({
     : isWeekly ? 100 : isDeadline ? 94 : isThreeDayStreak ? 92 : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
   const title = isWeekly
     ? "🎊 7日連続 特別ごほうび！ 🎊"
+    : tokenRedeem
+      ? "🪙 かぶりトークン交換！ 🪙"
     : isThreeDayStreak
       ? "🎉 3日連続 ごほうび！ 🎉"
       : isDeadline
@@ -787,6 +790,8 @@ function TreatOverlay({
 
   const subtitle = isWeekly
     ? "7日連続ですべてクリア！レジェンドレア確定！"
+    : tokenRedeem
+      ? "たまったかぶりトークンで新しいシールゲット！"
     : pityAttempt
       ? "かぶり救済チャンス！新しいシールが出やすいかも！"
     : isThreeDayStreak

@@ -23,7 +23,12 @@ import {
   NewRecordOverlay, TreatOverlay,
   type NewRecordCelebration, type TreatMode,
 } from "./Rewards";
-import { loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory, PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE } from "./stickerRewards";
+import {
+  loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory,
+  PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE,
+  DUPLICATE_TOKEN_COSTS, pickUncollectedByRarity,
+  type DuplicateTokenExchangeTier,
+} from "./stickerRewards";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
@@ -339,6 +344,8 @@ interface StoredState {
   duplicateStreak?: number;
   /** 次の通常ごほうびで天井救済を試す */
   pityArmed?: boolean;
+  /** かぶりトークン残高 */
+  duplicateTokens?: number;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -371,6 +378,8 @@ interface PendingTreat {
   /** 天井武装中の開封（未所持 50%） */
   forceUncollectedChance?: number;
   pityAttempt?: boolean;
+  /** かぶりトークン交換の開封（トークン加算・天井カウント対象外） */
+  tokenRedeem?: boolean;
 }
 
 interface OneOffSpecialPending {
@@ -1449,6 +1458,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   });
   const [duplicateStreak, setDuplicateStreak] = useState(stored.duplicateStreak ?? 0);
   const [pityArmed, setPityArmed] = useState(stored.pityArmed ?? false);
+  const [duplicateTokens, setDuplicateTokens] = useState(stored.duplicateTokens ?? 0);
   const taskDayRef = useRef(stored.date);
   const screenRef = useRef<ScreenId>(getInitialScreen());
   const specialMissionCollectedRef = useRef(false);
@@ -1759,6 +1769,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       catchUpDays,
       duplicateStreak,
       pityArmed,
+      duplicateTokens,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1777,7 +1788,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
     missionHistory, missionEveningNudgeDate, catchUpDays,
-    duplicateStreak, pityArmed,
+    duplicateStreak, pityArmed, duplicateTokens,
   ]);
 
   useEffect(() => {
@@ -2084,7 +2095,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const applyPityToTreat = (treat: PendingTreat): PendingTreat => {
-    if (treat.pityAttempt) return treat;
+    if (treat.pityAttempt || treat.tokenRedeem) return treat;
     if (treat.mode === "weekly") return treat;
     if (treat.devForceTier || treat.devForceStickerId) return treat;
     if (!pityArmedRef.current) return treat;
@@ -2584,7 +2595,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       });
     }
 
-    const isDevForce = !!(treat.devForceTier || treat.devForceStickerId);
+    const isDevForce = !!(treat.devForceTier || treat.devForceStickerId) && !treat.tokenRedeem;
     const isNew = meta?.isNew ?? !stickerAlbumRef.current.includes(rewardId);
 
     if (treat.pityAttempt) {
@@ -2592,22 +2603,41 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       pityArmedRef.current = false;
     }
 
-    if (!isDevForce && treat.mode !== "weekly") {
-      if (isNew) {
-        setDuplicateStreak(0);
-      } else {
-        setDuplicateStreak((prev) => {
-          const next = prev + 1;
-          if (next >= PITY_DUPLICATE_THRESHOLD) {
-            setPityArmed(true);
-            pityArmedRef.current = true;
-          }
-          return next;
-        });
+    if (!isDevForce && !treat.tokenRedeem) {
+      if (!isNew) {
+        setDuplicateTokens((t) => t + 1);
+      }
+      if (treat.mode !== "weekly") {
+        if (isNew) {
+          setDuplicateStreak(0);
+        } else {
+          setDuplicateStreak((prev) => {
+            const next = prev + 1;
+            if (next >= PITY_DUPLICATE_THRESHOLD) {
+              setPityArmed(true);
+              pityArmedRef.current = true;
+            }
+            return next;
+          });
+        }
       }
     }
 
     collectSticker(rewardId);
+  };
+
+  const redeemDuplicateToken = (tier: DuplicateTokenExchangeTier) => {
+    const cost = DUPLICATE_TOKEN_COSTS[tier];
+    if (duplicateTokens < cost) return;
+    const picked = pickUncollectedByRarity(stickerAlbumRef.current, tier);
+    if (!picked) return;
+    setDuplicateTokens((t) => t - cost);
+    openTreatQueue([{
+      mode: "daily",
+      devForceStickerId: picked.id,
+      tokenRedeem: true,
+      missionTitle: "かぶりトークン交換",
+    }]);
   };
 
   const openSessionDailyReward = (session: SessionId) => {
@@ -3564,6 +3594,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           missionTitle={pendingTreat.missionTitle}
           forceUncollectedChance={pendingTreat.forceUncollectedChance}
           pityAttempt={pendingTreat.pityAttempt}
+          tokenRedeem={pendingTreat.tokenRedeem}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
           onCollect={handleTreatCollect}
@@ -3779,6 +3810,21 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setDuplicateStreak(PITY_DUPLICATE_THRESHOLD);
                   setPityArmed(true);
                   pityArmedRef.current = true;
+                  setShowMenu(false);
+                } },
+                { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {
+                  setDuplicateStreak(PITY_DUPLICATE_THRESHOLD);
+                  setPityArmed(true);
+                  pityArmedRef.current = true;
+                  openTreatQueue([{ mode: "daily" }]);
+                  setShowMenu(false);
+                } },
+                { icon: "🪙", label: "かぶりトークン +50（テスト）", action: () => {
+                  setDuplicateTokens((t) => t + 50);
+                  setShowMenu(false);
+                } },
+                { icon: "🪙", label: "かぶりトークン +220（テスト）", action: () => {
+                  setDuplicateTokens((t) => t + 220);
                   setShowMenu(false);
                 } },
                 { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {
@@ -4017,7 +4063,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 onOpen={() => setShowPendingRewardsSheet(true)}
               />
             )}
-            {!inCatchUp && (pityArmed || duplicateStreak > 0) && (
+            {!inCatchUp && (pityArmed || duplicateStreak > 0 || duplicateTokens > 0) && (
               <div style={{
                 margin: "0 0 8px",
                 padding: "8px 12px",
@@ -4027,10 +4073,22 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 fontSize: 12,
                 fontWeight: 700,
                 color: pityArmed ? theme.category.orange : theme.text.secondary,
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
               }}>
-                {pityArmed
-                  ? "かぶり救済チャンス！つぎの宝箱があたりやすいかも"
-                  : `かぶり ${duplicateStreak}/${PITY_DUPLICATE_THRESHOLD}`}
+                <span>
+                  {pityArmed
+                    ? "かぶり救済チャンス！つぎの宝箱があたりやすいかも"
+                    : duplicateStreak > 0
+                      ? `かぶり ${duplicateStreak}/${PITY_DUPLICATE_THRESHOLD}`
+                      : "かぶりトークン"}
+                </span>
+                {duplicateTokens > 0 && (
+                  <span style={{ color: theme.category.orange, flexShrink: 0 }}>
+                    🪙 {duplicateTokens}
+                  </span>
+                )}
               </div>
             )}
             {contextActiveSessionIds.map((sid) => screen === sid && (
@@ -4223,6 +4281,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             history={history}
             streak={streak}
             stickerAlbum={stickerAlbum}
+            duplicateTokens={duplicateTokens}
+            onRedeemDuplicateToken={redeemDuplicateToken}
             onBack={goHome}
             onSelectCatchUpDay={openCatchUpDay}
           />
