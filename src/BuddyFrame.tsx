@@ -49,10 +49,16 @@ export function BuddyFrame({
           <RarityBadgeCorner rarity={rarity} compact={compactRarity} />
         </div>
       )}
-      {lv >= 9 && lv < 10 && (
+      {lv === 9 && (
         <div className="buddy-frame__sparks" aria-hidden>
           <i /><i /><i /><i /><i /><i /><i /><i />
           <b /><b /><b /><b />
+        </div>
+      )}
+      {lv >= 10 && (
+        <div className="buddy-frame__sparks buddy-frame__sparks--max" aria-hidden>
+          <i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i />
+          <b /><b /><b /><b /><b /><b />
         </div>
       )}
       <div className="buddy-frame__shell">
