@@ -4389,6 +4389,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 showOneOffParentCheckButton={!inCatchUp && oneOffSpecialAwaitingParent !== null}
                 onOpenOneOffParentCheck={openOneOffParentCheck}
                 gamePlaySec={gamePlayTimes[gamePlayKey(todayKey(), sid)]}
+                needsBuddySelect={!inCatchUp && !buddyId && stickerAlbum.length > 0}
+                onOpenBuddySelect={() => setShowBuddyPrompt(true)}
               />
             ))}
           </SessionPhaseSwipe>
@@ -5999,6 +6001,9 @@ interface TaskScreenProps {
   gamePlaySec?: number;
   catchUpMode?: boolean;
   taskFilterDate?: Date;
+  /** 相棒未設定かつ所持シールありのとき true */
+  needsBuddySelect?: boolean;
+  onOpenBuddySelect?: () => void;
 }
 
 function TaskScreen({
@@ -6017,6 +6022,8 @@ function TaskScreen({
   gamePlaySec,
   catchUpMode = false,
   taskFilterDate,
+  needsBuddySelect = false,
+  onOpenBuddySelect,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
@@ -6102,6 +6109,46 @@ function TaskScreen({
           {label}
         </div>
       </div>
+
+      {needsBuddySelect && onOpenBuddySelect && (
+        <button
+          type="button"
+          onClick={onOpenBuddySelect}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            padding: "12px 14px",
+            borderRadius: 14,
+            border: `1.5px solid ${theme.accent.primary}66`,
+            backgroundColor: `${theme.accent.primary}12`,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: theme.accent.primary }}>
+              🐾 今日の相棒を決める
+            </div>
+            <div style={{ fontSize: 11, color: theme.text.secondary, marginTop: 3, lineHeight: 1.4 }}>
+              親がハンコを押すと、選んだシールが育つよ
+            </div>
+          </div>
+          <span style={{
+            flexShrink: 0,
+            fontSize: 12,
+            fontWeight: 800,
+            color: "#fff",
+            backgroundColor: theme.accent.primary,
+            padding: "8px 12px",
+            borderRadius: 10,
+          }}>
+            選ぶ
+          </span>
+        </button>
+      )}
 
       <StepProgress tasks={progressTasks} done={done} skipped={skipped} justChecked={justChecked} />
       <BestTimeSummary session={session} tasks={progressTasks} bestTimes={bestTimes} />
