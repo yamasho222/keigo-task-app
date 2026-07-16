@@ -1,6 +1,6 @@
 import { theme } from "./theme";
 import {
-  REWARD_LOOKUP, dedupeStickerIds,
+  dedupeStickerIds, getAlbumCategoryGroups,
 } from "./stickerRewards";
 import { StickerFrameWithBadge, StickerImg } from "./Rewards";
 import { BuddyFrame } from "./BuddyFrame";
@@ -16,7 +16,14 @@ interface Props {
 export function BuddySelectPrompt({
   stickerAlbum, buddyProgress, onSelect, onDismiss,
 }: Props) {
-  const owned = dedupeStickerIds(stickerAlbum).filter((id) => REWARD_LOOKUP[id]);
+  const owned = new Set(dedupeStickerIds(stickerAlbum));
+  /** カテゴリ順・各カテゴリ内はレアリティ高い順（アルバムと同じ） */
+  const groups = getAlbumCategoryGroups(stickerAlbum)
+    .map((group) => ({
+      ...group,
+      rewards: group.rewards.filter((r) => owned.has(r.id)),
+    }))
+    .filter((group) => group.rewards.length > 0);
 
   return (
     <div
@@ -51,56 +58,71 @@ export function BuddySelectPrompt({
         <div style={{
           flex: 1, minHeight: 0, overflowY: "auto",
           WebkitOverflowScrolling: "touch",
-          display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "flex-start",
+          display: "flex", flexDirection: "column", gap: 14,
           padding: "10px 4px 8px",
         }}>
-          {owned.map((id) => {
-            const item = REWARD_LOOKUP[id];
-            const entry = getBuddyEntry(buddyProgress, id);
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onSelect(id)}
-                style={{
-                  width: 72, border: "none", background: "transparent",
-                  cursor: "pointer", padding: 0, textAlign: "center",
-                }}
-              >
-                <div style={{ width: 72, height: 72 }}>
-                  <BuddyFrame level={entry.level} size="cell" showLevelBadge rarity={item.rarity}>
-                    <StickerFrameWithBadge
-                      rarity={item.rarity}
-                      compact
-                      showBadge={false}
+          {groups.map((group) => (
+            <div key={group.category}>
+              <div style={{
+                fontSize: 11, fontWeight: 800, color: theme.text.secondary,
+                marginBottom: 8, letterSpacing: 0.4,
+              }}>
+                {group.label}
+              </div>
+              <div style={{
+                display: "flex", flexWrap: "wrap", gap: 10,
+                padding: "2px 2px 0",
+              }}>
+                {group.rewards.map((item) => {
+                  const entry = getBuddyEntry(buddyProgress, item.id);
+                  const isEmoji = item.kind === "emoji";
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onSelect(item.id)}
                       style={{
-                        width: "100%", height: "100%",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: item.emoji ? 28 : undefined,
+                        width: 72, border: "none", background: "transparent",
+                        cursor: "pointer", padding: 0, textAlign: "center",
                       }}
                     >
-                      {item.emoji ? (
-                        item.emoji
-                      ) : (
-                        <StickerImg
-                          src={item.image!}
-                          alt={item.label}
-                          padding={5}
-                          objectFit={item.imageFit ?? "contain"}
-                        />
-                      )}
-                    </StickerFrameWithBadge>
-                  </BuddyFrame>
-                </div>
-                <div style={{
-                  marginTop: 4, fontSize: 10, fontWeight: 700, color: theme.text.secondary,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {item.label}
-                </div>
-              </button>
-            );
-          })}
+                      <div style={{ width: 72, height: 72 }}>
+                        <BuddyFrame level={entry.level} size="cell" showLevelBadge rarity={item.rarity}>
+                          <StickerFrameWithBadge
+                            rarity={item.rarity}
+                            compact
+                            showBadge={false}
+                            style={{
+                              width: "100%", height: "100%",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: isEmoji ? 28 : undefined,
+                            }}
+                          >
+                            {isEmoji ? (
+                              item.emoji
+                            ) : (
+                              <StickerImg
+                                src={item.image}
+                                alt={item.label}
+                                padding={5}
+                                objectFit={item.imageFit ?? "contain"}
+                              />
+                            )}
+                          </StickerFrameWithBadge>
+                        </BuddyFrame>
+                      </div>
+                      <div style={{
+                        marginTop: 4, fontSize: 10, fontWeight: 700, color: theme.text.secondary,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {item.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
         <button
