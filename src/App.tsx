@@ -87,7 +87,17 @@ import {
   PendingRewardsBanner,
   DeferRewardHintToast,
 } from "./PendingRewardsSheet";
-import type { ActiveChildContext } from "./cloudStorage";
+/** クラウド同期用（任意）。未接続時は undefined のまま動く */
+export interface ActiveChildContext {
+  parentUserId: string;
+  childId: string;
+  childName: string;
+  avatarEmoji: string;
+  syncStatus: string;
+  saveState: (state: unknown, stickerAlbum: string[]) => void;
+  onSwitchProfile: () => void;
+  onSignOut: () => void;
+}
 
 // ── Types & Data ──────────────────────────────────────
 
