@@ -32,6 +32,7 @@ import {
 import {
   addBuddyXp, BUDDY_MAX_LEVEL, BUDDY_TRAIN_TOKEN_COST,
   BUDDY_XP_PER_STAMP, canGrantStampXpToday, canTrainWithTokens, getBuddyEntry,
+  isBuddyMaxed, xpToNextLevel,
   type BuddyProgressMap,
 } from "./buddyProgress";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
@@ -6178,6 +6179,11 @@ function TaskScreen({
               <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>
                 Lv{buddyEntry.level}
               </span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.secondary, marginTop: 2 }}>
+              {isBuddyMaxed(buddyEntry)
+                ? "MAXまで育ったよ"
+                : `あと ${xpToNextLevel(buddyEntry.level) - buddyEntry.xp}XP で Lv${buddyEntry.level + 1}`}
             </div>
           </div>
           <span style={{
