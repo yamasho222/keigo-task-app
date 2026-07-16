@@ -7,17 +7,17 @@ export const BUDDY_DAILY_XP_CAP = 6;
 /** かぶりトークン → 1XP */
 export const BUDDY_TRAIN_TOKEN_COST = 5;
 
-/** 現在Lv → 次Lvに必要なXP（曲線A・合計80） */
+/** 現在Lv → 次Lvに必要なXP（各レベル-2・合計62。Lv1→2は最速で1） */
 export const XP_TO_NEXT_LEVEL: Readonly<Record<number, number>> = {
-  1: 3,
-  2: 4,
-  3: 5,
-  4: 6,
-  5: 8,
-  6: 10,
-  7: 12,
-  8: 14,
-  9: 18,
+  1: 1,
+  2: 2,
+  3: 3,
+  4: 4,
+  5: 6,
+  6: 8,
+  7: 10,
+  8: 12,
+  9: 16,
   10: 0,
 };
 
