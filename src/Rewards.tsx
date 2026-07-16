@@ -198,14 +198,18 @@ export function RarityBadgeCorner({
 }) {
   const badge = getRarityBadgeStyle(rarity);
   return (
-    <div style={{
-      position: "absolute", top: compact ? 3 : 8, left: compact ? 3 : 8,
-      zIndex: 2, fontSize: compact ? 7 : 10, fontWeight: 800,
-      color: badge.color, backgroundColor: badge.backgroundColor,
-      padding: compact ? "1px 4px" : "2px 8px", borderRadius: compact ? 4 : 6,
-      boxShadow: "0 1px 6px rgba(0,0,0,0.28)",
-      lineHeight: 1.2, pointerEvents: "none",
-    }}>
+    <div
+      className="rarity-badge-corner"
+      style={{
+        position: "absolute", top: compact ? 2 : 8, left: compact ? 2 : 8,
+        zIndex: 6, fontSize: compact ? 8 : 10, fontWeight: 800,
+        color: badge.color, backgroundColor: badge.backgroundColor,
+        padding: compact ? "2px 5px" : "2px 8px", borderRadius: compact ? 4 : 6,
+        boxShadow: "0 1px 6px rgba(0,0,0,0.35)",
+        lineHeight: 1.15, pointerEvents: "none",
+        border: "1px solid rgba(255,255,255,0.55)",
+      }}
+    >
       {compact ? COMPACT_RARITY_LABELS[rarity] : badge.label}
     </div>
   );
@@ -775,7 +779,7 @@ function TreatOverlay({
   const title = isWeekly
     ? "🎊 7日連続 特別ごほうび！ 🎊"
     : tokenRedeem
-      ? "🪙 かぶりトークン交換！ 🪙"
+      ? "🪙 ダブりコイン交換！ 🪙"
     : isThreeDayStreak
       ? "🎉 3日連続 ごほうび！ 🎉"
       : isDeadline
@@ -791,7 +795,7 @@ function TreatOverlay({
   const subtitle = isWeekly
     ? "7日連続ですべてクリア！レジェンドレア確定！"
     : tokenRedeem
-      ? "たまったかぶりトークンで新しいシールゲット！"
+      ? "たまったダブりコインで新しいシールゲット！"
     : pityAttempt
       ? "かぶり救済チャンス！新しいシールが出やすいかも！"
     : isThreeDayStreak

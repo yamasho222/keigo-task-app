@@ -69,29 +69,32 @@ button {
   justify-content: center;
 }
 
+/* Lvは左下。レアリティ（左上）と被らない */
 .buddy-frame__lv {
   position: absolute;
-  left: 3px;
-  top: 3px;
-  z-index: 3;
+  left: 2px;
+  bottom: 2px;
+  top: auto;
+  z-index: 4;
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.02em;
-  padding: 1px 4px;
-  border-radius: 3px;
-  color: #f3f4f6;
-  background: rgba(10,12,16,0.72);
-  border: 1px solid rgba(255,255,255,0.12);
-  line-height: 1.2;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #fff8e7;
+  background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b);
+  border: 1px solid rgba(255,255,255,0.45);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  line-height: 1.15;
   pointer-events: none;
 }
 
 .buddy-frame--preview .buddy-frame__lv,
 .buddy-frame--card .buddy-frame__lv {
   left: 8px;
-  top: 8px;
+  bottom: 8px;
   font-size: 11px;
-  padding: 3px 7px;
+  padding: 3px 8px;
   border-radius: 5px;
 }
 

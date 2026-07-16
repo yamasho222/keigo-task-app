@@ -26,7 +26,7 @@ import {
 import {
   loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory,
   PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE,
-  DUPLICATE_TOKEN_COSTS, pickUncollectedByRarity, REWARD_LOOKUP,
+  DUPLICATE_TOKEN_COSTS, DUPLICATE_TOKEN_LABEL, pickUncollectedByRarity, REWARD_LOOKUP,
   type DuplicateTokenExchangeTier,
 } from "./stickerRewards";
 import {
@@ -34,6 +34,8 @@ import {
   BUDDY_XP_PER_STAMP, canGrantStampXpToday, canTrainWithTokens, getBuddyEntry,
   type BuddyProgressMap,
 } from "./buddyProgress";
+import { DuplicateTokenShop } from "./DuplicateTokenShop";
+import { BuddySelectPrompt } from "./BuddySelectPrompt";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
@@ -359,7 +361,7 @@ interface StoredState {
   duplicateStreak?: number;
   /** 次の通常ごほうびで天井救済を試す */
   pityArmed?: boolean;
-  /** かぶりトークン残高 */
+  /** ダブりコイン残高（内部名 duplicateTokens） */
   duplicateTokens?: number;
   /** 今日の相棒シールID */
   buddyId?: string | null;
@@ -401,7 +403,7 @@ interface PendingTreat {
   /** 天井武装中の開封（未所持 50%） */
   forceUncollectedChance?: number;
   pityAttempt?: boolean;
-  /** かぶりトークン交換の開封（トークン加算・天井カウント対象外） */
+  /** ダブりコイン交換の開封（コイン加算・天井カウント対象外） */
   tokenRedeem?: boolean;
 }
 
@@ -1535,6 +1537,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>(getInitialScreen());
   const [showMenu,     setShowMenu]     = useState(false);
+  const [showTokenShop, setShowTokenShop] = useState(false);
+  const [showBuddyPrompt, setShowBuddyPrompt] = useState(false);
   const [showPendingRewardsSheet, setShowPendingRewardsSheet] = useState(false);
   const [deferHintVisible, setDeferHintVisible] = useState(false);
   const [taskListSession, setTaskListSession] = useState<SessionId>(getSessionScreen());
@@ -2556,7 +2560,26 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (!stickerAlbumRef.current.includes(stickerId)) return;
     setBuddyId(stickerId);
     buddyIdRef.current = stickerId;
+    setShowBuddyPrompt(false);
   };
+
+  const dismissBuddyPrompt = () => {
+    try {
+      localStorage.setItem(`keigo-buddy-prompt-dismissed-${todayKey()}`, "1");
+    } catch { /* ignore */ }
+    setShowBuddyPrompt(false);
+  };
+
+  useEffect(() => {
+    if (inCatchUp) return;
+    if (!isSessionScreen(screen)) return;
+    if (buddyId) return;
+    if (stickerAlbum.length === 0) return;
+    try {
+      if (localStorage.getItem(`keigo-buddy-prompt-dismissed-${todayKey()}`) === "1") return;
+    } catch { /* ignore */ }
+    setShowBuddyPrompt(true);
+  }, [screen, buddyId, stickerAlbum.length, inCatchUp]);
 
   const trainBuddyWithToken = (stickerId: string) => {
     if (!stickerAlbumRef.current.includes(stickerId)) return;
@@ -2734,7 +2757,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       mode: "daily",
       devForceStickerId: picked.id,
       tokenRedeem: true,
-      missionTitle: "かぶりトークン交換",
+      missionTitle: `${DUPLICATE_TOKEN_LABEL}交換`,
     }]);
   };
 
@@ -3765,6 +3788,27 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         </div>
       )}
 
+      {showBuddyPrompt && (
+        <BuddySelectPrompt
+          stickerAlbum={stickerAlbum}
+          buddyProgress={buddyProgress}
+          onSelect={selectBuddy}
+          onDismiss={dismissBuddyPrompt}
+        />
+      )}
+
+      {showTokenShop && (
+        <DuplicateTokenShop
+          duplicateTokens={duplicateTokens}
+          stickerAlbum={stickerAlbum}
+          onRedeem={(tier) => {
+            setShowTokenShop(false);
+            redeemDuplicateToken(tier);
+          }}
+          onClose={() => setShowTokenShop(false)}
+        />
+      )}
+
       {/* ── ハンバーガーボタン */}
       <button
         type="button"
@@ -3868,6 +3912,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
+              { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
+                setShowTokenShop(true);
+                setShowMenu(false);
+              } },
               ...(cloud ? [
                 {
                   icon: "👤",
@@ -3933,11 +3981,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   openTreatQueue([{ mode: "daily" }]);
                   setShowMenu(false);
                 } },
-                { icon: "🪙", label: "かぶりトークン +50（テスト）", action: () => {
+                { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL} +50（テスト）`, action: () => {
                   setDuplicateTokens((t) => t + 50);
                   setShowMenu(false);
                 } },
-                { icon: "🪙", label: "かぶりトークン +220（テスト）", action: () => {
+                { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL} +220（テスト）`, action: () => {
                   setDuplicateTokens((t) => t + 220);
                   setShowMenu(false);
                 } },
@@ -4205,32 +4253,41 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               />
             )}
             {!inCatchUp && (pityArmed || duplicateStreak > 0 || duplicateTokens > 0) && (
-              <div style={{
-                margin: "0 0 8px",
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: `1px solid ${pityArmed ? `${theme.category.orange}66` : theme.stroke.tertiary}`,
-                backgroundColor: pityArmed ? `${theme.category.orange}12` : theme.fill.quaternary,
-                fontSize: 12,
-                fontWeight: 700,
-                color: pityArmed ? theme.category.orange : theme.text.secondary,
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-              }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!pityArmed && duplicateStreak === 0) setShowTokenShop(true);
+                }}
+                style={{
+                  margin: "0 0 8px",
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${pityArmed ? `${theme.category.orange}66` : theme.stroke.tertiary}`,
+                  backgroundColor: pityArmed ? `${theme.category.orange}12` : theme.fill.quaternary,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: pityArmed ? theme.category.orange : theme.text.secondary,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  width: "100%",
+                  cursor: (!pityArmed && duplicateStreak === 0) ? "pointer" : "default",
+                  textAlign: "left",
+                }}
+              >
                 <span>
                   {pityArmed
                     ? "かぶり救済チャンス！つぎの宝箱があたりやすいかも"
                     : duplicateStreak > 0
                       ? `かぶり ${duplicateStreak}/${PITY_DUPLICATE_THRESHOLD}`
-                      : "かぶりトークン"}
+                      : `${DUPLICATE_TOKEN_LABEL}交換所`}
                 </span>
                 {duplicateTokens > 0 && (
                   <span style={{ color: theme.category.orange, flexShrink: 0 }}>
                     🪙 {duplicateTokens}
                   </span>
                 )}
-              </div>
+              </button>
             )}
             {contextActiveSessionIds.map((sid) => screen === sid && (
               <TaskScreen
@@ -4426,7 +4483,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             buddyId={buddyId}
             buddyProgress={buddyProgress}
             buddyXpEarnedToday={buddyXpDate === todayKey() ? buddyXpEarnedToday : 0}
-            onRedeemDuplicateToken={redeemDuplicateToken}
             onSelectBuddy={selectBuddy}
             onTrainBuddy={trainBuddyWithToken}
             onBack={goHome}

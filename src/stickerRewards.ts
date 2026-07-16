@@ -403,7 +403,10 @@ export const PITY_DUPLICATE_THRESHOLD = 20;
 /** 天井武装時、未所持を引く確率 */
 export const PITY_UNCOLLECTED_CHANCE = 0.5;
 
-/** かぶりトークンで交換できるレア（ノーマルは対象外） */
+/** 子ども向け表示名（内部キーは duplicateTokens のまま） */
+export const DUPLICATE_TOKEN_LABEL = "ダブりコイン";
+
+/** ダブりコインで交換できるレア（ノーマルは対象外） */
 export type DuplicateTokenExchangeTier = "rare" | "superRare" | "ultraRare" | "legendary";
 
 export const DUPLICATE_TOKEN_EXCHANGE_TIERS: readonly DuplicateTokenExchangeTier[] = [

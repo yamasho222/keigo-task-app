@@ -2,9 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 import {
   REWARD_LOOKUP, TOTAL_REWARD_COUNT, dedupeStickerIds, getAlbumCategoryGroups,
-  DUPLICATE_TOKEN_COSTS, DUPLICATE_TOKEN_EXCHANGE_TIERS, RARITY_LABELS,
-  countUncollectedStickersByRarity,
-  type DuplicateTokenExchangeTier,
+  DUPLICATE_TOKEN_LABEL,
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { RarityBadge, StickerFrameWithBadge, StickerImg } from "./Rewards";
@@ -13,7 +11,6 @@ import {
   BUDDY_DAILY_XP_CAP, BUDDY_TRAIN_TOKEN_COST, getBuddyEntry, isBuddyMaxed,
   xpToNextLevel, type BuddyProgressMap,
 } from "./buddyProgress";
-import { RARITY_META } from "./rarityMeta";
 import {
   completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
   requiredSessionCount,
@@ -180,7 +177,6 @@ interface Props {
   buddyId?: string | null;
   buddyProgress?: BuddyProgressMap;
   buddyXpEarnedToday?: number;
-  onRedeemDuplicateToken?: (tier: DuplicateTokenExchangeTier) => void;
   onSelectBuddy?: (stickerId: string) => void;
   onTrainBuddy?: (stickerId: string) => void;
   onBack: () => void;
@@ -190,7 +186,7 @@ interface Props {
 export function RecordScreen({
   history, streak, stickerAlbum, duplicateTokens = 0,
   buddyId = null, buddyProgress, buddyXpEarnedToday = 0,
-  onRedeemDuplicateToken, onSelectBuddy, onTrainBuddy,
+  onSelectBuddy, onTrainBuddy,
   onBack, onSelectCatchUpDay,
 }: Props) {
   const now = new Date();
@@ -346,61 +342,6 @@ export function RecordScreen({
         <span>⭐ きょうは{todayRequired}つ全部</span>
       </div>
 
-      <div style={{
-        padding: 14, borderRadius: 14,
-        backgroundColor: `${theme.category.orange}0A`,
-        border: `1.5px solid ${theme.category.orange}33`,
-      }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: theme.category.orange, marginBottom: 4, textAlign: "center" }}>
-          かぶりトークン
-        </div>
-        <div style={{ fontSize: 28, fontWeight: 900, color: theme.text.primary, textAlign: "center", marginBottom: 6 }}>
-          {duplicateTokens}
-        </div>
-        <div style={{ fontSize: 11, color: theme.text.tertiary, textAlign: "center", marginBottom: 12, lineHeight: 1.45 }}>
-          かぶると1つたまる。未所持シールの交換か、相棒の育成（{BUDDY_TRAIN_TOKEN_COST}で+1XP）に使えるよ
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {DUPLICATE_TOKEN_EXCHANGE_TIERS.map((tier) => {
-            const cost = DUPLICATE_TOKEN_COSTS[tier];
-            const remaining = countUncollectedStickersByRarity(uniqueAlbum, tier);
-            const canAfford = duplicateTokens >= cost;
-            const enabled = remaining > 0 && canAfford && !!onRedeemDuplicateToken;
-            return (
-              <button
-                key={tier}
-                type="button"
-                disabled={!enabled}
-                onClick={() => {
-                  if (!enabled || !onRedeemDuplicateToken) return;
-                  if (!window.confirm(`${RARITY_LABELS[tier]}の未所持シールを1枚もらう？（${cost}トークン）`)) return;
-                  onRedeemDuplicateToken(tier);
-                }}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                  padding: "10px 12px", borderRadius: 10, cursor: enabled ? "pointer" : "default",
-                  border: `1.5px solid ${enabled ? RARITY_META[tier].color : theme.stroke.secondary}`,
-                  backgroundColor: enabled ? `${RARITY_META[tier].color}14` : theme.fill.quaternary,
-                  color: enabled ? theme.text.primary : theme.text.tertiary,
-                  opacity: remaining === 0 ? 0.55 : 1,
-                }}
-              >
-                <span style={{ fontSize: 13, fontWeight: 800, color: enabled ? RARITY_META[tier].color : theme.text.tertiary }}>
-                  {RARITY_LABELS[tier]}
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 700 }}>
-                  {remaining === 0
-                    ? "コンプ済み"
-                    : canAfford
-                      ? `${cost} → 未所持あと${remaining}`
-                      : `${cost}必要（あと${cost - duplicateTokens}）`}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* 今日の相棒 */}
       <div style={{
         padding: 14, borderRadius: 14,
@@ -465,7 +406,7 @@ export function RecordScreen({
                 きょうの成長 {"●".repeat(todayXpShown)}{"○".repeat(BUDDY_DAILY_XP_CAP - todayXpShown)} {todayXpShown}/{BUDDY_DAILY_XP_CAP}
               </div>
               <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>
-                親がハンコを押すと育つよ
+                親がハンコを押すと育つよ · 🪙{DUPLICATE_TOKEN_LABEL} {duplicateTokens}
               </div>
             </div>
           </button>
@@ -732,13 +673,13 @@ export function RecordScreen({
                   cursor: duplicateTokens >= BUDDY_TRAIN_TOKEN_COST ? "pointer" : "default",
                 }}
               >
-                🪙{BUDDY_TRAIN_TOKEN_COST}で +1XP（残高 {duplicateTokens}）
+                🪙{BUDDY_TRAIN_TOKEN_COST}{DUPLICATE_TOKEN_LABEL}で +1XP（残り {duplicateTokens}）
               </button>
             )}
             <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, lineHeight: 1.45 }}>
               {buddyId === previewId
                 ? "親がハンコを押すと、この相棒が育つよ"
-                : "所持シールならどれでもトークンで育てられるよ"}
+                : `所持シールならどれでも${DUPLICATE_TOKEN_LABEL}で育てられるよ`}
             </div>
             <button
               type="button"
