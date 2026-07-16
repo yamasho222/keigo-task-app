@@ -6113,6 +6113,11 @@ function TaskScreen({
   const buddyItem = buddyId ? REWARD_LOOKUP[buddyId] : null;
   const buddyEntry = buddyId ? getBuddyEntry(buddyProgress, buddyId) : null;
   const showBuddyBanner = canChangeBuddy && Boolean(onOpenBuddySelect);
+  const buddyXpNeed = buddyEntry && !isBuddyMaxed(buddyEntry)
+    ? xpToNextLevel(buddyEntry.level)
+    : 0;
+  const buddyXpHave = buddyEntry?.xp ?? 0;
+  const buddyXpLeft = Math.max(0, buddyXpNeed - buddyXpHave);
 
   return (
     <>
@@ -6180,11 +6185,41 @@ function TaskScreen({
                 Lv{buddyEntry.level}
               </span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.secondary, marginTop: 2 }}>
-              {isBuddyMaxed(buddyEntry)
-                ? "MAXまで育ったよ"
-                : `あと ${xpToNextLevel(buddyEntry.level) - buddyEntry.xp}XP で Lv${buddyEntry.level + 1}`}
-            </div>
+            {isBuddyMaxed(buddyEntry) ? (
+              <div style={{ fontSize: 11, fontWeight: 700, color: theme.category.orange, marginTop: 4 }}>
+                MAXまで育ったよ
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: "flex", gap: 3, marginTop: 6,
+                    height: 8,
+                  }}
+                  aria-label={`次レベルまで ${buddyXpHave}/${buddyXpNeed}XP`}
+                >
+                  {Array.from({ length: buddyXpNeed }, (_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        borderRadius: 3,
+                        backgroundColor: i < buddyXpHave
+                          ? theme.accent.primary
+                          : theme.fill.secondary,
+                        boxShadow: i < buddyXpHave
+                          ? `inset 0 0 0 1px ${theme.accent.primary}`
+                          : `inset 0 0 0 1px ${theme.stroke.tertiary}`,
+                      }}
+                    />
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.secondary, marginTop: 4 }}>
+                  あと {buddyXpLeft}XP で Lv{buddyEntry.level + 1}
+                </div>
+              </>
+            )}
           </div>
           <span style={{
             flexShrink: 0,
