@@ -26,9 +26,14 @@ import {
 import {
   loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory,
   PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE,
-  DUPLICATE_TOKEN_COSTS, pickUncollectedByRarity,
+  DUPLICATE_TOKEN_COSTS, pickUncollectedByRarity, REWARD_LOOKUP,
   type DuplicateTokenExchangeTier,
 } from "./stickerRewards";
+import {
+  addBuddyXp, BUDDY_MAX_LEVEL, BUDDY_TRAIN_TOKEN_COST,
+  BUDDY_XP_PER_STAMP, canGrantStampXpToday, canTrainWithTokens, getBuddyEntry,
+  type BuddyProgressMap,
+} from "./buddyProgress";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
@@ -346,6 +351,14 @@ interface StoredState {
   pityArmed?: boolean;
   /** かぶりトークン残高 */
   duplicateTokens?: number;
+  /** 今日の相棒シールID */
+  buddyId?: string | null;
+  /** シールごとの絆レベル進捗 */
+  buddyProgress?: BuddyProgressMap;
+  /** スタンプXPを計上した日付（todayKey） */
+  buddyXpDate?: string;
+  /** その日にスタンプで得たXP（上限 BUDDY_DAILY_XP_CAP） */
+  buddyXpEarnedToday?: number;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -1459,6 +1472,20 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [duplicateStreak, setDuplicateStreak] = useState(stored.duplicateStreak ?? 0);
   const [pityArmed, setPityArmed] = useState(stored.pityArmed ?? false);
   const [duplicateTokens, setDuplicateTokens] = useState(stored.duplicateTokens ?? 0);
+  const [buddyId, setBuddyId] = useState<string | null>(stored.buddyId ?? null);
+  const [buddyProgress, setBuddyProgress] = useState<BuddyProgressMap>(stored.buddyProgress ?? {});
+  const [buddyXpDate, setBuddyXpDate] = useState(stored.buddyXpDate ?? "");
+  const [buddyXpEarnedToday, setBuddyXpEarnedToday] = useState(stored.buddyXpEarnedToday ?? 0);
+  const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
+  const [buddyLevelUp, setBuddyLevelUp] = useState<{ name: string; level: number } | null>(null);
+  const buddyIdRef = useRef(buddyId);
+  const buddyProgressRef = useRef(buddyProgress);
+  const buddyXpDateRef = useRef(buddyXpDate);
+  const buddyXpEarnedTodayRef = useRef(buddyXpEarnedToday);
+  useEffect(() => { buddyIdRef.current = buddyId; }, [buddyId]);
+  useEffect(() => { buddyProgressRef.current = buddyProgress; }, [buddyProgress]);
+  useEffect(() => { buddyXpDateRef.current = buddyXpDate; }, [buddyXpDate]);
+  useEffect(() => { buddyXpEarnedTodayRef.current = buddyXpEarnedToday; }, [buddyXpEarnedToday]);
   const taskDayRef = useRef(stored.date);
   const screenRef = useRef<ScreenId>(getInitialScreen());
   const specialMissionCollectedRef = useRef(false);
@@ -1770,6 +1797,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       duplicateStreak,
       pityArmed,
       duplicateTokens,
+      buddyId,
+      buddyProgress,
+      buddyXpDate,
+      buddyXpEarnedToday,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1789,6 +1820,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
     missionHistory, missionEveningNudgeDate, catchUpDays,
     duplicateStreak, pityArmed, duplicateTokens,
+    buddyId, buddyProgress, buddyXpDate, buddyXpEarnedToday,
   ]);
 
   useEffect(() => {
@@ -2472,6 +2504,62 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setShaking(false), 450);
   };
 
+  const showBuddyLevelUp = (stickerId: string, level: number) => {
+    const name = REWARD_LOOKUP[stickerId]?.label ?? "相棒";
+    setBuddyLevelUp({ name, level });
+    navigator.vibrate?.([20, 40, 30]);
+    setTimeout(() => setBuddyLevelUp(null), 1600);
+  };
+
+  const showBuddyXpToast = (stickerId: string, amount: number) => {
+    const name = REWARD_LOOKUP[stickerId]?.label ?? "相棒";
+    setBuddyXpToast(`${name} +${amount}XP`);
+    setTimeout(() => setBuddyXpToast(null), 1400);
+  };
+
+  /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり） */
+  const grantBuddyXpFromStamp = () => {
+    if (activeCatchUpDate) return;
+    const id = buddyIdRef.current;
+    if (!id) return;
+    const day = todayKey();
+    let earned = buddyXpEarnedTodayRef.current;
+    if (buddyXpDateRef.current !== day) {
+      earned = 0;
+      setBuddyXpDate(day);
+      buddyXpDateRef.current = day;
+      setBuddyXpEarnedToday(0);
+      buddyXpEarnedTodayRef.current = 0;
+    }
+    if (!canGrantStampXpToday(earned)) return;
+    const result = addBuddyXp(buddyProgressRef.current, id, BUDDY_XP_PER_STAMP);
+    setBuddyProgress(result.progress);
+    buddyProgressRef.current = result.progress;
+    const nextEarned = earned + BUDDY_XP_PER_STAMP;
+    setBuddyXpEarnedToday(nextEarned);
+    buddyXpEarnedTodayRef.current = nextEarned;
+    showBuddyXpToast(id, BUDDY_XP_PER_STAMP);
+    if (result.leveledUp) showBuddyLevelUp(id, result.newLevel);
+  };
+
+  const selectBuddy = (stickerId: string) => {
+    if (!stickerAlbumRef.current.includes(stickerId)) return;
+    setBuddyId(stickerId);
+    buddyIdRef.current = stickerId;
+  };
+
+  const trainBuddyWithToken = (stickerId: string) => {
+    if (!stickerAlbumRef.current.includes(stickerId)) return;
+    const entry = getBuddyEntry(buddyProgressRef.current, stickerId);
+    if (!canTrainWithTokens(entry, duplicateTokens)) return;
+    setDuplicateTokens((t) => t - BUDDY_TRAIN_TOKEN_COST);
+    const result = addBuddyXp(buddyProgressRef.current, stickerId, 1);
+    setBuddyProgress(result.progress);
+    buddyProgressRef.current = result.progress;
+    showBuddyXpToast(stickerId, 1);
+    if (result.leveledUp) showBuddyLevelUp(stickerId, result.newLevel);
+  };
+
   const collectSticker = (rewardId: string) => {
     setStickerAlbum((prev) => {
       const next = mergeStickerAlbums(prev, [rewardId]);
@@ -2833,6 +2921,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (!pending || oneOffSpecialStampApproved) return;
     setOneOffSpecialStampApproved(true);
     triggerStamp();
+    grantBuddyXpFromStamp();
     setTimeout(() => {
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
@@ -3059,6 +3148,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const nextApproved = [...missionApprovedSessions, missionParentPhase];
     setMissionApprovedSessions(nextApproved);
     triggerStamp();
+    grantBuddyXpFromStamp();
     if (isAllMissionPhasesParentApproved(nextApproved)) {
       setMissionHistory((h) => ({
         ...h,
@@ -3128,6 +3218,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const newHistory = { ...history, [today]: updatedDay };
     setHistory(newHistory);
     triggerStamp();
+    grantBuddyXpFromStamp();
 
     const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
     const isFullDayToday = isFullDay(updatedDay, new Date());
@@ -3647,8 +3738,21 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           onClose={() => setShowMissionSetup(false)}
         />
       )}
-      {stampVisible && screen === "show_parent" && (
+      {stampVisible && (screen === "show_parent" || screen === "show_parent_mission" || screen === "show_parent_oneoff") && (
         <HanamaruStamp key={stampKey} message={stampMessage} />
+      )}
+
+      {buddyXpToast && (
+        <div className="buddy-xp-toast" key={buddyXpToast}>{buddyXpToast}</div>
+      )}
+      {buddyLevelUp && (
+        <div className="buddy-levelup-overlay">
+          <div className="buddy-levelup-card">
+            <div className="lu-label">LEVEL UP</div>
+            <div className="lu-level">Lv{buddyLevelUp.level}</div>
+            <div className="lu-name">{buddyLevelUp.name}</div>
+          </div>
+        </div>
       )}
 
       {/* ── ハンバーガーボタン */}
@@ -3825,6 +3929,33 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 } },
                 { icon: "🪙", label: "かぶりトークン +220（テスト）", action: () => {
                   setDuplicateTokens((t) => t + 220);
+                  setShowMenu(false);
+                } },
+                { icon: "🐾", label: "相棒XP +1（テスト）", action: () => {
+                  const id = buddyIdRef.current ?? stickerAlbumRef.current[0];
+                  if (!id) { setShowMenu(false); return; }
+                  if (!buddyIdRef.current) {
+                    setBuddyId(id);
+                    buddyIdRef.current = id;
+                  }
+                  const result = addBuddyXp(buddyProgressRef.current, id, 1);
+                  setBuddyProgress(result.progress);
+                  buddyProgressRef.current = result.progress;
+                  showBuddyXpToast(id, 1);
+                  if (result.leveledUp) showBuddyLevelUp(id, result.newLevel);
+                  setShowMenu(false);
+                } },
+                { icon: "⬆️", label: "相棒をLv10（テスト）", action: () => {
+                  const id = buddyIdRef.current ?? stickerAlbumRef.current[0];
+                  if (!id) { setShowMenu(false); return; }
+                  if (!buddyIdRef.current) {
+                    setBuddyId(id);
+                    buddyIdRef.current = id;
+                  }
+                  const next = { ...buddyProgressRef.current, [id]: { level: BUDDY_MAX_LEVEL, xp: 0 } };
+                  setBuddyProgress(next);
+                  buddyProgressRef.current = next;
+                  showBuddyLevelUp(id, BUDDY_MAX_LEVEL);
                   setShowMenu(false);
                 } },
                 { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {
@@ -4282,7 +4413,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             streak={streak}
             stickerAlbum={stickerAlbum}
             duplicateTokens={duplicateTokens}
+            buddyId={buddyId}
+            buddyProgress={buddyProgress}
+            buddyXpEarnedToday={buddyXpDate === todayKey() ? buddyXpEarnedToday : 0}
             onRedeemDuplicateToken={redeemDuplicateToken}
+            onSelectBuddy={selectBuddy}
+            onTrainBuddy={trainBuddyWithToken}
             onBack={goHome}
             onSelectCatchUpDay={openCatchUpDay}
           />

@@ -8,6 +8,11 @@ import {
 } from "./stickerRewards";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { RarityBadge, StickerFrameWithBadge, StickerImg } from "./Rewards";
+import { BuddyFrame } from "./BuddyFrame";
+import {
+  BUDDY_DAILY_XP_CAP, BUDDY_TRAIN_TOKEN_COST, getBuddyEntry, isBuddyMaxed,
+  xpToNextLevel, type BuddyProgressMap,
+} from "./buddyProgress";
 import { RARITY_META } from "./rarityMeta";
 import {
   completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
@@ -172,13 +177,21 @@ interface Props {
   streak: number;
   stickerAlbum: string[];
   duplicateTokens?: number;
+  buddyId?: string | null;
+  buddyProgress?: BuddyProgressMap;
+  buddyXpEarnedToday?: number;
   onRedeemDuplicateToken?: (tier: DuplicateTokenExchangeTier) => void;
+  onSelectBuddy?: (stickerId: string) => void;
+  onTrainBuddy?: (stickerId: string) => void;
   onBack: () => void;
   onSelectCatchUpDay?: (dateKey: string) => void;
 }
 
 export function RecordScreen({
-  history, streak, stickerAlbum, duplicateTokens = 0, onRedeemDuplicateToken, onBack, onSelectCatchUpDay,
+  history, streak, stickerAlbum, duplicateTokens = 0,
+  buddyId = null, buddyProgress, buddyXpEarnedToday = 0,
+  onRedeemDuplicateToken, onSelectBuddy, onTrainBuddy,
+  onBack, onSelectCatchUpDay,
 }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -217,6 +230,10 @@ export function RecordScreen({
   const uniqueAlbum = dedupeStickerIds(stickerAlbum);
   const albumGroups = getAlbumCategoryGroups(stickerAlbum);
   const previewItem = previewId ? REWARD_LOOKUP[previewId] : null;
+  const previewBuddy = previewId ? getBuddyEntry(buddyProgress, previewId) : null;
+  const activeBuddyItem = buddyId && uniqueAlbum.includes(buddyId) ? REWARD_LOOKUP[buddyId] : null;
+  const activeBuddyEntry = buddyId ? getBuddyEntry(buddyProgress, buddyId) : null;
+  const todayXpShown = Math.min(BUDDY_DAILY_XP_CAP, Math.max(0, buddyXpEarnedToday));
 
   const albumCellStyle: CSSProperties = {
     width: 52, height: 52, borderRadius: 10, padding: 0,
@@ -341,7 +358,7 @@ export function RecordScreen({
           {duplicateTokens}
         </div>
         <div style={{ fontSize: 11, color: theme.text.tertiary, textAlign: "center", marginBottom: 12, lineHeight: 1.45 }}>
-          かぶると1つたまる。使って未所持シールを確定でもらえるよ
+          かぶると1つたまる。未所持シールの交換か、相棒の育成（{BUDDY_TRAIN_TOKEN_COST}で+1XP）に使えるよ
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {DUPLICATE_TOKEN_EXCHANGE_TIERS.map((tier) => {
@@ -384,6 +401,82 @@ export function RecordScreen({
         </div>
       </div>
 
+      {/* 今日の相棒 */}
+      <div style={{
+        padding: 14, borderRadius: 14,
+        backgroundColor: `${theme.accent.primary}0C`,
+        border: `1.5px solid ${theme.accent.primary}44`,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: theme.accent.primary, marginBottom: 10, textAlign: "center" }}>
+          今日の相棒
+        </div>
+        {activeBuddyItem && activeBuddyEntry && buddyId ? (
+          <button
+            type="button"
+            onClick={() => setPreviewId(buddyId)}
+            style={{
+              width: "100%", border: "none", background: "transparent", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: 0,
+            }}
+          >
+            <div style={{ width: 72, height: 72, flexShrink: 0 }}>
+              <BuddyFrame level={activeBuddyEntry.level} size="card" isBuddy showLevelBadge>
+                <StickerFrameWithBadge
+                  rarity={activeBuddyItem.rarity}
+                  compact
+                  style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                >
+                  {activeBuddyItem.emoji ? (
+                    <span style={{ fontSize: 32 }}>{activeBuddyItem.emoji}</span>
+                  ) : (
+                    <StickerImg
+                      src={activeBuddyItem.image!}
+                      alt={activeBuddyItem.label}
+                      padding={6}
+                      objectFit={activeBuddyItem.imageFit ?? "contain"}
+                    />
+                  )}
+                </StickerFrameWithBadge>
+              </BuddyFrame>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: theme.text.primary }}>{activeBuddyItem.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 2 }}>
+                Lv{activeBuddyEntry.level}
+                {!isBuddyMaxed(activeBuddyEntry) && (
+                  <span style={{ marginLeft: 6, fontWeight: 600 }}>
+                    次まで {xpToNextLevel(activeBuddyEntry.level) - activeBuddyEntry.xp}XP
+                  </span>
+                )}
+                {isBuddyMaxed(activeBuddyEntry) && <span style={{ marginLeft: 6, color: theme.category.orange }}>MAX</span>}
+              </div>
+              {!isBuddyMaxed(activeBuddyEntry) && (
+                <div style={{
+                  marginTop: 6, height: 8, borderRadius: 999, background: theme.fill.secondary, overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%", borderRadius: 999,
+                    width: `${Math.min(100, (activeBuddyEntry.xp / Math.max(1, xpToNextLevel(activeBuddyEntry.level))) * 100)}%`,
+                    background: theme.accent.primary,
+                  }} />
+                </div>
+              )}
+              <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary, marginTop: 6 }}>
+                きょうの成長 {"●".repeat(todayXpShown)}{"○".repeat(BUDDY_DAILY_XP_CAP - todayXpShown)} {todayXpShown}/{BUDDY_DAILY_XP_CAP}
+              </div>
+              <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>
+                親がハンコを押すと育つよ
+              </div>
+            </div>
+          </button>
+        ) : (
+          <div style={{ textAlign: "center", fontSize: 13, color: theme.text.secondary, lineHeight: 1.55 }}>
+            まだ相棒がいないよ<br />
+            <span style={{ fontSize: 12, color: theme.text.tertiary }}>下のアルバムから選んでね</span>
+          </div>
+        )}
+      </div>
+
       <div style={{
         padding: 14, borderRadius: 14,
         backgroundColor: `${theme.accent.primary}0A`,
@@ -406,6 +499,8 @@ export function RecordScreen({
                   const collected = uniqueAlbum.includes(reward.id);
                   const item = REWARD_LOOKUP[reward.id];
                   if (collected) {
+                    const entry = getBuddyEntry(buddyProgress, reward.id);
+                    const isActiveBuddy = buddyId === reward.id;
                     return (
                       <button
                         key={reward.id}
@@ -414,27 +509,29 @@ export function RecordScreen({
                         onClick={() => setPreviewId(reward.id)}
                         style={{
                           ...albumCellStyle,
-                          backgroundColor: theme.fill.secondary,
-                          border: `1px solid ${theme.stroke.secondary}`,
+                          backgroundColor: "transparent",
+                          border: "none",
                           cursor: "pointer",
                           padding: 0,
                         }}
                       >
-                        <StickerFrameWithBadge
-                          rarity={item.rarity}
-                          compact
-                          style={{
-                            width: "100%", height: "100%",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: item.emoji ? 26 : undefined,
-                          }}
-                        >
-                          {item.emoji ? (
-                            item.emoji
-                          ) : (
-                            <StickerImg src={item.image!} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
-                          )}
-                        </StickerFrameWithBadge>
+                        <BuddyFrame level={entry.level} size="cell" isBuddy={isActiveBuddy} showLevelBadge>
+                          <StickerFrameWithBadge
+                            rarity={item.rarity}
+                            compact
+                            style={{
+                              width: "100%", height: "100%",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: item.emoji ? 26 : undefined,
+                            }}
+                          >
+                            {item.emoji ? (
+                              item.emoji
+                            ) : (
+                              <StickerImg src={item.image!} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
+                            )}
+                          </StickerFrameWithBadge>
+                        </BuddyFrame>
                       </button>
                     );
                   }
@@ -525,7 +622,7 @@ export function RecordScreen({
         </div>
       )}
 
-      {previewItem && previewId && (
+      {previewItem && previewId && previewBuddy && (
         <div
           data-modal-overlay
           onClick={() => setPreviewId(null)}
@@ -539,45 +636,118 @@ export function RecordScreen({
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "100%", maxWidth: 320, borderRadius: 24, padding: "28px 24px",
+              width: "100%", maxWidth: 320, borderRadius: 24, padding: "24px 20px",
               backgroundColor: theme.bg.editor,
               boxShadow: "0 12px 48px rgba(0,0,0,0.3)",
               textAlign: "center",
+              maxHeight: "90vh",
+              overflowY: "auto",
             }}
           >
-            <StickerFrameWithBadge
-              rarity={previewItem.rarity}
-              style={{
-                width: 220, height: 220, margin: "0 auto 16px", borderRadius: 20,
-                backgroundColor: previewItem.emoji ? `${theme.category.green}14` : theme.fill.secondary,
-                border: previewItem.emoji
-                  ? `3px solid ${theme.category.green}55`
-                  : `3px solid ${theme.accent.primary}44`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                overflow: "hidden",
-                fontSize: previewItem.emoji ? 100 : undefined,
-                boxShadow: `0 8px 32px ${theme.accent.primary}22`,
-              }}
-            >
-              {previewItem.emoji ? (
-                previewItem.emoji
-              ) : (
-                <StickerImg src={previewItem.image!} alt={previewItem.label} padding={16} objectFit={previewItem.imageFit ?? "contain"} />
-              )}
-            </StickerFrameWithBadge>
+            <div style={{ width: 220, height: 220, margin: "0 auto 14px" }}>
+              <BuddyFrame
+                level={previewBuddy.level}
+                size="preview"
+                isBuddy={buddyId === previewId}
+                showLevelBadge
+              >
+                <StickerFrameWithBadge
+                  rarity={previewItem.rarity}
+                  style={{
+                    width: "100%", height: "100%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    overflow: "hidden",
+                    fontSize: previewItem.emoji ? 100 : undefined,
+                    backgroundColor: previewItem.emoji ? `${theme.category.green}14` : "transparent",
+                  }}
+                >
+                  {previewItem.emoji ? (
+                    previewItem.emoji
+                  ) : (
+                    <StickerImg src={previewItem.image!} alt={previewItem.label} padding={16} objectFit={previewItem.imageFit ?? "contain"} />
+                  )}
+                </StickerFrameWithBadge>
+              </BuddyFrame>
+            </div>
             <div style={{ fontSize: 20, fontWeight: 900, color: theme.text.primary, marginBottom: 6 }}>
               {previewItem.label}
             </div>
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 8, display: "flex", justifyContent: "center", gap: 8, alignItems: "center" }}>
               <RarityBadge rarity={previewItem.rarity} />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: theme.text.secondary, marginBottom: 6 }}>
+              Lv{previewBuddy.level}
+              {isBuddyMaxed(previewBuddy)
+                ? " · MAX"
+                : ` · ${previewBuddy.xp}/${xpToNextLevel(previewBuddy.level)} XP`}
+            </div>
+            {!isBuddyMaxed(previewBuddy) && (
+              <div style={{
+                height: 10, borderRadius: 999, background: theme.fill.secondary,
+                overflow: "hidden", marginBottom: 14,
+              }}>
+                <div style={{
+                  height: "100%", borderRadius: 999,
+                  width: `${Math.min(100, (previewBuddy.xp / Math.max(1, xpToNextLevel(previewBuddy.level))) * 100)}%`,
+                  background: `linear-gradient(90deg, ${theme.accent.primary}, ${theme.category.purple})`,
+                }} />
+              </div>
+            )}
+            {buddyId === previewId ? (
+              <div style={{
+                width: "100%", padding: "12px", borderRadius: 12, marginBottom: 8,
+                border: `1.5px solid ${theme.accent.primary}`,
+                backgroundColor: `${theme.accent.primary}14`,
+                color: theme.accent.primary,
+                fontSize: 14, fontWeight: 800,
+              }}>
+                相棒中
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSelectBuddy?.(previewId)}
+                disabled={!onSelectBuddy}
+                style={{
+                  width: "100%", marginBottom: 8, padding: "14px", borderRadius: 12, border: "none",
+                  backgroundColor: theme.accent.primary, color: "#fff",
+                  fontSize: 15, fontWeight: 800, cursor: onSelectBuddy ? "pointer" : "default",
+                  opacity: onSelectBuddy ? 1 : 0.5,
+                }}
+              >
+                今日の相棒にする
+              </button>
+            )}
+            {!isBuddyMaxed(previewBuddy) && onTrainBuddy && (
+              <button
+                type="button"
+                disabled={duplicateTokens < BUDDY_TRAIN_TOKEN_COST}
+                onClick={() => onTrainBuddy(previewId)}
+                style={{
+                  width: "100%", marginBottom: 8, padding: "12px", borderRadius: 12,
+                  border: `1.5px solid ${duplicateTokens >= BUDDY_TRAIN_TOKEN_COST ? theme.category.orange : theme.stroke.secondary}`,
+                  backgroundColor: duplicateTokens >= BUDDY_TRAIN_TOKEN_COST ? `${theme.category.orange}14` : theme.fill.quaternary,
+                  color: duplicateTokens >= BUDDY_TRAIN_TOKEN_COST ? theme.category.orange : theme.text.tertiary,
+                  fontSize: 14, fontWeight: 800,
+                  cursor: duplicateTokens >= BUDDY_TRAIN_TOKEN_COST ? "pointer" : "default",
+                }}
+              >
+                🪙{BUDDY_TRAIN_TOKEN_COST}で +1XP（残高 {duplicateTokens}）
+              </button>
+            )}
+            <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, lineHeight: 1.45 }}>
+              {buddyId === previewId
+                ? "親がハンコを押すと、この相棒が育つよ"
+                : "所持シールならどれでもトークンで育てられるよ"}
             </div>
             <button
               type="button"
               onClick={() => setPreviewId(null)}
               style={{
-                width: "100%", marginTop: 8, padding: "14px", borderRadius: 12, border: "none",
-                backgroundColor: theme.accent.primary, color: "#fff",
-                fontSize: 15, fontWeight: 700, cursor: "pointer",
+                width: "100%", padding: "12px", borderRadius: 12,
+                border: `1.5px solid ${theme.stroke.secondary}`,
+                backgroundColor: theme.fill.secondary, color: theme.text.secondary,
+                fontSize: 14, fontWeight: 700, cursor: "pointer",
               }}
             >
               とじる
