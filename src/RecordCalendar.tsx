@@ -179,6 +179,8 @@ interface Props {
   buddyXpEarnedToday?: number;
   onSelectBuddy?: (stickerId: string) => void;
   onTrainBuddy?: (stickerId: string) => void;
+  /** 今日の相棒を選ぶ／変えるシートを開く */
+  onOpenBuddySelect?: () => void;
   onBack: () => void;
   onSelectCatchUpDay?: (dateKey: string) => void;
 }
@@ -186,7 +188,7 @@ interface Props {
 export function RecordScreen({
   history, streak, stickerAlbum, duplicateTokens = 0,
   buddyId = null, buddyProgress, buddyXpEarnedToday = 0,
-  onSelectBuddy, onTrainBuddy,
+  onSelectBuddy, onTrainBuddy, onOpenBuddySelect,
   onBack, onSelectCatchUpDay,
 }: Props) {
   const now = new Date();
@@ -353,69 +355,108 @@ export function RecordScreen({
           今日の相棒
         </div>
         {activeBuddyItem && activeBuddyEntry && buddyId ? (
-          <button
-            type="button"
-            onClick={() => setPreviewId(buddyId)}
-            style={{
-              width: "100%", border: "none", background: "transparent", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: 0,
-            }}
-          >
-            <div style={{ width: 72, height: 72, flexShrink: 0 }}>
-              <BuddyFrame level={activeBuddyEntry.level} size="card" isBuddy showLevelBadge rarity={activeBuddyItem.rarity}>
-                <StickerFrameWithBadge
-                  rarity={activeBuddyItem.rarity}
-                  compact
-                  showBadge={false}
-                  style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
-                >
-                  {activeBuddyItem.emoji ? (
-                    <span style={{ fontSize: 32 }}>{activeBuddyItem.emoji}</span>
-                  ) : (
-                    <StickerImg
-                      src={activeBuddyItem.image!}
-                      alt={activeBuddyItem.label}
-                      padding={6}
-                      objectFit={activeBuddyItem.imageFit ?? "contain"}
-                    />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => setPreviewId(buddyId)}
+              style={{
+                width: "100%", border: "none", background: "transparent", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: 0,
+              }}
+            >
+              <div style={{ width: 72, height: 72, flexShrink: 0 }}>
+                <BuddyFrame level={activeBuddyEntry.level} size="card" isBuddy showLevelBadge rarity={activeBuddyItem.rarity}>
+                  <StickerFrameWithBadge
+                    rarity={activeBuddyItem.rarity}
+                    compact
+                    showBadge={false}
+                    style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    {activeBuddyItem.emoji ? (
+                      <span style={{ fontSize: 32 }}>{activeBuddyItem.emoji}</span>
+                    ) : (
+                      <StickerImg
+                        src={activeBuddyItem.image!}
+                        alt={activeBuddyItem.label}
+                        padding={6}
+                        objectFit={activeBuddyItem.imageFit ?? "contain"}
+                      />
+                    )}
+                  </StickerFrameWithBadge>
+                </BuddyFrame>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 900, color: theme.text.primary }}>{activeBuddyItem.label}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 2 }}>
+                  Lv{activeBuddyEntry.level}
+                  {!isBuddyMaxed(activeBuddyEntry) && (
+                    <span style={{ marginLeft: 6, fontWeight: 600 }}>
+                      次まで {xpToNextLevel(activeBuddyEntry.level) - activeBuddyEntry.xp}XP
+                    </span>
                   )}
-                </StickerFrameWithBadge>
-              </BuddyFrame>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 900, color: theme.text.primary }}>{activeBuddyItem.label}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 2 }}>
-                Lv{activeBuddyEntry.level}
-                {!isBuddyMaxed(activeBuddyEntry) && (
-                  <span style={{ marginLeft: 6, fontWeight: 600 }}>
-                    次まで {xpToNextLevel(activeBuddyEntry.level) - activeBuddyEntry.xp}XP
-                  </span>
-                )}
-                {isBuddyMaxed(activeBuddyEntry) && <span style={{ marginLeft: 6, color: theme.category.orange }}>MAX</span>}
-              </div>
-              {!isBuddyMaxed(activeBuddyEntry) && (
-                <div style={{
-                  marginTop: 6, height: 8, borderRadius: 999, background: theme.fill.secondary, overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%", borderRadius: 999,
-                    width: `${Math.min(100, (activeBuddyEntry.xp / Math.max(1, xpToNextLevel(activeBuddyEntry.level))) * 100)}%`,
-                    background: theme.accent.primary,
-                  }} />
+                  {isBuddyMaxed(activeBuddyEntry) && <span style={{ marginLeft: 6, color: theme.category.orange }}>MAX</span>}
                 </div>
-              )}
-              <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary, marginTop: 6 }}>
-                きょうの成長 {"●".repeat(todayXpShown)}{"○".repeat(BUDDY_DAILY_XP_CAP - todayXpShown)} {todayXpShown}/{BUDDY_DAILY_XP_CAP}
+                {!isBuddyMaxed(activeBuddyEntry) && (
+                  <div style={{
+                    marginTop: 6, height: 8, borderRadius: 999, background: theme.fill.secondary, overflow: "hidden",
+                  }}>
+                    <div style={{
+                      height: "100%", borderRadius: 999,
+                      width: `${Math.min(100, (activeBuddyEntry.xp / Math.max(1, xpToNextLevel(activeBuddyEntry.level))) * 100)}%`,
+                      background: theme.accent.primary,
+                    }} />
+                  </div>
+                )}
+                <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary, marginTop: 6 }}>
+                  きょうの成長 {"●".repeat(todayXpShown)}{"○".repeat(BUDDY_DAILY_XP_CAP - todayXpShown)} {todayXpShown}/{BUDDY_DAILY_XP_CAP}
+                </div>
+                <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>
+                  親がハンコを押すと育つよ · 🪙{DUPLICATE_TOKEN_LABEL} {duplicateTokens}
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>
-                親がハンコを押すと育つよ · 🪙{DUPLICATE_TOKEN_LABEL} {duplicateTokens}
-              </div>
-            </div>
-          </button>
+            </button>
+            {onOpenBuddySelect && uniqueAlbum.length > 0 && (
+              <button
+                type="button"
+                onClick={onOpenBuddySelect}
+                style={{
+                  width: "100%", padding: "10px 12px", borderRadius: 12,
+                  border: `1.5px solid ${theme.accent.primary}66`,
+                  backgroundColor: `${theme.accent.primary}14`,
+                  color: theme.accent.primary,
+                  fontSize: 13, fontWeight: 800, cursor: "pointer",
+                }}
+              >
+                相棒をかえる
+              </button>
+            )}
+          </div>
         ) : (
-          <div style={{ textAlign: "center", fontSize: 13, color: theme.text.secondary, lineHeight: 1.55 }}>
-            まだ相棒がいないよ<br />
-            <span style={{ fontSize: 12, color: theme.text.tertiary }}>下のアルバムから選んでね</span>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: theme.text.secondary, lineHeight: 1.55, marginBottom: onOpenBuddySelect && uniqueAlbum.length > 0 ? 10 : 0 }}>
+              まだ相棒がいないよ
+              {!onOpenBuddySelect && (
+                <>
+                  <br />
+                  <span style={{ fontSize: 12, color: theme.text.tertiary }}>下のアルバムから選んでね</span>
+                </>
+              )}
+            </div>
+            {onOpenBuddySelect && uniqueAlbum.length > 0 && (
+              <button
+                type="button"
+                onClick={onOpenBuddySelect}
+                style={{
+                  width: "100%", padding: "10px 12px", borderRadius: 12,
+                  border: "none",
+                  backgroundColor: theme.accent.primary,
+                  color: "#fff",
+                  fontSize: 13, fontWeight: 800, cursor: "pointer",
+                }}
+              >
+                相棒をえらぶ
+              </button>
+            )}
           </div>
         )}
       </div>

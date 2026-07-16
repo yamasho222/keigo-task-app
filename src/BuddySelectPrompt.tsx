@@ -9,13 +9,16 @@ import { getBuddyEntry, type BuddyProgressMap } from "./buddyProgress";
 interface Props {
   stickerAlbum: string[];
   buddyProgress?: BuddyProgressMap;
+  /** すでに相棒がいるときは変更モードの文言になる */
+  currentBuddyId?: string | null;
   onSelect: (stickerId: string) => void;
   onDismiss: () => void;
 }
 
 export function BuddySelectPrompt({
-  stickerAlbum, buddyProgress, onSelect, onDismiss,
+  stickerAlbum, buddyProgress, currentBuddyId = null, onSelect, onDismiss,
 }: Props) {
+  const isChange = Boolean(currentBuddyId);
   const owned = new Set(dedupeStickerIds(stickerAlbum));
   /** カテゴリ順・各カテゴリ内はレアリティ高い順（アルバムと同じ） */
   const groups = getAlbumCategoryGroups(stickerAlbum)
@@ -47,11 +50,14 @@ export function BuddySelectPrompt({
       >
         <div style={{ textAlign: "center", marginBottom: 6, flexShrink: 0 }}>
           <div style={{ fontSize: 18, fontWeight: 900, color: theme.text.primary }}>
-            今日の相棒をえらぼう！
+            {isChange ? "相棒をかえよう！" : "今日の相棒をえらぼう！"}
           </div>
           <div style={{ fontSize: 12, color: theme.text.secondary, marginTop: 6, lineHeight: 1.5 }}>
-            親がハンコを押すと、選んだシールが育つよ。<br />
-            先に相棒をセットしよう！
+            {isChange ? (
+              <>親がハンコを押すと、選んだシールが育つよ。<br />別のシールにかえられるよ。</>
+            ) : (
+              <>親がハンコを押すと、選んだシールが育つよ。<br />先に相棒をセットしよう！</>
+            )}
           </div>
         </div>
 
@@ -76,6 +82,7 @@ export function BuddySelectPrompt({
                 {group.rewards.map((item) => {
                   const entry = getBuddyEntry(buddyProgress, item.id);
                   const isEmoji = item.kind === "emoji";
+                  const isCurrent = currentBuddyId === item.id;
                   return (
                     <button
                       key={item.id}
@@ -87,7 +94,13 @@ export function BuddySelectPrompt({
                       }}
                     >
                       <div style={{ width: 72, height: 72 }}>
-                        <BuddyFrame level={entry.level} size="cell" showLevelBadge rarity={item.rarity}>
+                        <BuddyFrame
+                          level={entry.level}
+                          size="cell"
+                          isBuddy={isCurrent}
+                          showLevelBadge
+                          rarity={item.rarity}
+                        >
                           <StickerFrameWithBadge
                             rarity={item.rarity}
                             compact
@@ -112,10 +125,11 @@ export function BuddySelectPrompt({
                         </BuddyFrame>
                       </div>
                       <div style={{
-                        marginTop: 4, fontSize: 10, fontWeight: 700, color: theme.text.secondary,
+                        marginTop: 4, fontSize: 10, fontWeight: 700,
+                        color: isCurrent ? theme.accent.primary : theme.text.secondary,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>
-                        {item.label}
+                        {isCurrent ? "いまの相棒" : item.label}
                       </div>
                     </button>
                   );
@@ -135,7 +149,7 @@ export function BuddySelectPrompt({
             fontSize: 14, fontWeight: 700, cursor: "pointer",
           }}
         >
-          あとで選ぶ
+          {isChange ? "やめる" : "あとで選ぶ"}
         </button>
       </div>
     </div>

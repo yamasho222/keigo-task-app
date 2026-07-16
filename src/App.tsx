@@ -20,7 +20,7 @@ import {
 } from "./alarm";
 import { RecordScreen, getStreak, isFullDay, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, type DayHistory } from "./RecordCalendar";
 import {
-  NewRecordOverlay, TreatOverlay,
+  NewRecordOverlay, TreatOverlay, StickerFrameWithBadge, StickerImg,
   type NewRecordCelebration, type TreatMode,
 } from "./Rewards";
 import {
@@ -36,6 +36,7 @@ import {
 } from "./buddyProgress";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
 import { BuddySelectPrompt } from "./BuddySelectPrompt";
+import { BuddyFrame } from "./BuddyFrame";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
@@ -3792,8 +3793,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         <BuddySelectPrompt
           stickerAlbum={stickerAlbum}
           buddyProgress={buddyProgress}
+          currentBuddyId={buddyId}
           onSelect={selectBuddy}
-          onDismiss={dismissBuddyPrompt}
+          onDismiss={buddyId ? () => setShowBuddyPrompt(false) : dismissBuddyPrompt}
         />
       )}
 
@@ -4389,7 +4391,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 showOneOffParentCheckButton={!inCatchUp && oneOffSpecialAwaitingParent !== null}
                 onOpenOneOffParentCheck={openOneOffParentCheck}
                 gamePlaySec={gamePlayTimes[gamePlayKey(todayKey(), sid)]}
-                needsBuddySelect={!inCatchUp && !buddyId && stickerAlbum.length > 0}
+                buddyId={!inCatchUp ? buddyId : null}
+                buddyProgress={buddyProgress}
+                canChangeBuddy={!inCatchUp && stickerAlbum.length > 0}
                 onOpenBuddySelect={() => setShowBuddyPrompt(true)}
               />
             ))}
@@ -4487,6 +4491,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             buddyXpEarnedToday={buddyXpDate === todayKey() ? buddyXpEarnedToday : 0}
             onSelectBuddy={selectBuddy}
             onTrainBuddy={trainBuddyWithToken}
+            onOpenBuddySelect={() => setShowBuddyPrompt(true)}
             onBack={goHome}
             onSelectCatchUpDay={openCatchUpDay}
           />
@@ -6001,8 +6006,11 @@ interface TaskScreenProps {
   gamePlaySec?: number;
   catchUpMode?: boolean;
   taskFilterDate?: Date;
-  /** 相棒未設定かつ所持シールありのとき true */
-  needsBuddySelect?: boolean;
+  /** 今日の相棒ID（未設定なら null） */
+  buddyId?: string | null;
+  buddyProgress?: BuddyProgressMap;
+  /** 相棒の選択・変更ができるとき true */
+  canChangeBuddy?: boolean;
   onOpenBuddySelect?: () => void;
 }
 
@@ -6022,7 +6030,9 @@ function TaskScreen({
   gamePlaySec,
   catchUpMode = false,
   taskFilterDate,
-  needsBuddySelect = false,
+  buddyId = null,
+  buddyProgress,
+  canChangeBuddy = false,
   onOpenBuddySelect,
 }: TaskScreenProps) {
   const [isAdding, setIsAdding] = useState(false);
@@ -6099,6 +6109,10 @@ function TaskScreen({
     setActionSheetTaskId(taskId);
   };
 
+  const buddyItem = buddyId ? REWARD_LOOKUP[buddyId] : null;
+  const buddyEntry = buddyId ? getBuddyEntry(buddyProgress, buddyId) : null;
+  const showBuddyBanner = canChangeBuddy && Boolean(onOpenBuddySelect);
+
   return (
     <>
       <div>
@@ -6110,7 +6124,76 @@ function TaskScreen({
         </div>
       </div>
 
-      {needsBuddySelect && onOpenBuddySelect && (
+      {showBuddyBanner && onOpenBuddySelect && buddyItem && buddyEntry && buddyId ? (
+        <button
+          type="button"
+          onClick={onOpenBuddySelect}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 12px",
+            borderRadius: 14,
+            border: `1.5px solid ${theme.accent.primary}55`,
+            backgroundColor: `${theme.accent.primary}10`,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <div style={{ width: 48, height: 48, flexShrink: 0 }}>
+            <BuddyFrame level={buddyEntry.level} size="cell" isBuddy showLevelBadge rarity={buddyItem.rarity}>
+              <StickerFrameWithBadge
+                rarity={buddyItem.rarity}
+                compact
+                showBadge={false}
+                style={{
+                  width: "100%", height: "100%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: buddyItem.emoji ? 22 : undefined,
+                }}
+              >
+                {buddyItem.emoji ? (
+                  buddyItem.emoji
+                ) : (
+                  <StickerImg
+                    src={buddyItem.image!}
+                    alt={buddyItem.label}
+                    padding={4}
+                    objectFit={buddyItem.imageFit ?? "contain"}
+                  />
+                )}
+              </StickerFrameWithBadge>
+            </BuddyFrame>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: theme.accent.primary }}>
+              🐾 今日の相棒
+            </div>
+            <div style={{
+              fontSize: 14, fontWeight: 900, color: theme.text.primary,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {buddyItem.label}
+              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: theme.text.secondary }}>
+                Lv{buddyEntry.level}
+              </span>
+            </div>
+          </div>
+          <span style={{
+            flexShrink: 0,
+            fontSize: 12,
+            fontWeight: 800,
+            color: theme.accent.primary,
+            backgroundColor: `${theme.accent.primary}18`,
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.accent.primary}44`,
+          }}>
+            かえる
+          </span>
+        </button>
+      ) : showBuddyBanner && onOpenBuddySelect ? (
         <button
           type="button"
           onClick={onOpenBuddySelect}
@@ -6148,7 +6231,7 @@ function TaskScreen({
             選ぶ
           </span>
         </button>
-      )}
+      ) : null}
 
       <StepProgress tasks={progressTasks} done={done} skipped={skipped} justChecked={justChecked} />
       <BestTimeSummary session={session} tasks={progressTasks} bestTimes={bestTimes} />
