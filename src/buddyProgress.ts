@@ -4,20 +4,20 @@ export const BUDDY_MAX_LEVEL = 10;
 export const BUDDY_XP_PER_STAMP = 1;
 /** 親スタンプ由来XPの1日上限（カレンダーきょう） */
 export const BUDDY_DAILY_XP_CAP = 6;
-/** かぶりトークン → 1XP */
-export const BUDDY_TRAIN_TOKEN_COST = 5;
+/** ダブりコイン → 1XP */
+export const BUDDY_TRAIN_TOKEN_COST = 3;
 
-/** 現在Lv → 次Lvに必要なXP（各レベル-2・合計62。Lv1→2は最速で1） */
+/** 現在Lv → 次Lvに必要なXP（毎レベル+1・合計45） */
 export const XP_TO_NEXT_LEVEL: Readonly<Record<number, number>> = {
   1: 1,
   2: 2,
   3: 3,
   4: 4,
-  5: 6,
-  6: 8,
-  7: 10,
-  8: 12,
-  9: 16,
+  5: 5,
+  6: 6,
+  7: 7,
+  8: 8,
+  9: 9,
   10: 0,
 };
 
