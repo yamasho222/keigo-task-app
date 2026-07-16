@@ -25,6 +25,30 @@ button {
   width: 100%;
   height: 100%;
   border-radius: 12px;
+  /* 枠隅バッジがはみ出せるように */
+  overflow: visible;
+}
+
+/* レアバッジ: フレーム左上隅（画像の上ではなく枠の角） */
+.buddy-frame__rarity {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  z-index: 8;
+  pointer-events: none;
+}
+.buddy-frame__rarity .rarity-badge-corner {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+}
+.buddy-frame--card .buddy-frame__rarity {
+  top: -6px;
+  left: -6px;
+}
+.buddy-frame--preview .buddy-frame__rarity {
+  top: -7px;
+  left: -7px;
 }
 
 .buddy-frame--cell { border-radius: 10px; }

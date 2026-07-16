@@ -68,10 +68,11 @@ export function BuddySelectPrompt({
                 }}
               >
                 <div style={{ width: 72, height: 72 }}>
-                  <BuddyFrame level={entry.level} size="cell" showLevelBadge>
+                  <BuddyFrame level={entry.level} size="cell" showLevelBadge rarity={item.rarity}>
                     <StickerFrameWithBadge
                       rarity={item.rarity}
                       compact
+                      showBadge={false}
                       style={{
                         width: "100%", height: "100%",
                         display: "flex", alignItems: "center", justifyContent: "center",

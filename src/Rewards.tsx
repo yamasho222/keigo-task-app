@@ -216,17 +216,19 @@ export function RarityBadgeCorner({
 }
 
 export function StickerFrameWithBadge({
-  rarity, compact = false, children, style,
+  rarity, compact = false, showBadge = true, children, style,
 }: {
   rarity: RewardRarity;
   compact?: boolean;
+  /** false のとき画像上に被せない（BuddyFrame 側の枠隅に出す用） */
+  showBadge?: boolean;
   children: ReactNode;
   style?: CSSProperties;
 }) {
   return (
     <div style={{ position: "relative", ...style }}>
       {children}
-      <RarityBadgeCorner rarity={rarity} compact={compact} />
+      {showBadge && <RarityBadgeCorner rarity={rarity} compact={compact} />}
     </div>
   );
 }

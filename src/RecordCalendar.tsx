@@ -234,7 +234,8 @@ export function RecordScreen({
   const albumCellStyle: CSSProperties = {
     width: 52, height: 52, borderRadius: 10, padding: 0,
     display: "flex", alignItems: "center", justifyContent: "center",
-    overflow: "hidden", flexShrink: 0,
+    /* 枠隅のレアバッジがはみ出せるよう hidden にしない */
+    overflow: "visible", flexShrink: 0,
   };
 
   return (
@@ -361,10 +362,11 @@ export function RecordScreen({
             }}
           >
             <div style={{ width: 72, height: 72, flexShrink: 0 }}>
-              <BuddyFrame level={activeBuddyEntry.level} size="card" isBuddy showLevelBadge>
+              <BuddyFrame level={activeBuddyEntry.level} size="card" isBuddy showLevelBadge rarity={activeBuddyItem.rarity}>
                 <StickerFrameWithBadge
                   rarity={activeBuddyItem.rarity}
                   compact
+                  showBadge={false}
                   style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
                   {activeBuddyItem.emoji ? (
@@ -435,7 +437,7 @@ export function RecordScreen({
               }}>
                 {group.label} ({group.collectedCount}/{group.totalCount})
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "4px 2px 2px" }}>
                 {group.rewards.map((reward) => {
                   const collected = uniqueAlbum.includes(reward.id);
                   const item = REWARD_LOOKUP[reward.id];
@@ -456,10 +458,11 @@ export function RecordScreen({
                           padding: 0,
                         }}
                       >
-                        <BuddyFrame level={entry.level} size="cell" isBuddy={isActiveBuddy} showLevelBadge>
+                        <BuddyFrame level={entry.level} size="cell" isBuddy={isActiveBuddy} showLevelBadge rarity={item.rarity}>
                           <StickerFrameWithBadge
                             rarity={item.rarity}
                             compact
+                            showBadge={false}
                             style={{
                               width: "100%", height: "100%",
                               display: "flex", alignItems: "center", justifyContent: "center",
@@ -591,9 +594,11 @@ export function RecordScreen({
                 size="preview"
                 isBuddy={buddyId === previewId}
                 showLevelBadge
+                rarity={previewItem.rarity}
               >
                 <StickerFrameWithBadge
                   rarity={previewItem.rarity}
+                  showBadge={false}
                   style={{
                     width: "100%", height: "100%",
                     display: "flex", alignItems: "center", justifyContent: "center",
