@@ -324,29 +324,53 @@
       z-index: 2;
     }
 
-    /* —— Lv9 ヴァイオレット・スパーク（絵文字なし／枠縁で放電） —— */
+    /* —— Lv9 ヴァイオレット厚メタル＋スパーク（Lv8以上の重厚感） —— */
     .lv9 .shell {
-      padding: 4px;
-      background: linear-gradient(145deg, #e9d5ff, #7c3aed 28%, #1e1b4b 58%, #67e8f9 100%);
+      padding: 5.5px;
+      background: linear-gradient(145deg, #faf5ff 0%, #ddd6fe 12%, #a78bfa 28%, #7c3aed 48%, #6d28d9 62%, #67e8f9 82%, #e0f2fe 100%);
       box-shadow:
-        0 0 0 1px rgba(167,139,250,0.5),
-        0 0 26px rgba(124,58,237,0.55),
-        0 0 42px rgba(34,211,238,0.22);
+        0 0 0 2px rgba(196,181,253,0.55),
+        0 0 0 1px rgba(255,255,255,0.35) inset,
+        0 0 34px rgba(124,58,237,0.75),
+        0 0 56px rgba(91,33,182,0.48),
+        0 0 78px rgba(34,211,238,0.3);
       animation: lv9Pulse 2.4s ease-in-out infinite;
     }
     @keyframes lv9Pulse {
       0%, 100% {
         box-shadow:
-          0 0 0 1px rgba(167,139,250,0.45),
-          0 0 22px rgba(124,58,237,0.45),
-          0 0 36px rgba(34,211,238,0.15);
+          0 0 0 2px rgba(196,181,253,0.45),
+          0 0 0 1px rgba(255,255,255,0.3) inset,
+          0 0 30px rgba(124,58,237,0.65),
+          0 0 50px rgba(91,33,182,0.4),
+          0 0 68px rgba(34,211,238,0.22);
       }
       45% {
         box-shadow:
-          0 0 0 1px rgba(224,242,254,0.7),
-          0 0 34px rgba(167,139,250,0.75),
-          0 0 54px rgba(34,211,238,0.35);
+          0 0 0 2px rgba(224,242,254,0.7),
+          0 0 0 1px rgba(255,255,255,0.45) inset,
+          0 0 42px rgba(167,139,250,0.9),
+          0 0 66px rgba(124,58,237,0.58),
+          0 0 90px rgba(34,211,238,0.42);
       }
+    }
+    .lv9 .plate::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: 12px;
+      border: 1.5px solid rgba(237,233,254,0.9);
+      box-shadow: 0 0 12px rgba(167,139,250,0.55), inset 0 0 0 1px rgba(103,232,249,0.35);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .lv9 .plate::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(120% 70% at 50% 120%, rgba(124,58,237,0.28), transparent 55%);
+      pointer-events: none;
+      z-index: 2;
     }
     .lv9 .sparks {
       position: absolute;
@@ -405,31 +429,55 @@
       70% { opacity: 0; }
     }
 
-    /* —— Lv10 ホロ＋虹スパーク（Lv9より多く派手） —— */
+    /* —— Lv10 最厚ホロ＋プラチナ内線＋虹スパーク —— */
     .lv10 .shell {
-      padding: 4px;
+      padding: 6.5px;
       position: relative;
       background: linear-gradient(
         125deg,
-        #ff6b6b,
-        #feca57,
-        #48dbfb,
-        #ff9ff3,
-        #54a0ff,
-        #ff6b6b
+        #0b1026 0%,
+        #4338ca 14%,
+        #06b6d4 28%,
+        #8b5cf6 42%,
+        #ec4899 55%,
+        #f59e0b 68%,
+        #22d3ee 82%,
+        #1e1b4b 100%
       );
-      background-size: 240% 240%;
-      animation: holoShift 5s linear infinite;
+      background-size: 300% 300%;
+      animation: holoShift 6s linear infinite;
       box-shadow:
-        0 0 0 1px rgba(255,255,255,0.35),
-        0 0 28px rgba(84,160,255,0.45),
-        0 0 48px rgba(255,159,243,0.35),
-        0 0 64px rgba(254,202,87,0.22);
+        0 0 0 2.5px rgba(255,255,255,0.45),
+        0 0 0 1px rgba(255,255,255,0.4) inset,
+        0 0 34px rgba(84,160,255,0.6),
+        0 0 56px rgba(255,159,243,0.5),
+        0 0 78px rgba(254,202,87,0.35),
+        0 0 100px rgba(84,160,255,0.22);
     }
     .lv10 .plate {
       box-shadow:
         inset 0 0 0 1px rgba(255,255,255,0.16),
         inset 0 0 30px rgba(255,255,255,0.04);
+    }
+    .lv10 .plate::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: 12px;
+      border: 1.5px solid rgba(255,255,255,0.85);
+      box-shadow:
+        0 0 14px rgba(255,255,255,0.45),
+        inset 0 0 0 1px rgba(255,159,243,0.35);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .lv10 .plate::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(120% 70% at 50% 120%, rgba(255,159,243,0.22), transparent 55%);
+      pointer-events: none;
+      z-index: 2;
     }
     .lv10 .sparks,
     .preview-shell .sparks {
@@ -541,23 +589,26 @@
       aspect-ratio: 1;
       margin: 0 auto;
       border-radius: 22px;
-      padding: 5px;
+      padding: 7px;
       position: relative;
       background: linear-gradient(
         125deg,
-        #ff6b6b,
-        #feca57,
-        #48dbfb,
-        #ff9ff3,
-        #54a0ff,
-        #ff6b6b
+        #0b1026 0%,
+        #4338ca 14%,
+        #06b6d4 28%,
+        #8b5cf6 42%,
+        #ec4899 55%,
+        #f59e0b 68%,
+        #22d3ee 82%,
+        #1e1b4b 100%
       );
-      background-size: 240% 240%;
-      animation: holoShift 5s linear infinite;
+      background-size: 300% 300%;
+      animation: holoShift 6s linear infinite;
       box-shadow:
-        0 0 0 1px rgba(255,255,255,0.18),
-        0 0 36px rgba(84,160,255,0.35),
-        0 0 60px rgba(255,159,243,0.22);
+        0 0 0 1px rgba(255,255,255,0.5),
+        0 0 36px rgba(84,160,255,0.55),
+        0 0 60px rgba(255,159,243,0.45),
+        0 0 84px rgba(254,202,87,0.28);
     }
     .preview-plate {
       width: 100%;
@@ -569,6 +620,18 @@
       display: grid;
       place-items: center;
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+    }
+    .preview-plate::before {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      border-radius: 15px;
+      border: 1.5px solid rgba(255,255,255,0.85);
+      box-shadow:
+        0 0 14px rgba(255,255,255,0.45),
+        inset 0 0 0 1px rgba(255,159,243,0.35);
+      pointer-events: none;
+      z-index: 3;
     }
     .preview-plate img {
       width: 100%;
@@ -1054,7 +1117,7 @@
           <img src="./stickers/ur-thunder.png" alt="" />
         </div>
       </div>
-      <div class="label">Lv9</div><div class="note">ヴァイオレット・スパーク</div>
+      <div class="label">Lv9</div><div class="note">ヴァイオレット厚メタル</div>
     </div>
     <div class="card lv10">
       <div class="shell">
@@ -1069,7 +1132,7 @@
           <img src="./stickers/lr-rengoku.gif" alt="" />
         </div>
       </div>
-      <div class="label">Lv10</div><div class="note">ホロ＋虹スパーク</div>
+      <div class="label">Lv10</div><div class="note">最厚ホロ＋虹スパーク</div>
     </div>
   </div>
 
