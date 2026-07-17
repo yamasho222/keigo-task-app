@@ -406,6 +406,19 @@ export const PITY_UNCOLLECTED_CHANCE = 0.5;
 /** 子ども向け表示名（内部キーは duplicateTokens のまま） */
 export const DUPLICATE_TOKEN_LABEL = "ダブりコイン";
 
+/** かぶり時に得られるダブりコイン枚数（レア度別） */
+export const DUPLICATE_TOKEN_BY_RARITY: Readonly<Record<RewardRarity, number>> = {
+  normal: 1,
+  rare: 2,
+  superRare: 3,
+  ultraRare: 4,
+  legendary: 5,
+};
+
+export function getDuplicateTokensForRarity(rarity: RewardRarity): number {
+  return DUPLICATE_TOKEN_BY_RARITY[rarity] ?? 1;
+}
+
 /** ダブりコインで交換できるレア（ノーマルは対象外） */
 export type DuplicateTokenExchangeTier = "rare" | "superRare" | "ultraRare" | "legendary";
 

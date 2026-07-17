@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
-import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
+import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, DUPLICATE_TOKEN_LABEL, getDuplicateTokensForRarity, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
 import { pickLegendaryRevealMode, pickSrUrRevealMode, type LegendaryRevealMode, type SrUrRevealMode } from "./rarityMeta";
 import { specialRewardFloorLabel, type SpecialRewardFloor } from "./sharedTasks";
 import {
@@ -990,8 +990,16 @@ function TreatOverlay({
                 {reward.label}
               </div>
               <div style={{ fontSize: 14, color: theme.text.secondary }}>{reward.message}</div>
-              <div style={{ fontSize: 11, color: theme.text.tertiary }}>
-                アルバムに追加したよ！
+              <div style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: !tokenRedeem && collectedIds.includes(reward.id)
+                  ? theme.category.orange
+                  : theme.text.tertiary,
+              }}>
+                {!tokenRedeem && collectedIds.includes(reward.id)
+                  ? `🪙 ${DUPLICATE_TOKEN_LABEL} +${getDuplicateTokensForRarity(reward.rarity)}！`
+                  : "アルバムに追加したよ！"}
               </div>
             </div>
           )}

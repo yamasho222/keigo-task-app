@@ -27,6 +27,7 @@ import {
   loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory,
   PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE,
   DUPLICATE_TOKEN_COSTS, DUPLICATE_TOKEN_LABEL, pickUncollectedByRarity, REWARD_LOOKUP,
+  getDuplicateTokensForRarity,
   type DuplicateTokenExchangeTier,
 } from "./stickerRewards";
 import {
@@ -2728,7 +2729,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
     if (!isDevForce && !treat.tokenRedeem) {
       if (!isNew) {
-        setDuplicateTokens((t) => t + 1);
+        const rarity = REWARD_LOOKUP[rewardId]?.rarity ?? "normal";
+        const gain = getDuplicateTokensForRarity(rarity);
+        setDuplicateTokens((t) => t + gain);
       }
       if (treat.mode !== "weekly") {
         if (isNew) {
