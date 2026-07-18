@@ -39,6 +39,7 @@ import {
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
 import { BuddySelectPrompt } from "./BuddySelectPrompt";
 import { BuddyFrame } from "./BuddyFrame";
+import { BuddyDetailModal } from "./BuddyDetailModal";
 import {
   getActiveSessionIds, isDaytimeSessionDay, isSessionActiveOnDate, parseDateKey,
 } from "./japaneseCalendar";
@@ -4387,6 +4388,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 buddyProgress={buddyProgress}
                 canChangeBuddy={!inCatchUp && stickerAlbum.length > 0}
                 onOpenBuddySelect={() => setShowBuddyPrompt(true)}
+                duplicateTokens={duplicateTokens}
+                onTrainBuddy={trainBuddyWithToken}
               />
             ))}
           </SessionPhaseSwipe>
@@ -6004,6 +6007,8 @@ interface TaskScreenProps {
   /** 相棒の選択・変更ができるとき true */
   canChangeBuddy?: boolean;
   onOpenBuddySelect?: () => void;
+  duplicateTokens?: number;
+  onTrainBuddy?: (stickerId: string) => void;
 }
 
 function TaskScreen({
@@ -6026,7 +6031,10 @@ function TaskScreen({
   buddyProgress,
   canChangeBuddy = false,
   onOpenBuddySelect,
+  duplicateTokens = 0,
+  onTrainBuddy,
 }: TaskScreenProps) {
+  const [showBuddyDetail, setShowBuddyDetail] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("today");
   const [openSwipe, setOpenSwipe] = useState<{ id: number; mode: SwipeMode } | null>(null);
@@ -6122,9 +6130,7 @@ function TaskScreen({
       </div>
 
       {showBuddyBanner && onOpenBuddySelect && buddyItem && buddyEntry && buddyId ? (
-        <button
-          type="button"
-          onClick={onOpenBuddySelect}
+        <div
           style={{
             width: "100%",
             display: "flex",
@@ -6134,10 +6140,25 @@ function TaskScreen({
             borderRadius: 14,
             border: `1.5px solid ${theme.accent.primary}55`,
             backgroundColor: `${theme.accent.primary}10`,
-            cursor: "pointer",
-            textAlign: "left",
           }}
         >
+          <button
+            type="button"
+            onClick={() => setShowBuddyDetail(true)}
+            aria-label={`${buddyItem.label}のレベルを見る`}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: 0,
+              border: "none",
+              backgroundColor: "transparent",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
           <div style={{ width: 48, height: 48, flexShrink: 0 }}>
             <BuddyFrame level={buddyEntry.level} size="cell" isBuddy showLevelBadge rarity={buddyItem.rarity}>
               <StickerFrameWithBadge
@@ -6212,19 +6233,25 @@ function TaskScreen({
               </>
             )}
           </div>
-          <span style={{
-            flexShrink: 0,
-            fontSize: 12,
-            fontWeight: 800,
-            color: theme.accent.primary,
-            backgroundColor: `${theme.accent.primary}18`,
-            padding: "8px 12px",
-            borderRadius: 10,
-            border: `1px solid ${theme.accent.primary}44`,
-          }}>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenBuddySelect}
+            style={{
+              flexShrink: 0,
+              fontSize: 12,
+              fontWeight: 800,
+              color: theme.accent.primary,
+              backgroundColor: `${theme.accent.primary}18`,
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: `1px solid ${theme.accent.primary}44`,
+              cursor: "pointer",
+            }}
+          >
             かえる
-          </span>
-        </button>
+          </button>
+        </div>
       ) : showBuddyBanner && onOpenBuddySelect ? (
         <button
           type="button"
@@ -6264,6 +6291,17 @@ function TaskScreen({
           </span>
         </button>
       ) : null}
+
+      {showBuddyDetail && buddyId && buddyEntry && (
+        <BuddyDetailModal
+          stickerId={buddyId}
+          entry={buddyEntry}
+          isBuddy
+          duplicateTokens={duplicateTokens}
+          onTrainBuddy={onTrainBuddy}
+          onClose={() => setShowBuddyDetail(false)}
+        />
+      )}
 
       <StepProgress tasks={progressTasks} done={done} skipped={skipped} justChecked={justChecked} />
       <BestTimeSummary session={session} tasks={progressTasks} bestTimes={bestTimes} />
