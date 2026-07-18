@@ -420,10 +420,10 @@ export const DUPLICATE_TOKEN_LABEL = "ダブりコイン";
 /** かぶり時に得られるダブりコイン枚数（レア度別） */
 export const DUPLICATE_TOKEN_BY_RARITY: Readonly<Record<RewardRarity, number>> = {
   normal: 1,
-  rare: 2,
-  superRare: 3,
-  ultraRare: 4,
-  legendary: 5,
+  rare: 3,
+  superRare: 6,
+  ultraRare: 10,
+  legendary: 20,
 };
 
 export function getDuplicateTokensForRarity(rarity: RewardRarity): number {

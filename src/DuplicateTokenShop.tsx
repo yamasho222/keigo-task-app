@@ -66,7 +66,7 @@ export function DuplicateTokenShop({
         </div>
         <div style={{ fontSize: 12, color: theme.text.tertiary, textAlign: "center", marginBottom: 14, lineHeight: 1.5 }}>
           同じシールがかぶると、レア度に応じてコインがたまるよ。<br />
-          N1 / レア2 / SR3 / UR4 / LR5<br />
+          N1 / レア3 / SR6 / UR10 / LR20<br />
           まだ持っていないシールと交換したり、相棒を育てたり（{BUDDY_TRAIN_TOKEN_COST}こで+1XP）できるよ。
         </div>
 
