@@ -1996,6 +1996,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     sessionState[session].setApproved(false);
     const updatedDay = { ...prev, [session]: false };
     setHistory({ ...history, [today]: updatedDay });
+    // 獲得済み記録（dailyTreatClaimed / fullDayBonusClaimed）は消さない。
+    // 消すと「タスク取り消し→再完了」でごほうびを何度ももらえてしまう。
     const treatKey = sessionTreatKey(today, session);
     setDailyTreatPending((p) => {
       if (!p[treatKey]) return p;
@@ -2003,20 +2005,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[treatKey];
       return next;
     });
-    setDailyTreatClaimed((c) => {
-      if (!c[treatKey]) return c;
-      const next = { ...c };
-      delete next[treatKey];
-      return next;
-    });
-    if (!isFullDay(updatedDay, new Date())) {
-      setFullDayBonusClaimed((claimed) => {
-        if (!claimed[today]) return claimed;
-        const next = { ...claimed };
-        delete next[today];
-        return next;
-      });
-    }
     setStampVisible(false);
   };
 
