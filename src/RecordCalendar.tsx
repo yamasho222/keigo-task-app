@@ -46,16 +46,47 @@ function localDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function getFullDayStreak(history: Record<string, DayHistory>): number {
+export function getFullDayStreak(
+  history: Record<string, DayHistory>,
+  lateDays?: Record<string, boolean>,
+): number {
   let streak = 0;
   const today = new Date();
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    if (isFullDay(history[localDateKey(d)], d)) streak++;
+    const key = localDateKey(d);
+    // 21:31以降に全部完了した日は連続記録に入れない（ここで途切れる）
+    if (lateDays?.[key]) break;
+    if (isFullDay(history[key], d)) streak++;
     else break;
   }
   return streak;
+}
+
+/** 全タスク完了の締切（この時刻ちょうどまではOK、21:31以降はNG） */
+export const FULL_DAY_DEADLINE_MINUTES = 21 * 60 + 30;
+
+/** 初回全タスク完了時刻が締切以内か。記録なし（旧データ・やり直し）はOK扱い */
+export function isFullDayCompletionOnTime(completedAtIso?: string): boolean {
+  if (!completedAtIso) return true;
+  const completedAt = new Date(completedAtIso);
+  if (Number.isNaN(completedAt.getTime())) return true;
+  return completedAt.getHours() * 60 + completedAt.getMinutes() <= FULL_DAY_DEADLINE_MINUTES;
+}
+
+export function isPastFullDayDeadline(now = new Date()): boolean {
+  return now.getHours() * 60 + now.getMinutes() > FULL_DAY_DEADLINE_MINUTES;
+}
+
+/** fullDayFirstCompletedAt から「間に合わなかった日」マップを作る */
+export function buildLateDaysMap(firstCompletedAt: Record<string, string> | undefined): Record<string, boolean> {
+  const late: Record<string, boolean> = {};
+  if (!firstCompletedAt) return late;
+  for (const [key, iso] of Object.entries(firstCompletedAt)) {
+    if (!isFullDayCompletionOnTime(iso)) late[key] = true;
+  }
+  return late;
 }
 
 /** 3日連続ごほうびのマイルストーン（3, 10, 17…） */
@@ -66,6 +97,16 @@ export function isThreeDayMilestoneStreak(fullDayStreak: number): boolean {
 /** 7日連続ごほうびのマイルストーン（7, 14, 21…） */
 export function isSevenDayMilestoneStreak(fullDayStreak: number): boolean {
   return fullDayStreak >= 7 && fullDayStreak % 7 === 0;
+}
+
+/** 30日連続ごほうび（30, 60, 90…） */
+export function isThirtyDayMilestoneStreak(fullDayStreak: number): boolean {
+  return fullDayStreak >= 30 && fullDayStreak % 30 === 0;
+}
+
+/** 15日連続ごほうび（15, 45, 75…）。30の倍数の日は30日ごほうびのみ */
+export function isFifteenDayMilestoneStreak(fullDayStreak: number): boolean {
+  return fullDayStreak >= 15 && fullDayStreak % 15 === 0 && !isThirtyDayMilestoneStreak(fullDayStreak);
 }
 
 /** 次の3日連続ごほうびまでの日数（0 = きょうが対象日） */
@@ -85,22 +126,50 @@ export function daysUntilSevenDayMilestone(fullDayStreak: number): number {
   return remainder === 0 ? 0 : 7 - remainder;
 }
 
+/** 次の15日連続ごほうびまでの日数（15, 45, 75…） */
+export function daysUntilFifteenDayMilestone(fullDayStreak: number): number {
+  if (fullDayStreak <= 0) return 15;
+  if (isFifteenDayMilestoneStreak(fullDayStreak)) return 0;
+  let n = Math.ceil(fullDayStreak / 15) * 15;
+  if (n === fullDayStreak) n += 15;
+  while (n % 30 === 0) n += 15;
+  return n - fullDayStreak;
+}
+
+/** 次の30日連続ごほうびまでの日数 */
+export function daysUntilThirtyDayMilestone(fullDayStreak: number): number {
+  if (fullDayStreak <= 0) return 30;
+  if (isThirtyDayMilestoneStreak(fullDayStreak)) return 0;
+  const remainder = fullDayStreak % 30;
+  return remainder === 0 ? 0 : 30 - remainder;
+}
+
 /** @deprecated daysUntilSevenDayMilestone を使用 */
 export function daysUntilWeeklySpecialReward(fullDayStreak: number): number {
   return daysUntilSevenDayMilestone(fullDayStreak);
 }
 
 export type NearestStreakMilestone = {
-  kind: "threeDay" | "sevenDay";
+  kind: "threeDay" | "sevenDay" | "fifteenDay" | "thirtyDay";
   daysUntil: number;
 };
 
-/** 次に近いストリークごほうび（3日 or 7日） */
+/** 次に近いストリークごほうび */
 export function getNearestStreakMilestone(fullDayStreak: number): NearestStreakMilestone {
-  const threeDays = daysUntilThreeDayMilestone(fullDayStreak);
-  const sevenDays = daysUntilSevenDayMilestone(fullDayStreak);
-  if (sevenDays < threeDays) return { kind: "sevenDay", daysUntil: sevenDays };
-  return { kind: "threeDay", daysUntil: threeDays };
+  const candidates: NearestStreakMilestone[] = [
+    { kind: "threeDay", daysUntil: daysUntilThreeDayMilestone(fullDayStreak) },
+    { kind: "sevenDay", daysUntil: daysUntilSevenDayMilestone(fullDayStreak) },
+    { kind: "fifteenDay", daysUntil: daysUntilFifteenDayMilestone(fullDayStreak) },
+    { kind: "thirtyDay", daysUntil: daysUntilThirtyDayMilestone(fullDayStreak) },
+  ];
+  const rank: Record<NearestStreakMilestone["kind"], number> = {
+    thirtyDay: 0,
+    fifteenDay: 1,
+    sevenDay: 2,
+    threeDay: 3,
+  };
+  candidates.sort((a, b) => a.daysUntil - b.daysUntil || rank[a.kind] - rank[b.kind]);
+  return candidates[0];
 }
 
 export function getStreak(history: Record<string, DayHistory>): number {
@@ -122,7 +191,7 @@ function dateKey(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function cellStyle(flags: SessionFlags, isToday: boolean, date: Date): CSSProperties {
+function cellStyle(flags: SessionFlags, isToday: boolean, date: Date, isLate = false): CSSProperties {
   const count = completedSessionCount(flags, date);
   const required = requiredSessionCount(date);
   const withDaytime = isDaytimeSessionDay(date);
@@ -137,6 +206,10 @@ function cellStyle(flags: SessionFlags, isToday: boolean, date: Date): CSSProper
     return { ...base, backgroundColor: theme.fill.secondary, color: theme.text.tertiary };
   }
   if (count === required) {
+    // 21:31以降に全部完了 → 緑にせず「間に合わなかった」色
+    if (isLate) {
+      return { ...base, backgroundColor: "#8E8E93", color: "#fff" };
+    }
     return { ...base, backgroundColor: theme.category.green, color: "#fff" };
   }
   const m = flags.morning ? theme.category.yellow : theme.fill.secondary;
@@ -157,10 +230,10 @@ function cellStyle(flags: SessionFlags, isToday: boolean, date: Date): CSSProper
   };
 }
 
-function cellIcon(flags: SessionFlags, day: number, date: Date) {
+function cellIcon(flags: SessionFlags, day: number, date: Date, isLate = false) {
   const count = completedSessionCount(flags, date);
   const required = requiredSessionCount(date);
-  if (count === required) return "⭐";
+  if (count === required) return isLate ? "🕘" : "⭐";
   if (count >= Math.max(2, required - 1)) return "✨";
   if (flags.morning) return "🌅";
   if (flags.daytime) return "🌤";
@@ -177,6 +250,8 @@ interface Props {
   buddyId?: string | null;
   buddyProgress?: BuddyProgressMap;
   buddyXpEarnedToday?: number;
+  /** 21:31以降に全部完了した日（連続記録対象外・カレンダー色変更） */
+  lateDays?: Record<string, boolean>;
   onSelectBuddy?: (stickerId: string) => void;
   onTrainBuddy?: (stickerId: string) => void;
   /** 今日の相棒を選ぶ／変えるシートを開く */
@@ -188,6 +263,7 @@ interface Props {
 export function RecordScreen({
   history, streak, stickerAlbum, duplicateTokens = 0,
   buddyId = null, buddyProgress, buddyXpEarnedToday = 0,
+  lateDays = {},
   onSelectBuddy, onTrainBuddy, onOpenBuddySelect,
   onBack, onSelectCatchUpDay,
 }: Props) {
@@ -223,7 +299,7 @@ export function RecordScreen({
     return isFullDay(history[key], parseDateKey(key));
   }).filter(Boolean).length;
 
-  const fullDayStreak = getFullDayStreak(history);
+  const fullDayStreak = getFullDayStreak(history, lateDays);
   const nearestMilestone = fullDayStreak >= 1 ? getNearestStreakMilestone(fullDayStreak) : null;
   const uniqueAlbum = dedupeStickerIds(stickerAlbum);
   const albumGroups = getAlbumCategoryGroups(stickerAlbum);
@@ -267,15 +343,27 @@ export function RecordScreen({
             fontSize: 12,
             marginTop: 4,
             fontWeight: 700,
-            color: nearestMilestone.kind === "sevenDay" ? theme.category.purple : theme.category.blue,
+            color: nearestMilestone.kind === "thirtyDay" || nearestMilestone.kind === "fifteenDay"
+              ? theme.category.purple
+              : nearestMilestone.kind === "sevenDay"
+                ? theme.category.purple
+                : theme.category.blue,
           }}>
             {nearestMilestone.daysUntil === 0
-              ? nearestMilestone.kind === "sevenDay"
-                ? "きょう、7日連続ごほうびのチャンス！"
-                : "きょう、3日連続ごほうびのチャンス！"
-              : nearestMilestone.kind === "sevenDay"
-                ? `7日ごほうびまで あと${nearestMilestone.daysUntil}日`
-                : `3日ごほうびまで あと${nearestMilestone.daysUntil}日`}
+              ? nearestMilestone.kind === "thirtyDay"
+                ? "きょう、30日連続ごほうびのチャンス！"
+                : nearestMilestone.kind === "fifteenDay"
+                  ? "きょう、15日連続ごほうびのチャンス！"
+                  : nearestMilestone.kind === "sevenDay"
+                    ? "きょう、7日連続ごほうびのチャンス！"
+                    : "きょう、3日連続ごほうびのチャンス！"
+              : nearestMilestone.kind === "thirtyDay"
+                ? `30日ごほうびまで あと${nearestMilestone.daysUntil}日`
+                : nearestMilestone.kind === "fifteenDay"
+                  ? `15日ごほうびまで あと${nearestMilestone.daysUntil}日`
+                  : nearestMilestone.kind === "sevenDay"
+                    ? `7日ごほうびまで あと${nearestMilestone.daysUntil}日`
+                    : `3日ごほうびまで あと${nearestMilestone.daysUntil}日`}
           </div>
         )}
       </div>
@@ -301,7 +389,8 @@ export function RecordScreen({
           const flags = getSessionFlags(history[key]);
           const isToday = key === todayStr;
           const catchUpEligible = !!onSelectCatchUpDay && isCatchUpEligible(key, history);
-          const baseStyle = cellStyle(flags, isToday, cellDate);
+          const isLate = !!lateDays[key];
+          const baseStyle = cellStyle(flags, isToday, cellDate, isLate);
           return (
             <div
               key={key}
@@ -321,7 +410,7 @@ export function RecordScreen({
                 outlineOffset: catchUpEligible ? -1 : undefined,
               }}
             >
-              {cellIcon(flags, day, cellDate)}
+              {cellIcon(flags, day, cellDate, isLate)}
             </div>
           );
         })}

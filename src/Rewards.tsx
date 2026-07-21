@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
-import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, DUPLICATE_TOKEN_LABEL, getDuplicateTokensForRarity, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type TreatMode } from "./stickerRewards";
+import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, DUPLICATE_TOKEN_LABEL, getDuplicateTokensForRarity, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type StreakRewardPick, type TreatMode } from "./stickerRewards";
 import { pickLegendaryRevealMode, pickSrUrRevealMode, type LegendaryRevealMode, type SrUrRevealMode } from "./rarityMeta";
 import { specialRewardFloorLabel, type SpecialRewardFloor } from "./sharedTasks";
 import {
@@ -561,7 +561,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 
 function TreatOverlay({
   mode, collectedIds, onClose, onCollect, onDefer, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
-  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem,
+  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem, streakPick,
 }: {
   mode: TreatMode;
   collectedIds: string[];
@@ -579,6 +579,7 @@ function TreatOverlay({
   forceUncollectedChance?: number;
   pityAttempt?: boolean;
   tokenRedeem?: boolean;
+  streakPick?: StreakRewardPick;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
   type UpgradeStep = "fakeNormal" | "fakeNormalCrush" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
@@ -595,11 +596,14 @@ function TreatOverlay({
   const upgradeTimerRef = useRef<number | null>(null);
   const isWeekly = mode === "weekly";
   const isThreeDayStreak = mode === "threeDayStreak";
+  const isFifteenDayStreak = mode === "fifteenDayStreak";
+  const isThirtyDayStreak = mode === "thirtyDayStreak";
   const isDeadline = mode === "deadline";
   const isFullDayBonus = mode === "fullDayBonus";
   const isSpecialMission = mode === "specialMission";
   const isOneOffSpecial = mode === "oneOffSpecial";
   const isMissionStyle = isSpecialMission || isOneOffSpecial;
+  const isLongStreak = isFifteenDayStreak || isThirtyDayStreak;
 
   const clearTimers = () => {
     if (teaseTimerRef.current !== null) {
@@ -740,6 +744,7 @@ function TreatOverlay({
         : pickTreatReward(collectedIds, mode, {
           rewardFloor,
           forceUncollectedChance,
+          streakPick,
         }));
     if (!picked) return;
 
@@ -771,7 +776,7 @@ function TreatOverlay({
   const isLegendaryReward = reward?.rarity === "legendary";
   const chestVariant = isLegendaryReward || devForceTier === "legendary"
     ? "legendary" as const
-    : isWeekly
+    : isWeekly || isLongStreak
       ? "premium" as const
       : isDeadline || isThreeDayStreak || isFullDayBonus
         ? "premium" as const
@@ -780,8 +785,18 @@ function TreatOverlay({
           : "default" as const;
   const chestSize = isLegendaryReward || devForceTier === "legendary"
     ? 120
-    : isWeekly ? 100 : isDeadline ? 94 : isThreeDayStreak ? 92 : isFullDayBonus ? 96 : isMissionStyle ? 88 : 80;
-  const title = isWeekly
+    : isThirtyDayStreak ? 110
+    : isWeekly || isFifteenDayStreak ? 100
+    : isDeadline ? 94
+    : isThreeDayStreak ? 92
+    : isFullDayBonus ? 96
+    : isMissionStyle ? 88
+    : 80;
+  const title = isThirtyDayStreak
+    ? "👑 30日連続 特別ごほうび！ 👑"
+    : isFifteenDayStreak
+      ? "🏅 15日連続 ごほうび！ 🏅"
+    : isWeekly
     ? "🎊 7日連続 特別ごほうび！ 🎊"
     : tokenRedeem
       ? "🪙 ダブりコイン交換！ 🪙"
@@ -797,7 +812,15 @@ function TreatOverlay({
           ? "⭐ 特別ミッション クリア！ ⭐"
           : "⭐ きょうのごほうび ⭐";
 
-  const subtitle = isWeekly
+  const subtitle = isThirtyDayStreak
+    ? streakPick === "lrUncollected"
+      ? "30日連続クリア！未入手のレジェンドレア確定！"
+      : "30日連続クリア！レジェンドレア確定！"
+    : isFifteenDayStreak
+      ? streakPick === "lrOrUrUncollected"
+        ? "15日連続クリア！未入手のLRかURが出るかも！"
+        : "15日連続クリア！レジェンドレア確定！"
+    : isWeekly
     ? "7日連続ですべてクリア！レジェンドレア確定！"
     : tokenRedeem
       ? "たまったダブりコインで新しいシールゲット！"
@@ -823,7 +846,7 @@ function TreatOverlay({
             : `ミッション達成！${specialRewardFloorLabel(rewardFloor)}のシール！`
           : "この時間のやること、全部クリア！";
 
-  const titleColor = isWeekly
+  const titleColor = isThirtyDayStreak || isFifteenDayStreak || isWeekly
     ? theme.category.purple
     : isThreeDayStreak
       ? theme.category.blue
@@ -881,7 +904,7 @@ function TreatOverlay({
         textAlign: "center",
       }}>
         <div style={{
-          fontSize: isWeekly ? 22 : isFullDayBonus || isMissionStyle ? 20 : 18, fontWeight: 900,
+          fontSize: isWeekly || isLongStreak ? 22 : isFullDayBonus || isMissionStyle ? 20 : 18, fontWeight: 900,
           color: isImmersive ? "#fff" : titleColor,
           marginBottom: 8,
           textShadow: isImmersive ? "0 2px 12px rgba(0,0,0,0.65)" : undefined,

@@ -18,7 +18,7 @@ import {
   unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
-import { RecordScreen, getStreak, isFullDay, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, type DayHistory } from "./RecordCalendar";
+import { RecordScreen, getStreak, isFullDay, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, isFifteenDayMilestoneStreak, isThirtyDayMilestoneStreak, buildLateDaysMap, isFullDayCompletionOnTime, isPastFullDayDeadline, type DayHistory } from "./RecordCalendar";
 import {
   NewRecordOverlay, TreatOverlay, StickerFrameWithBadge, StickerImg,
   type NewRecordCelebration, type TreatMode,
@@ -347,6 +347,12 @@ interface StoredState {
   weeklyTreatPending?: Record<string, number>;
   lastThreeDayRewardStreak?: number;
   threeDayTreatPending?: Record<string, number>;
+  lastFifteenDayRewardStreak?: number;
+  fifteenDayTreatPending?: Record<string, number>;
+  lastThirtyDayRewardStreak?: number;
+  thirtyDayTreatPending?: Record<string, number>;
+  /** その日に初めて全タスクが揃った時刻（ISO）。やり直しでは消さない */
+  fullDayFirstCompletedAt?: Record<string, string>;
   stickerAlbum?: string[];
   customTaskEmojis?: string[];
   todayMission?: DailyMission | null;
@@ -406,6 +412,10 @@ interface PendingTreat {
   deadlineRewardFloor?: SpecialRewardFloor;
   weeklyMilestoneStreak?: number;
   threeDayMilestoneStreak?: number;
+  fifteenDayMilestoneStreak?: number;
+  thirtyDayMilestoneStreak?: number;
+  /** 15/30日連続の抽選スロット */
+  streakPick?: import("./stickerRewards").StreakRewardPick;
   /** 天井武装中の開封（未所持 50%） */
   forceUncollectedChance?: number;
   pityAttempt?: boolean;
@@ -426,10 +436,19 @@ function normalizeStreakRewardBaseline(
   fullDayStreak: number,
   lastThreeDay: number,
   lastWeekly: number,
-): { lastThreeDay: number; lastWeekly: number } {
+  lastFifteenDay: number,
+  lastThirtyDay: number,
+): {
+  lastThreeDay: number;
+  lastWeekly: number;
+  lastFifteenDay: number;
+  lastThirtyDay: number;
+} {
   return {
     lastThreeDay: fullDayStreak < lastThreeDay ? 0 : lastThreeDay,
     lastWeekly: fullDayStreak < lastWeekly ? 0 : lastWeekly,
+    lastFifteenDay: fullDayStreak < lastFifteenDay ? 0 : lastFifteenDay,
+    lastThirtyDay: fullDayStreak < lastThirtyDay ? 0 : lastThirtyDay,
   };
 }
 
@@ -444,6 +463,10 @@ function buildTreatQueue(
     threeDayMilestoneStreak?: number;
     weeklyMilestone: boolean;
     weeklyMilestoneStreak?: number;
+    fifteenDayMilestone?: boolean;
+    fifteenDayMilestoneStreak?: number;
+    thirtyDayMilestone?: boolean;
+    thirtyDayMilestoneStreak?: number;
     missionTitle?: string;
   },
 ): PendingTreat[] {
@@ -467,6 +490,16 @@ function buildTreatQueue(
   }
   if (opts.weeklyMilestone && opts.weeklyMilestoneStreak) {
     queue.push({ mode: "weekly", weeklyMilestoneStreak: opts.weeklyMilestoneStreak });
+  }
+  if (opts.fifteenDayMilestone && opts.fifteenDayMilestoneStreak) {
+    const streak = opts.fifteenDayMilestoneStreak;
+    queue.push({ mode: "fifteenDayStreak", fifteenDayMilestoneStreak: streak, streakPick: "lrGuaranteed" });
+    queue.push({ mode: "fifteenDayStreak", fifteenDayMilestoneStreak: streak, streakPick: "lrOrUrUncollected" });
+  }
+  if (opts.thirtyDayMilestone && opts.thirtyDayMilestoneStreak) {
+    const streak = opts.thirtyDayMilestoneStreak;
+    queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "lrGuaranteed" });
+    queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "lrUncollected" });
   }
   return queue;
 }
@@ -1480,6 +1513,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [weeklyTreatPending, setWeeklyTreatPending] = useState<Record<string, number>>(stored.weeklyTreatPending ?? {});
   const [lastThreeDayRewardStreak, setLastThreeDayRewardStreak] = useState(stored.lastThreeDayRewardStreak ?? 0);
   const [threeDayTreatPending, setThreeDayTreatPending] = useState<Record<string, number>>(stored.threeDayTreatPending ?? {});
+  const [lastFifteenDayRewardStreak, setLastFifteenDayRewardStreak] = useState(stored.lastFifteenDayRewardStreak ?? 0);
+  const [fifteenDayTreatPending, setFifteenDayTreatPending] = useState<Record<string, number>>(stored.fifteenDayTreatPending ?? {});
+  const [lastThirtyDayRewardStreak, setLastThirtyDayRewardStreak] = useState(stored.lastThirtyDayRewardStreak ?? 0);
+  const [thirtyDayTreatPending, setThirtyDayTreatPending] = useState<Record<string, number>>(stored.thirtyDayTreatPending ?? {});
+  const [fullDayFirstCompletedAt, setFullDayFirstCompletedAt] = useState<Record<string, string>>(
+    stored.fullDayFirstCompletedAt ?? {},
+  );
   const [pendingTreat, setPendingTreat] = useState<PendingTreat | null>(null);
   const [treatQueue, setTreatQueue] = useState<PendingTreat[]>([]);
   const [stickerAlbum, setStickerAlbum] = useState<string[]>(() => {
@@ -1521,6 +1561,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const weeklyCollectedRef = useRef(false);
   const lastThreeDayRewardStreakRef = useRef(stored.lastThreeDayRewardStreak ?? 0);
   const threeDayCollectedRef = useRef(false);
+  const lastFifteenDayRewardStreakRef = useRef(stored.lastFifteenDayRewardStreak ?? 0);
+  const fifteenDayCollectedRef = useRef(false);
+  const lastThirtyDayRewardStreakRef = useRef(stored.lastThirtyDayRewardStreak ?? 0);
+  const thirtyDayCollectedRef = useRef(false);
   const fullDayBonusCollectedRef = useRef(false);
   const fullDayBonusClaimedRef = useRef<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
   const pityArmedRef = useRef(stored.pityArmed ?? false);
@@ -1802,6 +1846,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       weeklyTreatPending,
       lastThreeDayRewardStreak,
       threeDayTreatPending,
+      lastFifteenDayRewardStreak,
+      fifteenDayTreatPending,
+      lastThirtyDayRewardStreak,
+      thirtyDayTreatPending,
+      fullDayFirstCompletedAt,
       stickerAlbum,
       customTaskEmojis,
       todayMission,
@@ -1836,7 +1885,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     history, bestTimes, taskCompletedAt, gamePlayTimes,
     dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, fullDayBonusTreatPending,
     deadlineFullDayCompletedAt, deadlineTreatClaimed, deadlineTreatPending,
-    lastWeeklyRewardStreak, weeklyTreatPending, lastThreeDayRewardStreak, threeDayTreatPending, stickerAlbum,
+    lastWeeklyRewardStreak, weeklyTreatPending, lastThreeDayRewardStreak, threeDayTreatPending,
+    lastFifteenDayRewardStreak, fifteenDayTreatPending, lastThirtyDayRewardStreak, thirtyDayTreatPending,
+    fullDayFirstCompletedAt, stickerAlbum,
     customTaskEmojis, todayMission, favoriteMissions,
     missionDoneSessions, missionApprovedSessions, specialMissionRewardClaimed, specialMissionTreatPending,
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
@@ -2096,6 +2147,36 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           setThreeDayTreatPending((p) => ({ ...p, [milestoneDay]: milestoneStreak }));
         }
       }
+      if (closing?.mode === "fifteenDayStreak" && closing.fifteenDayMilestoneStreak) {
+        const milestoneDay = todayKey();
+        const milestoneStreak = closing.fifteenDayMilestoneStreak;
+        if (fifteenDayCollectedRef.current) {
+          setLastFifteenDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
+          setFifteenDayTreatPending((p) => {
+            if (!(milestoneDay in p)) return p;
+            const next = { ...p };
+            delete next[milestoneDay];
+            return next;
+          });
+        } else {
+          setFifteenDayTreatPending((p) => ({ ...p, [milestoneDay]: milestoneStreak }));
+        }
+      }
+      if (closing?.mode === "thirtyDayStreak" && closing.thirtyDayMilestoneStreak) {
+        const milestoneDay = todayKey();
+        const milestoneStreak = closing.thirtyDayMilestoneStreak;
+        if (thirtyDayCollectedRef.current) {
+          setLastThirtyDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
+          setThirtyDayTreatPending((p) => {
+            if (!(milestoneDay in p)) return p;
+            const next = { ...p };
+            delete next[milestoneDay];
+            return next;
+          });
+        } else {
+          setThirtyDayTreatPending((p) => ({ ...p, [milestoneDay]: milestoneStreak }));
+        }
+      }
       if (closing?.mode === "fullDayBonus") {
         const dayKey = todayKey();
         if (fullDayBonusCollectedRef.current) {
@@ -2116,6 +2197,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       deadlineCollectedRef.current = false;
       weeklyCollectedRef.current = false;
       threeDayCollectedRef.current = false;
+      fifteenDayCollectedRef.current = false;
+      thirtyDayCollectedRef.current = false;
       fullDayBonusCollectedRef.current = false;
       return null;
     });
@@ -2138,7 +2221,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const applyPityToTreat = (treat: PendingTreat): PendingTreat => {
     if (treat.pityAttempt || treat.tokenRedeem) return treat;
-    if (treat.mode === "weekly") return treat;
+    if (treat.mode === "weekly" || treat.mode === "fifteenDayStreak" || treat.mode === "thirtyDayStreak") return treat;
     if (treat.devForceTier || treat.devForceStickerId) return treat;
     if (!pityArmedRef.current) return treat;
     return {
@@ -2197,8 +2280,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const maybeRecordDeadlineFullDayCompletion = (allSessions: AllSessionTasks, completedAt = new Date()) => {
     if (!isAllDayResolved(allSessions, completedAt)) return;
     const dayKey = taskDayKey(completedAt);
+    const iso = completedAt.toISOString();
     setDeadlineFullDayCompletedAt((prev) => (
-      prev[dayKey] ? prev : { ...prev, [dayKey]: completedAt.toISOString() }
+      prev[dayKey] ? prev : { ...prev, [dayKey]: iso }
+    ));
+    // 初回全完了時刻はやり直しでも消さない（21:30判定の正本）
+    setFullDayFirstCompletedAt((prev) => (
+      prev[dayKey] ? prev : { ...prev, [dayKey]: iso }
     ));
   };
 
@@ -2613,6 +2701,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   deadlineTreatClaimedRef.current = deadlineTreatClaimed;
   lastWeeklyRewardStreakRef.current = lastWeeklyRewardStreak;
   lastThreeDayRewardStreakRef.current = lastThreeDayRewardStreak;
+  lastFifteenDayRewardStreakRef.current = lastFifteenDayRewardStreak;
+  lastThirtyDayRewardStreakRef.current = lastThirtyDayRewardStreak;
   fullDayBonusClaimedRef.current = fullDayBonusClaimed;
   pityArmedRef.current = pityArmed;
   stickerAlbumRef.current = stickerAlbum;
@@ -2709,6 +2799,29 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         delete next[milestoneDay];
         return next;
       });
+    } else if (treat.mode === "fifteenDayStreak" && treat.fifteenDayMilestoneStreak) {
+      // 2枠あるので、既に last 更新済みでも2枚目のシールは受け取れる
+      const milestoneStreak = treat.fifteenDayMilestoneStreak;
+      fifteenDayCollectedRef.current = true;
+      setLastFifteenDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
+      const milestoneDay = todayKey();
+      setFifteenDayTreatPending((p) => {
+        if (!(milestoneDay in p)) return p;
+        const next = { ...p };
+        delete next[milestoneDay];
+        return next;
+      });
+    } else if (treat.mode === "thirtyDayStreak" && treat.thirtyDayMilestoneStreak) {
+      const milestoneStreak = treat.thirtyDayMilestoneStreak;
+      thirtyDayCollectedRef.current = true;
+      setLastThirtyDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
+      const milestoneDay = todayKey();
+      setThirtyDayTreatPending((p) => {
+        if (!(milestoneDay in p)) return p;
+        const next = { ...p };
+        delete next[milestoneDay];
+        return next;
+      });
     } else if (treat.mode === "fullDayBonus") {
       const dayKey = todayKey();
       if (fullDayBonusClaimedRef.current[dayKey]) return;
@@ -2736,7 +2849,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         const gain = getDuplicateTokensForRarity(rarity);
         setDuplicateTokens((t) => t + gain);
       }
-      if (treat.mode !== "weekly") {
+      if (treat.mode !== "weekly" && treat.mode !== "fifteenDayStreak" && treat.mode !== "thirtyDayStreak") {
         if (isNew) {
           setDuplicateStreak(0);
         } else {
@@ -2860,6 +2973,58 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       return next;
     });
     openTreatQueue([{ mode: "threeDayStreak", threeDayMilestoneStreak: pendingStreak }]);
+  };
+
+  const hasUnclaimedFifteenDayReward = () => {
+    const today = todayKey();
+    const pendingStreak = fifteenDayTreatPending[today];
+    if (pendingStreak === undefined) return false;
+    return lastFifteenDayRewardStreak < pendingStreak;
+  };
+
+  const openFifteenDayReward = () => {
+    const today = todayKey();
+    const pendingStreak = fifteenDayTreatPending[today];
+    if (pendingStreak === undefined) return;
+    if (lastFifteenDayRewardStreakRef.current >= pendingStreak) return;
+    if (pendingTreatRef.current?.mode === "fifteenDayStreak") return;
+    fifteenDayCollectedRef.current = false;
+    setFifteenDayTreatPending((p) => {
+      if (!(today in p)) return p;
+      const next = { ...p };
+      delete next[today];
+      return next;
+    });
+    openTreatQueue([
+      { mode: "fifteenDayStreak", fifteenDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed" },
+      { mode: "fifteenDayStreak", fifteenDayMilestoneStreak: pendingStreak, streakPick: "lrOrUrUncollected" },
+    ]);
+  };
+
+  const hasUnclaimedThirtyDayReward = () => {
+    const today = todayKey();
+    const pendingStreak = thirtyDayTreatPending[today];
+    if (pendingStreak === undefined) return false;
+    return lastThirtyDayRewardStreak < pendingStreak;
+  };
+
+  const openThirtyDayReward = () => {
+    const today = todayKey();
+    const pendingStreak = thirtyDayTreatPending[today];
+    if (pendingStreak === undefined) return;
+    if (lastThirtyDayRewardStreakRef.current >= pendingStreak) return;
+    if (pendingTreatRef.current?.mode === "thirtyDayStreak") return;
+    thirtyDayCollectedRef.current = false;
+    setThirtyDayTreatPending((p) => {
+      if (!(today in p)) return p;
+      const next = { ...p };
+      delete next[today];
+      return next;
+    });
+    openTreatQueue([
+      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed" },
+      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "lrUncollected" },
+    ]);
   };
 
   const findOneOffSpecialPendingInfo = (claimKey: string): OneOffSpecialPending | null => {
@@ -3030,6 +3195,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     lastWeeklyRewardStreak,
     threeDayTreatPending,
     lastThreeDayRewardStreak,
+    fifteenDayTreatPending,
+    lastFifteenDayRewardStreak,
+    thirtyDayTreatPending,
+    lastThirtyDayRewardStreak,
     specialMissionRewardClaimed,
     specialMissionTreatPending,
     oneOffSpecialClaimed,
@@ -3069,6 +3238,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         break;
       case "weekly":
         openWeeklyReward();
+        break;
+      case "fifteenDay":
+        openFifteenDayReward();
+        break;
+      case "thirtyDay":
+        openThirtyDayReward();
         break;
       case "fullDayBonus":
         openFullDayBonusReward();
@@ -3261,33 +3436,56 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     triggerStamp();
     grantBuddyXpFromSessionStamp(parentSession);
 
-    const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
+    const treatKey = sessionTreatKey(today, parentSession);
+    let needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
+    // 21:31以降の親チェックではフェーズごほうびなし（日中分の未受け取りは残す）
+    if (needsDaily && isPastFullDayDeadline()) {
+      needsDaily = false;
+      setDailyTreatClaimed((c) => (c[treatKey] ? c : { ...c, [treatKey]: true }));
+    }
+
+    const lateDays = buildLateDaysMap(fullDayFirstCompletedAt);
+    const onTimeToday = isFullDayCompletionOnTime(fullDayFirstCompletedAt[today]);
     const isFullDayToday = isFullDay(updatedDay, new Date());
-    const fullDayBonusEligible = isFullDayToday
+    const dayRewardsOk = isFullDayToday && onTimeToday;
+
+    const fullDayBonusEligible = dayRewardsOk
       && !fullDayBonusClaimed[today]
       && !fullDayBonusTreatPending[today];
-    const deadlineRewardFloor = isFullDayToday && !deadlineTreatClaimed[today]
-      ? resolveDeadlineRewardFloor(deadlineFullDayCompletedAt[today])
+    const deadlineRewardFloor = dayRewardsOk && !deadlineTreatClaimed[today]
+      ? resolveDeadlineRewardFloor(deadlineFullDayCompletedAt[today] ?? fullDayFirstCompletedAt[today])
       : undefined;
     const deadlineRewardToQueue = deadlineRewardFloor && deadlineTreatPending[today] === undefined
       ? deadlineRewardFloor
       : undefined;
-    const fullDayStreak = getFullDayStreak(newHistory);
-    const { lastThreeDay, lastWeekly } = normalizeStreakRewardBaseline(
+    const fullDayStreak = getFullDayStreak(newHistory, lateDays);
+    const { lastThreeDay, lastWeekly, lastFifteenDay, lastThirtyDay } = normalizeStreakRewardBaseline(
       fullDayStreak,
       lastThreeDayRewardStreak,
       lastWeeklyRewardStreak,
+      lastFifteenDayRewardStreak,
+      lastThirtyDayRewardStreak,
     );
     if (lastThreeDay !== lastThreeDayRewardStreak) setLastThreeDayRewardStreak(lastThreeDay);
     if (lastWeekly !== lastWeeklyRewardStreak) setLastWeeklyRewardStreak(lastWeekly);
-    const threeDayMilestoneEligible = isFullDayToday
+    if (lastFifteenDay !== lastFifteenDayRewardStreak) setLastFifteenDayRewardStreak(lastFifteenDay);
+    if (lastThirtyDay !== lastThirtyDayRewardStreak) setLastThirtyDayRewardStreak(lastThirtyDay);
+    const threeDayMilestoneEligible = dayRewardsOk
       && isThreeDayMilestoneStreak(fullDayStreak)
       && fullDayStreak > lastThreeDay;
-    const weeklyMilestoneEligible = isFullDayToday
+    const weeklyMilestoneEligible = dayRewardsOk
       && isSevenDayMilestoneStreak(fullDayStreak)
       && fullDayStreak > lastWeekly;
+    const fifteenDayMilestoneEligible = dayRewardsOk
+      && isFifteenDayMilestoneStreak(fullDayStreak)
+      && fullDayStreak > lastFifteenDay;
+    const thirtyDayMilestoneEligible = dayRewardsOk
+      && isThirtyDayMilestoneStreak(fullDayStreak)
+      && fullDayStreak > lastThirtyDay;
     const threeDayMilestone = threeDayMilestoneEligible && threeDayTreatPending[today] === undefined;
     const weeklyMilestone = weeklyMilestoneEligible && weeklyTreatPending[today] === undefined;
+    const fifteenDayMilestone = fifteenDayMilestoneEligible && fifteenDayTreatPending[today] === undefined;
+    const thirtyDayMilestone = thirtyDayMilestoneEligible && thirtyDayTreatPending[today] === undefined;
 
     const treatQueueToOpen = buildTreatQueue({
       needsDaily,
@@ -3299,6 +3497,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       threeDayMilestoneStreak: threeDayMilestoneEligible ? fullDayStreak : undefined,
       weeklyMilestone,
       weeklyMilestoneStreak: weeklyMilestoneEligible ? fullDayStreak : undefined,
+      fifteenDayMilestone,
+      fifteenDayMilestoneStreak: fifteenDayMilestoneEligible ? fullDayStreak : undefined,
+      thirtyDayMilestone,
+      thirtyDayMilestoneStreak: thirtyDayMilestoneEligible ? fullDayStreak : undefined,
     });
 
     setTimeout(() => {
@@ -3318,13 +3520,19 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setHistory(newHistory);
     triggerStamp();
 
+    const lateDays = buildLateDaysMap(fullDayFirstCompletedAt);
     const milestone = evaluateStreakMilestones(
       newHistory,
       dateKey,
       lastThreeDayRewardStreak,
       lastWeeklyRewardStreak,
+      lastFifteenDayRewardStreak,
+      lastThirtyDayRewardStreak,
       threeDayTreatPending,
       weeklyTreatPending,
+      fifteenDayTreatPending,
+      thirtyDayTreatPending,
+      lateDays,
     );
 
     if (!milestone) return;
@@ -3335,6 +3543,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (milestone.lastWeekly !== lastWeeklyRewardStreak) {
       setLastWeeklyRewardStreak(milestone.lastWeekly);
     }
+    if (milestone.lastFifteenDay !== lastFifteenDayRewardStreak) {
+      setLastFifteenDayRewardStreak(milestone.lastFifteenDay);
+    }
+    if (milestone.lastThirtyDay !== lastThirtyDayRewardStreak) {
+      setLastThirtyDayRewardStreak(milestone.lastThirtyDay);
+    }
 
     const treatQueueToOpen = buildTreatQueue({
       needsDaily: false,
@@ -3344,6 +3558,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       threeDayMilestoneStreak: milestone.threeDayMilestoneStreak,
       weeklyMilestone: milestone.weeklyMilestone,
       weeklyMilestoneStreak: milestone.weeklyMilestoneStreak,
+      fifteenDayMilestone: milestone.fifteenDayMilestone,
+      fifteenDayMilestoneStreak: milestone.fifteenDayMilestoneStreak,
+      thirtyDayMilestone: milestone.thirtyDayMilestone,
+      thirtyDayMilestoneStreak: milestone.thirtyDayMilestoneStreak,
     });
 
     setTimeout(() => {
@@ -3714,8 +3932,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.streakPick ?? ""}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
+          streakPick={pendingTreat.streakPick}
           devForceTier={pendingTreat.devForceTier}
           devForceStickerId={pendingTreat.devForceStickerId}
           devForceTease={pendingTreat.devForceTease}
@@ -4393,6 +4612,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 onOpenWeeklyReward={openWeeklyReward}
                 showThreeDayRewardButton={!inCatchUp && hasUnclaimedThreeDayReward()}
                 onOpenThreeDayReward={openThreeDayReward}
+                showFifteenDayRewardButton={!inCatchUp && hasUnclaimedFifteenDayReward()}
+                onOpenFifteenDayReward={openFifteenDayReward}
+                showThirtyDayRewardButton={!inCatchUp && hasUnclaimedThirtyDayReward()}
+                onOpenThirtyDayReward={openThirtyDayReward}
                 showOneOffSpecialRewardButton={!inCatchUp && hasUnclaimedOneOffSpecialReward()}
                 onOpenOneOffSpecialReward={openFirstPendingOneOffSpecialReward}
                 showOneOffParentCheckButton={!inCatchUp && oneOffSpecialAwaitingParent !== null}
@@ -4498,6 +4721,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             buddyId={buddyId}
             buddyProgress={buddyProgress}
             buddyXpEarnedToday={buddyXpDate === todayKey() ? buddyXpEarnedToday : 0}
+            lateDays={buildLateDaysMap(fullDayFirstCompletedAt)}
             onSelectBuddy={selectBuddy}
             onTrainBuddy={trainBuddyWithToken}
             onOpenBuddySelect={() => setShowBuddyPrompt(true)}
@@ -6008,6 +6232,10 @@ interface TaskScreenProps {
   onOpenWeeklyReward: () => void;
   showThreeDayRewardButton: boolean;
   onOpenThreeDayReward: () => void;
+  showFifteenDayRewardButton: boolean;
+  onOpenFifteenDayReward: () => void;
+  showThirtyDayRewardButton: boolean;
+  onOpenThirtyDayReward: () => void;
   showOneOffSpecialRewardButton: boolean;
   onOpenOneOffSpecialReward: () => void;
   showOneOffParentCheckButton: boolean;
@@ -6036,6 +6264,8 @@ function TaskScreen({
   showDeadlineRewardButton, onOpenDeadlineReward,
   showWeeklyRewardButton, onOpenWeeklyReward,
   showThreeDayRewardButton, onOpenThreeDayReward,
+  showFifteenDayRewardButton, onOpenFifteenDayReward,
+  showThirtyDayRewardButton, onOpenThirtyDayReward,
   showOneOffSpecialRewardButton, onOpenOneOffSpecialReward,
   showOneOffParentCheckButton, onOpenOneOffParentCheck,
   gamePlaySec,
@@ -6554,6 +6784,84 @@ function TaskScreen({
             <button
               type="button"
               onClick={onOpenWeeklyReward}
+              style={{
+                flexShrink: 0,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: theme.category.purple,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              もらう！
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showFifteenDayRewardButton && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.purple}55`,
+          backgroundColor: `${theme.category.purple}12`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>🏅</span>
+            <span style={{
+              fontSize: 15,
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              color: theme.text.primary,
+            }}>
+              15日連続 ごほうび
+            </span>
+            <button
+              type="button"
+              onClick={onOpenFifteenDayReward}
+              style={{
+                flexShrink: 0,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                backgroundColor: theme.category.purple,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              もらう！
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showThirtyDayRewardButton && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.purple}66`,
+          backgroundColor: `${theme.category.purple}18`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>👑</span>
+            <span style={{
+              fontSize: 15,
+              fontWeight: 600,
+              flex: 1,
+              minWidth: 0,
+              color: theme.text.primary,
+            }}>
+              30日連続 特別ごほうび
+            </span>
+            <button
+              type="button"
+              onClick={onOpenThirtyDayReward}
               style={{
                 flexShrink: 0,
                 padding: "8px 12px",

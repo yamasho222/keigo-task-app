@@ -6,6 +6,8 @@ const KIND_EMOJI: Record<PendingRewardItem["kind"], string> = {
   deadline: "⏰",
   threeDay: "🎉",
   weekly: "🎊",
+  fifteenDay: "🏅",
+  thirtyDay: "👑",
   specialMission: "⭐",
   oneOffSpecial: "🎯",
   fullDayBonus: "🌟",

@@ -7,6 +7,8 @@ export type PendingRewardKind =
   | "deadline"
   | "threeDay"
   | "weekly"
+  | "fifteenDay"
+  | "thirtyDay"
   | "specialMission"
   | "oneOffSpecial"
   | "fullDayBonus";
@@ -33,6 +35,10 @@ export interface PendingRewardsContext {
   lastWeeklyRewardStreak: number;
   threeDayTreatPending: Record<string, number>;
   lastThreeDayRewardStreak: number;
+  fifteenDayTreatPending: Record<string, number>;
+  lastFifteenDayRewardStreak: number;
+  thirtyDayTreatPending: Record<string, number>;
+  lastThirtyDayRewardStreak: number;
   specialMissionRewardClaimed: Record<string, boolean>;
   specialMissionTreatPending: Record<string, boolean>;
   oneOffSpecialClaimed: Record<string, boolean>;
@@ -105,6 +111,24 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
       id: "weekly",
       kind: "weekly",
       label: "7日連続 ごほうび",
+    });
+  }
+
+  const fifteenDayStreak = ctx.fifteenDayTreatPending[ctx.todayKey];
+  if (fifteenDayStreak !== undefined && ctx.lastFifteenDayRewardStreak < fifteenDayStreak) {
+    items.push({
+      id: "fifteenDay",
+      kind: "fifteenDay",
+      label: "15日連続 ごほうび",
+    });
+  }
+
+  const thirtyDayStreak = ctx.thirtyDayTreatPending[ctx.todayKey];
+  if (thirtyDayStreak !== undefined && ctx.lastThirtyDayRewardStreak < thirtyDayStreak) {
+    items.push({
+      id: "thirtyDay",
+      kind: "thirtyDay",
+      label: "30日連続 ごほうび",
     });
   }
 

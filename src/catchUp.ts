@@ -1,8 +1,10 @@
 import type { DayHistory } from "./RecordCalendar";
 import {
   getFullDayStreak,
+  isFifteenDayMilestoneStreak,
   isFullDay,
   isSevenDayMilestoneStreak,
+  isThirtyDayMilestoneStreak,
   isThreeDayMilestoneStreak,
 } from "./RecordCalendar";
 import { parseDateKey } from "./japaneseCalendar";
@@ -195,10 +197,19 @@ function normalizeStreakRewardBaseline(
   fullDayStreak: number,
   lastThreeDay: number,
   lastWeekly: number,
-): { lastThreeDay: number; lastWeekly: number } {
+  lastFifteenDay: number,
+  lastThirtyDay: number,
+): {
+  lastThreeDay: number;
+  lastWeekly: number;
+  lastFifteenDay: number;
+  lastThirtyDay: number;
+} {
   return {
     lastThreeDay: fullDayStreak < lastThreeDay ? 0 : lastThreeDay,
     lastWeekly: fullDayStreak < lastWeekly ? 0 : lastWeekly,
+    lastFifteenDay: fullDayStreak < lastFifteenDay ? 0 : lastFifteenDay,
+    lastThirtyDay: fullDayStreak < lastThirtyDay ? 0 : lastThirtyDay,
   };
 }
 
@@ -206,10 +217,16 @@ export interface StreakMilestoneEvaluation {
   fullDayStreak: number;
   threeDayMilestone: boolean;
   weeklyMilestone: boolean;
+  fifteenDayMilestone: boolean;
+  thirtyDayMilestone: boolean;
   threeDayMilestoneStreak?: number;
   weeklyMilestoneStreak?: number;
+  fifteenDayMilestoneStreak?: number;
+  thirtyDayMilestoneStreak?: number;
   lastThreeDay: number;
   lastWeekly: number;
+  lastFifteenDay: number;
+  lastThirtyDay: number;
 }
 
 /** 今日が全部クリア済みのときだけ連続マイルストーンを判定 */
@@ -218,29 +235,46 @@ export function evaluateStreakMilestones(
   triggerDateKey: string,
   lastThreeDayRewardStreak: number,
   lastWeeklyRewardStreak: number,
+  lastFifteenDayRewardStreak: number,
+  lastThirtyDayRewardStreak: number,
   threeDayTreatPending: Record<string, number>,
   weeklyTreatPending: Record<string, number>,
+  fifteenDayTreatPending: Record<string, number>,
+  thirtyDayTreatPending: Record<string, number>,
+  lateDays?: Record<string, boolean>,
 ): StreakMilestoneEvaluation | null {
   const today = todayDateKey();
   if (!isFullDay(history[today], new Date())) return null;
+  // 今日が遅延日なら連続マイルストーンは出さない
+  if (lateDays?.[today]) return null;
 
-  const fullDayStreak = getFullDayStreak(history);
-  const { lastThreeDay, lastWeekly } = normalizeStreakRewardBaseline(
+  const fullDayStreak = getFullDayStreak(history, lateDays);
+  const { lastThreeDay, lastWeekly, lastFifteenDay, lastThirtyDay } = normalizeStreakRewardBaseline(
     fullDayStreak,
     lastThreeDayRewardStreak,
     lastWeeklyRewardStreak,
+    lastFifteenDayRewardStreak,
+    lastThirtyDayRewardStreak,
   );
 
   const threeDayEligible = isThreeDayMilestoneStreak(fullDayStreak) && fullDayStreak > lastThreeDay;
   const weeklyEligible = isSevenDayMilestoneStreak(fullDayStreak) && fullDayStreak > lastWeekly;
+  const fifteenDayEligible = isFifteenDayMilestoneStreak(fullDayStreak) && fullDayStreak > lastFifteenDay;
+  const thirtyDayEligible = isThirtyDayMilestoneStreak(fullDayStreak) && fullDayStreak > lastThirtyDay;
 
   return {
     fullDayStreak,
     threeDayMilestone: threeDayEligible && threeDayTreatPending[triggerDateKey] === undefined,
     weeklyMilestone: weeklyEligible && weeklyTreatPending[triggerDateKey] === undefined,
+    fifteenDayMilestone: fifteenDayEligible && fifteenDayTreatPending[triggerDateKey] === undefined,
+    thirtyDayMilestone: thirtyDayEligible && thirtyDayTreatPending[triggerDateKey] === undefined,
     threeDayMilestoneStreak: threeDayEligible ? fullDayStreak : undefined,
     weeklyMilestoneStreak: weeklyEligible ? fullDayStreak : undefined,
+    fifteenDayMilestoneStreak: fifteenDayEligible ? fullDayStreak : undefined,
+    thirtyDayMilestoneStreak: thirtyDayEligible ? fullDayStreak : undefined,
     lastThreeDay,
     lastWeekly,
+    lastFifteenDay,
+    lastThirtyDay,
   };
 }

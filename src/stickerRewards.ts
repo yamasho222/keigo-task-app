@@ -484,6 +484,25 @@ export function pickWeeklyReward(collectedIds: string[]): StickerReward {
   return pickFromStickerTier(collectedIds, "legendary");
 }
 
+/** 15日連続の2枠目 — 未入手LR 50% / 未入手UR 50%（空ならもう片方→所持込み） */
+export function pickFifteenDayBonusReward(collectedIds: string[]): StickerReward {
+  const preferLr = Math.random() < 0.5;
+  if (preferLr) {
+    return pickUncollectedByRarity(collectedIds, "legendary")
+      ?? pickUncollectedByRarity(collectedIds, "ultraRare")
+      ?? pickFromStickerTier(collectedIds, "legendary");
+  }
+  return pickUncollectedByRarity(collectedIds, "ultraRare")
+    ?? pickUncollectedByRarity(collectedIds, "legendary")
+    ?? pickFromStickerTier(collectedIds, "ultraRare");
+}
+
+/** 30日連続の2枠目 — 未入手LR確定（なければ所持込みLR） */
+export function pickThirtyDayBonusReward(collectedIds: string[]): StickerReward {
+  return pickUncollectedByRarity(collectedIds, "legendary")
+    ?? pickFromStickerTier(collectedIds, "legendary");
+}
+
 /** DEV: 指定ティアから1枚抽選 */
 export function pickStickerByTier(collectedIds: string[], tier: StickerRarity): StickerReward {
   return pickFromStickerTier(collectedIds, tier);
@@ -508,13 +527,20 @@ export function pickDecoyUltraRareReward(): StickerReward {
   return pickRandom(pool);
 }
 
+/** 15/30日連続の抽選スロット */
+export type StreakRewardPick = "lrGuaranteed" | "lrOrUrUncollected" | "lrUncollected";
+
 export function pickTreatReward(
   collectedIds: string[],
   mode: TreatMode,
-  options?: { rewardFloor?: SpecialRewardFloor; forceUncollectedChance?: number },
+  options?: {
+    rewardFloor?: SpecialRewardFloor;
+    forceUncollectedChance?: number;
+    streakPick?: StreakRewardPick;
+  },
 ): RewardItem {
   const chance = options?.forceUncollectedChance ?? 0;
-  if (chance > 0 && mode !== "weekly" && Math.random() < chance) {
+  if (chance > 0 && mode !== "weekly" && mode !== "fifteenDayStreak" && mode !== "thirtyDayStreak" && Math.random() < chance) {
     const uncollected = pickUncollectedReward(collectedIds, options?.rewardFloor);
     if (uncollected) return uncollected;
   }
@@ -522,9 +548,26 @@ export function pickTreatReward(
   if (mode === "threeDayStreak") return pickThreeDayReward(collectedIds);
   if (mode === "deadline") return pickDeadlineReward(collectedIds, options?.rewardFloor ?? "rare");
   if (mode === "weekly") return pickWeeklyReward(collectedIds);
+  if (mode === "fifteenDayStreak") {
+    if (options?.streakPick === "lrOrUrUncollected") return pickFifteenDayBonusReward(collectedIds);
+    return pickWeeklyReward(collectedIds);
+  }
+  if (mode === "thirtyDayStreak") {
+    if (options?.streakPick === "lrUncollected") return pickThirtyDayBonusReward(collectedIds);
+    return pickWeeklyReward(collectedIds);
+  }
   if (mode === "specialMission") return pickSpecialMissionReward(collectedIds, options?.rewardFloor ?? "rare");
   if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds, options?.rewardFloor ?? "rare");
   return pickDailyReward(collectedIds);
 }
 
-export type TreatMode = "daily" | "weekly" | "fullDayBonus" | "threeDayStreak" | "deadline" | "specialMission" | "oneOffSpecial";
+export type TreatMode =
+  | "daily"
+  | "weekly"
+  | "fullDayBonus"
+  | "threeDayStreak"
+  | "deadline"
+  | "specialMission"
+  | "oneOffSpecial"
+  | "fifteenDayStreak"
+  | "thirtyDayStreak";
