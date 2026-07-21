@@ -586,6 +586,8 @@ function TreatOverlay({
   const [phase, setPhase] = useState<TreatPhase>("closed");
   const [upgradeStep, setUpgradeStep] = useState<UpgradeStep | null>(null);
   const [reward, setReward] = useState<RewardItem | null>(null);
+  /** 抽選確定時点で新規シールだったか（onCollect後にcollectedIdsが更新されるため保持しておく） */
+  const [rewardWasNew, setRewardWasNew] = useState(true);
   const [decoy, setDecoy] = useState<EmojiReward | null>(null);
   const [fakeUrDecoy, setFakeUrDecoy] = useState<StickerReward | null>(null);
   const [activeTease, setActiveTease] = useState<TeaseVariant | null>(null);
@@ -618,8 +620,9 @@ function TreatOverlay({
     setDecoy(null);
     setFakeUrDecoy(null);
     setActiveTease(null);
+    const isNew = !collectedIds.includes(picked.id);
+    setRewardWasNew(isNew);
     if (!devForceStickerId || import.meta.env.DEV) {
-      const isNew = !collectedIds.includes(picked.id);
       onCollect(picked.id, { isNew });
     }
     window.setTimeout(() => {
@@ -993,11 +996,11 @@ function TreatOverlay({
               <div style={{
                 fontSize: 11,
                 fontWeight: 700,
-                color: !tokenRedeem && collectedIds.includes(reward.id)
+                color: !tokenRedeem && !rewardWasNew
                   ? theme.category.orange
                   : theme.text.tertiary,
               }}>
-                {!tokenRedeem && collectedIds.includes(reward.id)
+                {!tokenRedeem && !rewardWasNew
                   ? `🪙 ${DUPLICATE_TOKEN_LABEL} +${getDuplicateTokensForRarity(reward.rarity)}！`
                   : "アルバムに追加したよ！"}
               </div>

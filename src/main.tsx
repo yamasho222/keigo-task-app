@@ -2,9 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
+import { CloudAppShell } from "./CloudAppShell.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <CloudAppShell>
+      {(cloud) => <App cloud={cloud} />}
+    </CloudAppShell>
   </StrictMode>,
 );

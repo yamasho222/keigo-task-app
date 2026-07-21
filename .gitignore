@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Firebase / Vite secrets
+.env
+.env.*
+!.env.example

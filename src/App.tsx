@@ -375,6 +375,8 @@ interface StoredState {
   buddyXpDate?: string;
   /** その日にスタンプで得たXP（上限 BUDDY_DAILY_XP_CAP） */
   buddyXpEarnedToday?: number;
+  /** 相棒XPを付与済みのフェーズ（sessionTreatKey）。取り消し→再チェックでのXP再取得を防ぐ */
+  buddyXpStampedSessions?: Record<string, boolean>;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -1492,6 +1494,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [buddyProgress, setBuddyProgress] = useState<BuddyProgressMap>(stored.buddyProgress ?? {});
   const [buddyXpDate, setBuddyXpDate] = useState(stored.buddyXpDate ?? "");
   const [buddyXpEarnedToday, setBuddyXpEarnedToday] = useState(stored.buddyXpEarnedToday ?? 0);
+  const [buddyXpStampedSessions, setBuddyXpStampedSessions] = useState<Record<string, boolean>>(stored.buddyXpStampedSessions ?? {});
   const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
   const [buddyLevelUp, setBuddyLevelUp] = useState<{ name: string; level: number } | null>(null);
   const buddyIdRef = useRef(buddyId);
@@ -1819,6 +1822,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       buddyProgress,
       buddyXpDate,
       buddyXpEarnedToday,
+      buddyXpStampedSessions,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1838,7 +1842,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     oneOffSpecialClaimed, oneOffSpecialTreatPending,
     missionHistory, missionEveningNudgeDate, catchUpDays,
     duplicateStreak, pityArmed, duplicateTokens,
-    buddyId, buddyProgress, buddyXpDate, buddyXpEarnedToday,
+    buddyId, buddyProgress, buddyXpDate, buddyXpEarnedToday, buddyXpStampedSessions,
   ]);
 
   useEffect(() => {
@@ -2523,11 +2527,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setBuddyXpToast(null), 1400);
   };
 
-  /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり） */
-  const grantBuddyXpFromStamp = () => {
-    if (activeCatchUpDate) return;
+  /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり）。付与できたら true */
+  const grantBuddyXpFromStamp = (): boolean => {
+    if (activeCatchUpDate) return false;
     const id = buddyIdRef.current;
-    if (!id) return;
+    if (!id) return false;
     const day = todayKey();
     let earned = buddyXpEarnedTodayRef.current;
     if (buddyXpDateRef.current !== day) {
@@ -2537,7 +2541,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       setBuddyXpEarnedToday(0);
       buddyXpEarnedTodayRef.current = 0;
     }
-    if (!canGrantStampXpToday(earned)) return;
+    if (!canGrantStampXpToday(earned)) return false;
     const result = addBuddyXp(buddyProgressRef.current, id, BUDDY_XP_PER_STAMP);
     setBuddyProgress(result.progress);
     buddyProgressRef.current = result.progress;
@@ -2546,6 +2550,16 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     buddyXpEarnedTodayRef.current = nextEarned;
     showBuddyXpToast(id, BUDDY_XP_PER_STAMP);
     if (result.leveledUp) showBuddyLevelUp(id, result.newLevel);
+    return true;
+  };
+
+  /** フェーズの親チェックXP。同じフェーズは1日1回だけ付与する */
+  const grantBuddyXpFromSessionStamp = (session: SessionId) => {
+    const key = sessionTreatKey(todayKey(), session);
+    if (buddyXpStampedSessions[key]) return;
+    if (grantBuddyXpFromStamp()) {
+      setBuddyXpStampedSessions((p) => ({ ...p, [key]: true }));
+    }
   };
 
   const selectBuddy = (stickerId: string) => {
@@ -3245,7 +3259,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const newHistory = { ...history, [today]: updatedDay };
     setHistory(newHistory);
     triggerStamp();
-    grantBuddyXpFromStamp();
+    grantBuddyXpFromSessionStamp(parentSession);
 
     const needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
     const isFullDayToday = isFullDay(updatedDay, new Date());
