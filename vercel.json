@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://keigo-kengo-todo-appli.firebaseapp.com/__/auth/:path*"
+    }
+  ]
+}

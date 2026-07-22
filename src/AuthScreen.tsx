@@ -41,7 +41,7 @@ export function AuthScreen({
         </div>
         <div style={{ fontSize: 14, lineHeight: 1.7, color: theme.text.secondary, marginBottom: 18 }}>
           自分の Google でログインすると、子どもプロフィールごとにタスク・ごほうび・記録を端末をまたいで同期できます。
-          iPad などでは、ボタンを押すと一度 Google の画面に切り替わり、ログイン後にこのアプリへ戻ります。
+          iPhone では Safari で開いてログインするのが確実です。
         </div>
 
         {!firebaseConfigured && (

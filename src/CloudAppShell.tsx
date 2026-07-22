@@ -135,54 +135,66 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
     }
   }, [deviceId]);
 
+  const openProfileRef = useRef(openProfile);
+  openProfileRef.current = openProfile;
+
   useEffect(() => {
     if (!isFirebaseConfigured || localOnly) {
       setAuthLoading(false);
       return;
     }
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
 
-    void (async () => {
+    let cancelled = false;
+    let safetyTimer: number | null = window.setTimeout(() => {
+      if (!cancelled) setAuthLoading(false);
+    }, 10000);
+
+    // getRedirectResult が長引いても、onAuthStateChanged で必ず進める
+    const unsubscribe = listenAuthState(async (nextUser) => {
+      if (cancelled) return;
+      if (safetyTimer !== null) {
+        window.clearTimeout(safetyTimer);
+        safetyTimer = null;
+      }
+      setUser(nextUser);
+      setAuthLoading(false);
+      if (!nextUser) {
+        setProfiles([]);
+        setActiveProfile(null);
+        return;
+      }
+      setLoading(true);
+      setError(undefined);
       try {
-        await completeGoogleRedirectSignIn();
+        await ensureParentUser(nextUser.uid, nextUser.email);
+        const nextProfiles = await listChildProfiles(nextUser.uid);
+        if (cancelled) return;
+        setProfiles(nextProfiles);
+        const selectedId = loadSelectedChildId();
+        const selected = nextProfiles.find((profile) => profile.id === selectedId);
+        if (selected) await openProfileRef.current(nextUser, selected, "cloud");
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Googleログインに失敗しました。");
-          setAuthLoading(false);
-        }
-      }
-      if (cancelled) return;
-      unsubscribe = listenAuthState(async (nextUser) => {
-        setUser(nextUser);
-        setAuthLoading(false);
-        if (!nextUser) {
-          setProfiles([]);
-          setActiveProfile(null);
-          return;
-        }
-        setLoading(true);
-        setError(undefined);
-        try {
-          await ensureParentUser(nextUser.uid, nextUser.email);
-          const nextProfiles = await listChildProfiles(nextUser.uid);
-          setProfiles(nextProfiles);
-          const selectedId = loadSelectedChildId();
-          const selected = nextProfiles.find((profile) => profile.id === selectedId);
-          if (selected) await openProfile(nextUser, selected, "cloud");
-        } catch (err) {
           setError(err instanceof Error ? err.message : "プロフィールの読み込みに失敗しました。");
-        } finally {
-          setLoading(false);
         }
-      });
-    })();
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    });
+
+    void completeGoogleRedirectSignIn().catch((err) => {
+      if (!cancelled) {
+        setError(err instanceof Error ? err.message : "Googleログインに失敗しました。");
+        setAuthLoading(false);
+      }
+    });
 
     return () => {
       cancelled = true;
-      unsubscribe?.();
+      if (safetyTimer !== null) window.clearTimeout(safetyTimer);
+      unsubscribe();
     };
-  }, [localOnly, openProfile]);
+  }, [localOnly]);
 
   const saveState = useCallback((state: unknown, stickerAlbum: string[]) => {
     if (!user || !activeProfile) return;
