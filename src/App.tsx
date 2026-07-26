@@ -492,14 +492,16 @@ function buildTreatQueue(
     queue.push({ mode: "weekly", weeklyMilestoneStreak: opts.weeklyMilestoneStreak });
   }
   if (opts.fifteenDayMilestone && opts.fifteenDayMilestoneStreak) {
-    const streak = opts.fifteenDayMilestoneStreak;
-    queue.push({ mode: "fifteenDayStreak", fifteenDayMilestoneStreak: streak, streakPick: "lrGuaranteed" });
-    queue.push({ mode: "fifteenDayStreak", fifteenDayMilestoneStreak: streak, streakPick: "lrOrUrUncollected" });
+    queue.push({
+      mode: "fifteenDayStreak",
+      fifteenDayMilestoneStreak: opts.fifteenDayMilestoneStreak,
+      streakPick: "lrGuaranteed",
+    });
   }
   if (opts.thirtyDayMilestone && opts.thirtyDayMilestoneStreak) {
     const streak = opts.thirtyDayMilestoneStreak;
     queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "lrGuaranteed" });
-    queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "lrUncollected" });
+    queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "urPlusUncollected" });
   }
   return queue;
 }
@@ -2997,7 +2999,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     });
     openTreatQueue([
       { mode: "fifteenDayStreak", fifteenDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed" },
-      { mode: "fifteenDayStreak", fifteenDayMilestoneStreak: pendingStreak, streakPick: "lrOrUrUncollected" },
     ]);
   };
 
@@ -3023,7 +3024,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     });
     openTreatQueue([
       { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed" },
-      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "lrUncollected" },
+      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "urPlusUncollected" },
     ]);
   };
 
@@ -3482,10 +3483,15 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const thirtyDayMilestoneEligible = dayRewardsOk
       && isThirtyDayMilestoneStreak(fullDayStreak)
       && fullDayStreak > lastThirtyDay;
-    const threeDayMilestone = threeDayMilestoneEligible && threeDayTreatPending[today] === undefined;
-    const weeklyMilestone = weeklyMilestoneEligible && weeklyTreatPending[today] === undefined;
-    const fifteenDayMilestone = fifteenDayMilestoneEligible && fifteenDayTreatPending[today] === undefined;
+    // 同日は上位のみ（30 > 15 > 7 > 3）
     const thirtyDayMilestone = thirtyDayMilestoneEligible && thirtyDayTreatPending[today] === undefined;
+    const fifteenDayMilestone = fifteenDayMilestoneEligible && !thirtyDayMilestoneEligible
+      && fifteenDayTreatPending[today] === undefined;
+    const weeklyMilestone = weeklyMilestoneEligible && !thirtyDayMilestoneEligible && !fifteenDayMilestoneEligible
+      && weeklyTreatPending[today] === undefined;
+    const threeDayMilestone = threeDayMilestoneEligible
+      && !thirtyDayMilestoneEligible && !fifteenDayMilestoneEligible && !weeklyMilestoneEligible
+      && threeDayTreatPending[today] === undefined;
 
     const treatQueueToOpen = buildTreatQueue({
       needsDaily,
@@ -3494,13 +3500,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       fullDayBonusEligible,
       deadlineRewardFloor: deadlineRewardToQueue,
       threeDayMilestone,
-      threeDayMilestoneStreak: threeDayMilestoneEligible ? fullDayStreak : undefined,
+      threeDayMilestoneStreak: threeDayMilestone ? fullDayStreak : undefined,
       weeklyMilestone,
-      weeklyMilestoneStreak: weeklyMilestoneEligible ? fullDayStreak : undefined,
+      weeklyMilestoneStreak: weeklyMilestone ? fullDayStreak : undefined,
       fifteenDayMilestone,
-      fifteenDayMilestoneStreak: fifteenDayMilestoneEligible ? fullDayStreak : undefined,
+      fifteenDayMilestoneStreak: fifteenDayMilestone ? fullDayStreak : undefined,
       thirtyDayMilestone,
-      thirtyDayMilestoneStreak: thirtyDayMilestoneEligible ? fullDayStreak : undefined,
+      thirtyDayMilestoneStreak: thirtyDayMilestone ? fullDayStreak : undefined,
     });
 
     setTimeout(() => {
@@ -4192,7 +4198,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   openTreatQueue([{ mode: "specialMission", missionTitle: "📚 テストミッション" }]);
                   setShowMenu(false);
                 } },
-                { icon: "🎊", label: "7日連続 LR確定ごほうびテスト", action: () => {
+                { icon: "🎊", label: "7日連続 UR以上ごほうびテスト", action: () => {
                   openTreatQueue([{ mode: "weekly", weeklyMilestoneStreak: 7 }]);
                   setShowMenu(false);
                 } },
@@ -4251,7 +4257,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   openTreatQueue([{ mode: "daily" }]);
                   setShowMenu(false);
                 } },
-                { icon: "🎉", label: "3日連続 レア確定ごほうびテスト", action: () => {
+                { icon: "🎉", label: "3日連続 SR以上ごほうびテスト", action: () => {
                   openTreatQueue([{ mode: "threeDayStreak", threeDayMilestoneStreak: 3 }]);
                   setShowMenu(false);
                 } },

@@ -262,16 +262,25 @@ export function evaluateStreakMilestones(
   const fifteenDayEligible = isFifteenDayMilestoneStreak(fullDayStreak) && fullDayStreak > lastFifteenDay;
   const thirtyDayEligible = isThirtyDayMilestoneStreak(fullDayStreak) && fullDayStreak > lastThirtyDay;
 
+  // 同日は上位のみ（30 > 15 > 7 > 3）
+  const thirtyDayMilestone = thirtyDayEligible && thirtyDayTreatPending[triggerDateKey] === undefined;
+  const fifteenDayMilestone = fifteenDayEligible && !thirtyDayEligible
+    && fifteenDayTreatPending[triggerDateKey] === undefined;
+  const weeklyMilestone = weeklyEligible && !thirtyDayEligible && !fifteenDayEligible
+    && weeklyTreatPending[triggerDateKey] === undefined;
+  const threeDayMilestone = threeDayEligible && !thirtyDayEligible && !fifteenDayEligible && !weeklyEligible
+    && threeDayTreatPending[triggerDateKey] === undefined;
+
   return {
     fullDayStreak,
-    threeDayMilestone: threeDayEligible && threeDayTreatPending[triggerDateKey] === undefined,
-    weeklyMilestone: weeklyEligible && weeklyTreatPending[triggerDateKey] === undefined,
-    fifteenDayMilestone: fifteenDayEligible && fifteenDayTreatPending[triggerDateKey] === undefined,
-    thirtyDayMilestone: thirtyDayEligible && thirtyDayTreatPending[triggerDateKey] === undefined,
-    threeDayMilestoneStreak: threeDayEligible ? fullDayStreak : undefined,
-    weeklyMilestoneStreak: weeklyEligible ? fullDayStreak : undefined,
-    fifteenDayMilestoneStreak: fifteenDayEligible ? fullDayStreak : undefined,
-    thirtyDayMilestoneStreak: thirtyDayEligible ? fullDayStreak : undefined,
+    threeDayMilestone,
+    weeklyMilestone,
+    fifteenDayMilestone,
+    thirtyDayMilestone,
+    threeDayMilestoneStreak: threeDayMilestone ? fullDayStreak : undefined,
+    weeklyMilestoneStreak: weeklyMilestone ? fullDayStreak : undefined,
+    fifteenDayMilestoneStreak: fifteenDayMilestone ? fullDayStreak : undefined,
+    thirtyDayMilestoneStreak: thirtyDayMilestone ? fullDayStreak : undefined,
     lastThreeDay,
     lastWeekly,
     lastFifteenDay,

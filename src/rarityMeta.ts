@@ -26,26 +26,25 @@ export const RARITY_META: Record<StickerRarity, {
 
 /** 日次シール抽選（絵文字30%の後） */
 export const TIER_WEIGHTS_DAILY: Record<StickerRarity, number> = {
-  normal: 0.353,
-  rare: 0.44,
+  normal: 0.357,
+  rare: 0.443,
   superRare: 0.15,
   ultraRare: 0.047,
-  legendary: 0.01,
+  legendary: 0.003,
 };
 
 /** 1日全部クリアボーナス — レア以上確定 */
 export const TIER_WEIGHTS_FULL_DAY: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
-  rare: 0.50,
-  superRare: 0.35,
+  rare: 0.51,
+  superRare: 0.36,
   ultraRare: 0.12,
-  legendary: 0.03,
+  legendary: 0.01,
 };
 
-/** 3日連続ごほうび — レア以上確定 */
-export const TIER_WEIGHTS_THREE_DAY: Record<"rare" | "superRare" | "ultraRare" | "legendary", number> = {
-  rare: 0.55,
-  superRare: 0.32,
-  ultraRare: 0.08,
+/** 3日連続ごほうび — スーパーレア以上確定 */
+export const TIER_WEIGHTS_THREE_DAY: Record<"superRare" | "ultraRare" | "legendary", number> = {
+  superRare: 0.70,
+  ultraRare: 0.25,
   legendary: 0.05,
 };
 
@@ -56,15 +55,20 @@ export const TIER_WEIGHTS_DEADLINE_RARE_PLUS: Record<"rare" | "superRare" | "ult
 
 /** 20:00まで全部クリア — UR以上確定 */
 export const TIER_WEIGHTS_DEADLINE_UR_PLUS: Record<"ultraRare" | "legendary", number> = {
-  ultraRare: 0.70,
-  legendary: 0.30,
+  ultraRare: 0.90,
+  legendary: 0.10,
+};
+
+/** 7日連続ごほうび — UR以上確定（締切UR以上と同じ配分） */
+export const TIER_WEIGHTS_SEVEN_DAY: Record<"ultraRare" | "legendary", number> = {
+  ...TIER_WEIGHTS_DEADLINE_UR_PLUS,
 };
 
 /** 20:30まで全部クリア — SR以上確定 */
 export const TIER_WEIGHTS_DEADLINE_SR_PLUS: Record<"superRare" | "ultraRare" | "legendary", number> = {
-  superRare: 0.65,
-  ultraRare: 0.23,
-  legendary: 0.12,
+  superRare: 0.69,
+  ultraRare: 0.26,
+  legendary: 0.05,
 };
 
 export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraRare", number> = {
@@ -75,17 +79,15 @@ export const TIER_WEIGHTS_ONE_OFF_SPECIAL: Record<"rare" | "superRare" | "ultraR
 
 /** 単発特別ミッション — UR以上確定 */
 export const TIER_WEIGHTS_ONE_OFF_SPECIAL_UR_PLUS: Record<"ultraRare" | "legendary", number> = {
-  ultraRare: 0.70,
-  legendary: 0.30,
+  ultraRare: 0.90,
+  legendary: 0.10,
 };
 
 /**
- * 7日連続ごほうび — 旧ウェイト（現行は pickWeeklyReward で LR 固定）。
- * 互換・参照用に残す。
+ * 7日連続ごほうび — 互換用エイリアス（現行は TIER_WEIGHTS_SEVEN_DAY）。
  */
 export const TIER_WEIGHTS_WEEKLY: Record<"ultraRare" | "legendary", number> = {
-  ultraRare: 0,
-  legendary: 1,
+  ...TIER_WEIGHTS_SEVEN_DAY,
 };
 
 export type LegendaryRevealMode = "cutin" | "direct";

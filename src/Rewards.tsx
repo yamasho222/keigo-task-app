@@ -813,21 +813,19 @@ function TreatOverlay({
           : "⭐ きょうのごほうび ⭐";
 
   const subtitle = isThirtyDayStreak
-    ? streakPick === "lrUncollected"
-      ? "30日連続クリア！未入手のレジェンドレア確定！"
+    ? streakPick === "urPlusUncollected"
+      ? "30日連続クリア！未入手のウルトラレア以上確定！"
       : "30日連続クリア！レジェンドレア確定！"
     : isFifteenDayStreak
-      ? streakPick === "lrOrUrUncollected"
-        ? "15日連続クリア！未入手のLRかURが出るかも！"
-        : "15日連続クリア！レジェンドレア確定！"
+      ? "15日連続クリア！レジェンドレア確定！"
     : isWeekly
-    ? "7日連続ですべてクリア！レジェンドレア確定！"
+    ? "7日連続ですべてクリア！ウルトラレア以上確定！"
     : tokenRedeem
       ? "たまったダブりコインで新しいシールゲット！"
     : pityAttempt
       ? "かぶり救済チャンス！新しいシールが出やすいかも！"
     : isThreeDayStreak
-      ? "3日連続ですべてクリア！レア以上確定！"
+      ? "3日連続ですべてクリア！スーパーレア以上確定！"
       : isDeadline
         ? rewardFloor === "ultraRare"
           ? "20:00までに全部クリア！ウルトラレア以上確定！"
