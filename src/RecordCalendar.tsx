@@ -559,76 +559,98 @@ export function RecordScreen({
           集めたごほうび ({uniqueAlbum.length}/{TOTAL_REWARD_COUNT})
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {albumGroups.map((group) => (
-            <div key={group.category}>
-              <div style={{
-                fontSize: 11, fontWeight: 800, color: theme.text.secondary,
-                marginBottom: 8, letterSpacing: 0.5,
-              }}>
-                {group.label} ({group.collectedCount}/{group.totalCount})
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "4px 2px 2px" }}>
-                {group.rewards.map((reward) => {
-                  const collected = uniqueAlbum.includes(reward.id);
-                  const item = REWARD_LOOKUP[reward.id];
-                  if (collected) {
-                    const entry = getBuddyEntry(buddyProgress, reward.id);
-                    const isActiveBuddy = buddyId === reward.id;
-                    return (
-                      <button
-                        key={reward.id}
-                        type="button"
-                        aria-label={`${item.label}を大きく見る`}
-                        onClick={() => setPreviewId(reward.id)}
+          {albumGroups.map((group) => {
+            const renderRewardCell = (reward: (typeof group.rewards)[number]) => {
+              const collected = uniqueAlbum.includes(reward.id);
+              const item = REWARD_LOOKUP[reward.id];
+              if (collected) {
+                const entry = getBuddyEntry(buddyProgress, reward.id);
+                const isActiveBuddy = buddyId === reward.id;
+                return (
+                  <button
+                    key={reward.id}
+                    type="button"
+                    aria-label={`${item.label}を大きく見る`}
+                    onClick={() => setPreviewId(reward.id)}
+                    style={{
+                      ...albumCellStyle,
+                      backgroundColor: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    <BuddyFrame level={entry.level} size="cell" isBuddy={isActiveBuddy} showLevelBadge rarity={item.rarity}>
+                      <StickerFrameWithBadge
+                        rarity={item.rarity}
+                        compact
+                        showBadge={false}
                         style={{
-                          ...albumCellStyle,
-                          backgroundColor: "transparent",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: 0,
+                          width: "100%", height: "100%",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: item.emoji ? 26 : undefined,
                         }}
                       >
-                        <BuddyFrame level={entry.level} size="cell" isBuddy={isActiveBuddy} showLevelBadge rarity={item.rarity}>
-                          <StickerFrameWithBadge
-                            rarity={item.rarity}
-                            compact
-                            showBadge={false}
-                            style={{
-                              width: "100%", height: "100%",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: item.emoji ? 26 : undefined,
-                            }}
-                          >
-                            {item.emoji ? (
-                              item.emoji
-                            ) : (
-                              <StickerImg src={item.image!} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
-                            )}
-                          </StickerFrameWithBadge>
-                        </BuddyFrame>
-                      </button>
-                    );
-                  }
-                  return (
-                    <div
-                      key={reward.id}
-                      aria-label="まだ集めていないごほうび"
-                      title="まだ集めていないごほうび"
-                      style={{
-                        ...albumCellStyle,
-                        backgroundColor: theme.fill.quaternary,
-                        border: `1.5px dashed ${theme.stroke.secondary}`,
-                        color: theme.text.tertiary,
-                        fontSize: 22, fontWeight: 800,
-                      }}
-                    >
-                      ?
-                    </div>
-                  );
-                })}
+                        {item.emoji ? (
+                          item.emoji
+                        ) : (
+                          <StickerImg src={item.image!} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
+                        )}
+                      </StickerFrameWithBadge>
+                    </BuddyFrame>
+                  </button>
+                );
+              }
+              return (
+                <div
+                  key={reward.id}
+                  aria-label="まだ集めていないごほうび"
+                  title="まだ集めていないごほうび"
+                  style={{
+                    ...albumCellStyle,
+                    backgroundColor: theme.fill.quaternary,
+                    border: `1.5px dashed ${theme.stroke.secondary}`,
+                    color: theme.text.tertiary,
+                    fontSize: 22, fontWeight: 800,
+                  }}
+                >
+                  ?
+                </div>
+              );
+            };
+
+            return (
+              <div key={group.category}>
+                <div style={{
+                  fontSize: 11, fontWeight: 800, color: theme.text.secondary,
+                  marginBottom: 8, letterSpacing: 0.5,
+                }}>
+                  {group.label} ({group.collectedCount}/{group.totalCount})
+                </div>
+                {group.subgroups && group.subgroups.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {group.subgroups.map((sub) => (
+                      <div key={sub.id}>
+                        <div style={{
+                          fontSize: 10, fontWeight: 700, color: theme.text.tertiary,
+                          marginBottom: 6, letterSpacing: 0.3,
+                        }}>
+                          {sub.label} ({sub.collectedCount}/{sub.totalCount})
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "2px 2px 0" }}>
+                          {sub.rewards.map(renderRewardCell)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "4px 2px 2px" }}>
+                    {group.rewards.map(renderRewardCell)}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div style={{ fontSize: 10, color: theme.text.tertiary, textAlign: "center", marginTop: 10 }}>
           ？＝まだ集めていないごほうび
