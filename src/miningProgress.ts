@@ -137,6 +137,19 @@ export function diamondFullComplete(state: MiningState): boolean {
   );
 }
 
+/** ネザライトどうぐ3＋よろい4をクラフト済み（揃え特典の条件） */
+export function netheriteFullComplete(state: MiningState): boolean {
+  return !!(
+    state.crafted.sword_netherite
+    && state.crafted.axe_netherite
+    && state.crafted.pickaxe_netherite
+    && state.crafted.helmet_netherite
+    && state.crafted.chest_netherite
+    && state.crafted.leggings_netherite
+    && state.crafted.boots_netherite
+  );
+}
+
 export function refreshUnlocks(state: MiningState): MiningState {
   const unlocked = new Set(state.unlockedGachas);
   unlocked.add("wood");
@@ -424,7 +437,7 @@ export function resolveDig(params: {
         : params.gacha === "iron" ? "iron_ore"
           : params.gacha === "gold" ? "gold_ore"
             : params.gacha === "diamond" ? "diamond_shard"
-              : "gold_ore";
+              : "nether_quartz";
 
     const drops: { material: MaterialId; amount: number }[] = [];
   const primaryAmount = baseCount + bonus + luckyBonus;
@@ -439,13 +452,26 @@ export function resolveDig(params: {
       breakdown.push(hasSword ? "剣でダイヤ直！" : "ダイヤ直！");
     }
   } else if (params.gacha === "nether") {
-    drops.push({ material: "gold_ore", amount: primaryAmount });
-    let debrisRate = 0.08;
-    if (toolParsed?.kind === "pickaxe") debrisRate += TIER_PLUS1[toolParsed.tier] * 0.35;
-    if (hasSword) debrisRate += 0.04;
-    if (rand() < Math.min(0.28, debrisRate)) {
+    // 主ドロップはネザークォーツ（⚡にこうかん可）。金はおまけ。
+    drops.push({ material: "nether_quartz", amount: primaryAmount });
+    // A': 基本40%／ネザライトツルハシで約55%。揃え特典でさらに+。
+    const setBonus = netheriteFullComplete(state);
+    let debrisRate = 0.4;
+    if (toolParsed?.kind === "pickaxe") {
+      debrisRate += TIER_PLUS1[toolParsed.tier] * 0.5;
+    }
+    if (setBonus) debrisRate += 0.08;
+    if (rand() < Math.min(0.65, debrisRate)) {
       drops.push({ material: "ancient_debris", amount: 1 });
-      breakdown.push("古代の残骸！");
+      breakdown.push(setBonus ? "古代の残骸！（そろい特典つき）" : "古代の残骸！");
+      if (setBonus && rand() < 0.15) {
+        drops.push({ material: "ancient_debris", amount: 1 });
+        breakdown.push("そろいおまけ残骸+1！");
+      }
+    }
+    if (rand() < 0.12) {
+      drops.push({ material: "gold_ore", amount: 1 });
+      breakdown.push("おまけ 金の原石");
     }
   } else if (params.gacha === "iron") {
     if (hasSword && rand() < 0.22) {
@@ -621,6 +647,10 @@ export function exchangeCost(base: number, state: MiningState): number {
 export const EXCHANGE_LOG_COST = 5;
 /** 羊毛は救済ルート。もり掘りより高め */
 export const EXCHANGE_WOOL_COST = 28;
+/** 古代の残骸は救済。ネザー掘りよりかなり高め */
+export const EXCHANGE_DEBRIS_COST = 90;
+/** ネザークォーツ1個を⚡にかえしたときの量（むねあて割引なし） */
+export const QUARTZ_TO_POINTS = 1;
 
 export function exchangePointsForLog(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_LOG_COST, state);
@@ -668,6 +698,41 @@ export function exchangePointsForWool(state: MiningState): { state: MiningState;
       materials: {
         ...state.materials,
         wool: getMaterialCount(state, "wool") + 1,
+      },
+    },
+  };
+}
+
+export function exchangePointsForDebris(state: MiningState): { state: MiningState; error?: string } {
+  const cost = exchangeCost(EXCHANGE_DEBRIS_COST, state);
+  if (state.miningPoints < cost) {
+    return { state, error: `採掘ポイントが${cost}必要だよ` };
+  }
+  return {
+    state: {
+      ...state,
+      miningPoints: state.miningPoints - cost,
+      materials: {
+        ...state.materials,
+        ancient_debris: getMaterialCount(state, "ancient_debris") + 1,
+      },
+    },
+  };
+}
+
+/** ネザークォーツ → 採掘ポイント（外れ掘りの価値） */
+export function exchangeQuartzForPoints(state: MiningState): { state: MiningState; error?: string } {
+  const have = getMaterialCount(state, "nether_quartz");
+  if (have < 1) {
+    return { state, error: "ネザークォーツが足りないよ" };
+  }
+  return {
+    state: {
+      ...state,
+      miningPoints: state.miningPoints + QUARTZ_TO_POINTS,
+      materials: {
+        ...state.materials,
+        nether_quartz: have - 1,
       },
     },
   };

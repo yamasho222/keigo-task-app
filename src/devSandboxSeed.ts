@@ -1,32 +1,75 @@
 import type { BuddyProgressMap } from "./buddyProgress";
 import { ALL_REWARDS } from "./stickerRewards";
 import {
+  type CraftedGearId,
   type MaterialId,
   type MiningState,
 } from "./miningTypes";
 
-const DEV_TICKETS = 99;
-const DEV_MINING_POINTS = 999;
+/** 開発・体験用の余裕ある初期量（自分で触って試せる量） */
+const DEV_TICKETS = 200;
+const DEV_MINING_POINTS = 5000;
 const DEV_DUPLICATE_TOKENS = 999;
 const DEV_BUDDY_LEVEL = 10;
+const DEV_MATERIAL_AMOUNT = 200;
 
 const DEV_MATERIALS: Record<MaterialId, number> = {
-  log: 99,
-  plank: 99,
-  stick: 99,
-  wool: 99,
-  cobble: 99,
-  iron_ore: 99,
-  iron_ingot: 99,
-  gold_ore: 99,
-  gold_ingot: 99,
-  coal: 99,
-  diamond_shard: 99,
-  diamond: 99,
-  ancient_debris: 99,
-  netherite_scrap: 99,
-  netherite_ingot: 99,
+  log: DEV_MATERIAL_AMOUNT,
+  plank: DEV_MATERIAL_AMOUNT,
+  stick: DEV_MATERIAL_AMOUNT,
+  wool: DEV_MATERIAL_AMOUNT,
+  cobble: DEV_MATERIAL_AMOUNT,
+  iron_ore: DEV_MATERIAL_AMOUNT,
+  iron_ingot: DEV_MATERIAL_AMOUNT,
+  gold_ore: DEV_MATERIAL_AMOUNT,
+  gold_ingot: DEV_MATERIAL_AMOUNT,
+  coal: DEV_MATERIAL_AMOUNT,
+  diamond_shard: DEV_MATERIAL_AMOUNT,
+  diamond: DEV_MATERIAL_AMOUNT,
+  ancient_debris: DEV_MATERIAL_AMOUNT,
+  nether_quartz: DEV_MATERIAL_AMOUNT,
+  netherite_scrap: DEV_MATERIAL_AMOUNT,
+  netherite_ingot: DEV_MATERIAL_AMOUNT,
 };
+
+const DEV_CRAFTED: CraftedGearId[] = [
+  "workbench",
+  "furnace",
+  "sword_wood",
+  "axe_wood",
+  "pickaxe_wood",
+  "sword_stone",
+  "axe_stone",
+  "pickaxe_stone",
+  "sword_iron",
+  "axe_iron",
+  "pickaxe_iron",
+  "helmet_iron",
+  "chest_iron",
+  "leggings_iron",
+  "boots_iron",
+  "sword_gold",
+  "axe_gold",
+  "pickaxe_gold",
+  "helmet_gold",
+  "chest_gold",
+  "leggings_gold",
+  "boots_gold",
+  "sword_diamond",
+  "axe_diamond",
+  "pickaxe_diamond",
+  "helmet_diamond",
+  "chest_diamond",
+  "leggings_diamond",
+  "boots_diamond",
+  "sword_netherite",
+  "axe_netherite",
+  "pickaxe_netherite",
+  "helmet_netherite",
+  "chest_netherite",
+  "leggings_netherite",
+  "boots_netherite",
+];
 
 /** 開発用: 全シールを所持扱いにしてカテゴリ絞り込みで全部選べるようにする */
 const DEV_STICKER_IDS = ALL_REWARDS
@@ -74,7 +117,7 @@ export interface DevSandboxSeed {
   buddyId: string | null;
 }
 
-/** 既存データは減らさず、体験に必要な最低量まで補充する。 */
+/** 既存データは減らさず、体験に必要な量まで補充する。 */
 export function buildDevSandboxSeed({
   mining,
   duplicateTokens,
@@ -86,6 +129,11 @@ export function buildDevSandboxSeed({
   for (const [id, amount] of Object.entries(DEV_MATERIALS)) {
     const materialId = id as MaterialId;
     materials[materialId] = Math.max(materials[materialId] ?? 0, amount);
+  }
+
+  const crafted = { ...mining.crafted };
+  for (const id of DEV_CRAFTED) {
+    crafted[id] = true;
   }
 
   const seededAlbum = [...new Set([...stickerAlbum, ...DEV_STICKER_IDS])];
@@ -113,31 +161,7 @@ export function buildDevSandboxSeed({
       miningPoints: Math.max(mining.miningPoints, DEV_MINING_POINTS),
       materials,
       bedCount: Math.max(mining.bedCount ?? 1, 3),
-      crafted: {
-        ...mining.crafted,
-        workbench: true,
-        furnace: true,
-        sword_wood: true,
-        axe_wood: true,
-        pickaxe_wood: true,
-        sword_stone: true,
-        axe_stone: true,
-        pickaxe_stone: true,
-        sword_iron: true,
-        axe_iron: true,
-        pickaxe_iron: true,
-        helmet_iron: true,
-        chest_iron: true,
-        leggings_iron: true,
-        boots_iron: true,
-        sword_diamond: true,
-        axe_diamond: true,
-        pickaxe_diamond: true,
-        helmet_diamond: true,
-        chest_diamond: true,
-        leggings_diamond: true,
-        boots_diamond: true,
-      },
+      crafted,
       unlockedGachas: [
         ...new Set([
           ...mining.unlockedGachas,
@@ -152,11 +176,11 @@ export function buildDevSandboxSeed({
       partyIds,
       equipped: {
         ...mining.equipped,
-        tool: mining.equipped.tool ?? "pickaxe_diamond",
-        helmet: mining.equipped.helmet ?? "helmet_diamond",
-        chest: mining.equipped.chest ?? "chest_diamond",
-        leggings: mining.equipped.leggings ?? "leggings_diamond",
-        boots: mining.equipped.boots ?? "boots_diamond",
+        tool: mining.equipped.tool ?? "pickaxe_netherite",
+        helmet: mining.equipped.helmet ?? "helmet_netherite",
+        chest: mining.equipped.chest ?? "chest_netherite",
+        leggings: mining.equipped.leggings ?? "leggings_netherite",
+        boots: mining.equipped.boots ?? "boots_netherite",
       },
     },
   };

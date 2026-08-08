@@ -41,7 +41,6 @@ import { addMiningPoints, addTickets } from "./miningProgress";
 import { MiningScreen } from "./MiningScreen";
 import {
   buildDevSandboxSeed,
-  isDevSandboxEmpty,
 } from "./devSandboxSeed";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
 import { BuddySelectPrompt } from "./BuddySelectPrompt";
@@ -2716,9 +2715,17 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   useEffect(() => {
     if (!import.meta.env.DEV || devSeedAppliedRef.current) return;
     devSeedAppliedRef.current = true;
-    if (!isDevSandboxEmpty(miningRef.current, duplicateTokens)) return;
+    // 開発中は空判定せず必ず補充（Math.max なので減らない）
     applyDevSandboxSeed();
   }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (screen !== "mining") return;
+    const m = miningRef.current;
+    if (m.tickets >= 50 && m.miningPoints >= 100) return;
+    applyDevSandboxSeed();
+  }, [screen]);
 
   /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり）。付与できたら true */
   const grantBuddyXpFromStamp = (): boolean => {
@@ -4333,7 +4340,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
-              { icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => { navigateToScreen("mining"); setShowMenu(false); } },
+              { icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
+                if (import.meta.env.DEV) applyDevSandboxSeed();
+                navigateToScreen("mining");
+                setShowMenu(false);
+              } },
               { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
                 setShowTokenShop(true);
                 setShowMenu(false);

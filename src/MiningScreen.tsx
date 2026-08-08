@@ -8,34 +8,36 @@ import { REWARD_LOOKUP, STICKER_CATEGORIES, STICKER_REWARDS, type RewardCategory
 import {
   EXCHANGE_LOG_COST,
   EXCHANGE_WOOL_COST,
+  EXCHANGE_DEBRIS_COST,
+  QUARTZ_TO_POINTS,
   bestOwnedTool,
   canAffordRecipe,
-  diamondFullComplete,
-  diamondToolsComplete,
   equipArmor,
   equipTool,
   exchangeCost,
   exchangePointsForCobble,
+  exchangePointsForDebris,
   exchangePointsForLog,
   exchangePointsForWool,
+  exchangeQuartzForPoints,
   hasFurnace,
   hasWorkbench,
-  ironFullComplete,
   luckyGachaForDate,
+  netheriteFullComplete,
   ownedArmorForSlot,
   previewDigBoost,
   recommendToolKind,
   recipesForState,
   resolveDig,
   setPartySlot,
-  stoneToolsComplete,
+  specialtyForGacha,
   tryCraft,
-  woodToolsComplete,
   type DigResult,
   type MiningRecipe,
 } from "./miningProgress";
 import { NETHERITE_UPGRADE_REQUIRES, recipeProgress } from "./miningRecipes";
 import { MiningItemIcon } from "./MiningItemIcon";
+import { boostStrengthLabel, miningNextGoal, nextGachaUnlock } from "./miningUiHelpers";
 import {
   ARMOR_KIND_LABEL,
   GACHA_META,
@@ -70,7 +72,8 @@ interface Props {
   onBack: () => void;
 }
 
-type TabId = "mine" | "craft" | "party" | "bag" | "equip";
+type TabId = "mine" | "craft" | "bag";
+type OverlayId = "party" | "equip" | null;
 type DigFxPhase = "idle" | "swing" | "reveal";
 type ArmorSlot = "helmet" | "chest" | "leggings" | "boots";
 
@@ -216,6 +219,7 @@ export function MiningScreen({
   onBack,
 }: Props) {
   const [tab, setTab] = useState<TabId>("mine");
+  const [overlay, setOverlay] = useState<OverlayId>(null);
   const [selectedGacha, setSelectedGacha] = useState<GachaId>("wood");
   const [toolKind, setToolKind] = useState<ToolKind>("axe");
   const [lastDig, setLastDig] = useState<DigResult | null>(null);
@@ -224,6 +228,8 @@ export function MiningScreen({
   const [partySlotEdit, setPartySlotEdit] = useState<number | null>(null);
   const [partyCategoryFilter, setPartyCategoryFilter] = useState<RewardCategory | null>(null);
   const [digBusy, setDigBusy] = useState(false);
+  const [boostDetailOpen, setBoostDetailOpen] = useState(false);
+  const [craftShowAll, setCraftShowAll] = useState(false);
 
   const recipes = useMemo(() => recipesForState(mining), [mining]);
   const hasHelmet = !!(mining.equipped.helmet && mining.crafted[mining.equipped.helmet]);
@@ -336,101 +342,111 @@ export function MiningScreen({
 
   const tabs: { id: TabId; label: string }[] = [
     { id: "mine", label: "ほる" },
-    { id: "equip", label: "そうび" },
     { id: "craft", label: "クラフト" },
-    { id: "party", label: "パーティ" },
     { id: "bag", label: "もちもの" },
   ];
+  const unlockCard = nextGachaUnlock(mining);
 
   const armorSlots: ArmorSlot[] = ["helmet", "chest", "leggings", "boots"];
 
+  const nextGoal = miningNextGoal(mining);
+  const strength = boostStrengthLabel(boost.expectedExtra);
+  const wantSpec = specialtyForGacha(selectedGacha);
+  const digDisabled = digBusy || mining.tickets < 1 || !mining.unlockedGachas.includes(selectedGacha);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: "80vh", paddingBottom: 24 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: tab === "mine" ? 120 : 72 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <ScrollSafeBackButton onBack={onBack} />
         <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>こうざん／クラフト</div>
       </div>
 
-      <div style={{ ...card, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-        <span style={{ fontWeight: 900, color: theme.category.orange }}>🎫 {mining.tickets}</span>
-        <span style={{ fontWeight: 800, color: theme.text.secondary }}>⚡ {mining.miningPoints}</span>
-        {hasWorkbench(mining) && <span style={{ fontSize: 12, fontWeight: 700 }}>🪵作業台OK</span>}
-        {hasFurnace(mining) && <span style={{ fontSize: 12, fontWeight: 700 }}>🔥かまどOK</span>}
-        {woodToolsComplete(mining) && <span style={{ fontSize: 12, color: theme.category.green, fontWeight: 800 }}>木コンプ</span>}
-        {stoneToolsComplete(mining) && <span style={{ fontSize: 12, color: theme.category.green, fontWeight: 800 }}>石コンプ</span>}
-        {ironFullComplete(mining) && <span style={{ fontSize: 12, color: theme.category.green, fontWeight: 800 }}>鉄フル</span>}
-        {diamondToolsComplete(mining) && <span style={{ fontSize: 12, color: theme.category.green, fontWeight: 800 }}>ダイヤどうぐ</span>}
-        {diamondFullComplete(mining) && <span style={{ fontSize: 12, color: theme.category.green, fontWeight: 800 }}>ダイヤフル</span>}
+      <div style={{ ...card, padding: "10px 12px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+          <span style={{ fontWeight: 900, color: theme.category.orange, fontSize: 16 }}>🎫 {mining.tickets}</span>
+          <span style={{ fontWeight: 800, color: theme.text.secondary, fontSize: 15 }}>⚡ {mining.miningPoints}</span>
+        </div>
+        <div style={{ marginTop: 6, fontSize: 12, fontWeight: 800, color: theme.accent.primary }}>
+          {nextGoal}
+        </div>
+        {netheriteFullComplete(mining) && (
+          <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: theme.category.green }}>
+            ネザライトそろい特典ON
+          </div>
+        )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 10 }}>
-        <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary, marginBottom: 8 }}>
-            採掘パーティ（ベッド {slots}/{MAX_BEDS}）
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <button
+          type="button"
+          onClick={() => { setOverlay("party"); setPartySlotEdit(0); }}
+          style={{ ...card, textAlign: "left", cursor: "pointer", width: "100%", padding: 12 }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary }}>
+              パーティ（ベッド {slots}/{MAX_BEDS}）
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 800, color: theme.text.tertiary }}>›</span>
           </div>
-          <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+          <div style={{ display: "flex", gap: 6 }}>
             {Array.from({ length: slots }, (_, i) => {
               const id = mining.partyIds[i];
               const item = id ? REWARD_LOOKUP[id] : null;
               const lv = id ? getBuddyEntry(buddyProgress, id).level : 1;
+              const match = !!(item && specialtyOfCategory(item.category) === wantSpec);
               return (
-                <button
+                <div
                   key={i}
-                  type="button"
-                  onClick={() => { setTab("party"); setPartySlotEdit(i); }}
                   style={{
-                    width: 64, height: 72, borderRadius: 12, border: `1.5px dashed ${theme.stroke.primary}`,
-                    background: theme.fill.quaternary, cursor: "pointer", padding: 4,
+                    width: 56, height: 64, borderRadius: 10,
+                    border: `1.5px ${match ? "solid" : "dashed"} ${match ? theme.category.green : theme.stroke.primary}`,
+                    background: match ? `${theme.category.green}14` : theme.fill.quaternary,
+                    padding: 3, display: "flex", alignItems: "center", justifyContent: "center",
                   }}
                 >
-                  {item ? (
-                    <>
-                      <StickerThumb item={item} level={lv} size={52} />
-                      <div style={{ fontSize: 9, fontWeight: 800, color: theme.accent.primary, marginTop: 2, lineHeight: 1.2 }}>
-                        {SPECIALTY_META[specialtyOfCategory(item.category)].emoji}
-                        {SPECIALTY_META[specialtyOfCategory(item.category)].label}
-                      </div>
-                    </>
-                  ) : (
+                  {item ? <StickerThumb item={item} level={lv} size={48} /> : (
                     <span style={{ fontSize: 11, color: theme.text.tertiary }}>空</span>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
           {slots < MAX_BEDS && (
-            <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
+            <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: theme.text.secondary }}>
               ベッドをクラフトすると枠が1つ増えるよ
             </div>
           )}
-        </div>
+        </button>
+
         <button
           type="button"
-          onClick={() => setTab("equip")}
-          style={{ ...card, textAlign: "left", cursor: "pointer", width: "100%" }}
+          onClick={() => setOverlay("equip")}
+          style={{ ...card, textAlign: "left", cursor: "pointer", width: "100%", padding: 12 }}
         >
-          <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary, marginBottom: 8 }}>
-            そうび（ここをタップ）
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary }}>そうび</div>
+            <span style={{ fontSize: 12, fontWeight: 800, color: theme.text.tertiary }}>›</span>
           </div>
-          <div style={{ fontSize: 12, lineHeight: 1.7, color: theme.text.secondary }}>
-            {(
-              [
-                ["ほるどうぐ", mining.equipped.tool],
-                ["ヘルメット", mining.equipped.helmet],
-                ["チェスト", mining.equipped.chest],
-                ["レギンス", mining.equipped.leggings],
-                ["ブーツ", mining.equipped.boots],
-              ] as const
-            ).map(([slotLabel, gearId]) => (
-              <div key={slotLabel} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span>{slotLabel}:</span>
-                {gearId ? (
-                  <>
-                    <MiningItemIcon gear={gearId} size={18} alt="" />
-                    <span>{gearLabel(gearId)}</span>
-                  </>
-                ) : (
-                  <span>{slotLabel === "ほるどうぐ" ? "未装備" : "（鉄から）"}</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {([
+              mining.equipped.tool,
+              mining.equipped.helmet,
+              mining.equipped.chest,
+              mining.equipped.leggings,
+              mining.equipped.boots,
+            ] as const).map((gearId, idx) => (
+              <div
+                key={idx}
+                style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  border: `1px solid ${theme.stroke.tertiary}`,
+                  background: theme.fill.secondary,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+                title={gearId ? gearLabel(gearId) : "なし"}
+              >
+                {gearId ? <MiningItemIcon gear={gearId} size={28} alt="" /> : (
+                  <span style={{ fontSize: 11, color: theme.text.tertiary }}>·</span>
                 )}
               </div>
             ))}
@@ -438,16 +454,18 @@ export function MiningScreen({
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {!overlay && (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             style={{
-              flex: "1 1 18%",
-              minWidth: 64,
               ...btnGhost,
+              padding: "10px 8px",
+              fontSize: 13,
+              minWidth: 0,
               backgroundColor: tab === t.id ? `${theme.accent.primary}18` : theme.fill.secondary,
               borderColor: tab === t.id ? theme.accent.primary : theme.stroke.secondary,
               color: tab === t.id ? theme.accent.primary : theme.text.primary,
@@ -457,8 +475,19 @@ export function MiningScreen({
           </button>
         ))}
       </div>
+      )}
 
-      {tab === "mine" && (
+      {overlay && (
+        <button
+          type="button"
+          onClick={() => setOverlay(null)}
+          style={{ ...btnGhost, alignSelf: "flex-start", padding: "8px 12px" }}
+        >
+          ← もどる
+        </button>
+      )}
+
+      {!overlay && tab === "mine" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 10 }}>どこをほる？</div>
@@ -502,9 +531,9 @@ export function MiningScreen({
           </div>
 
           <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>ほるどうぐを選ぶ（剣・斧・ツルハシ）</div>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>つかうどうぐの種類</div>
             <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
-              ほるときに使うどうぐだよ。種類ごとの一番強いものを自動で使うよ。効果を見て選んでね。
+              剣・斧・ツルハシから選ぶよ。いちばん強いものを自動で使うよ。
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {(["axe", "sword", "pickaxe"] as ToolKind[]).map((kind) => {
@@ -523,26 +552,38 @@ export function MiningScreen({
                       borderColor: selected ? theme.category.green : theme.stroke.secondary,
                       backgroundColor: selected ? `${theme.category.green}18` : theme.fill.secondary,
                       textAlign: "left",
-                      padding: "12px 12px",
+                      padding: "10px 12px",
                     }}
                   >
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                      {best && <MiningItemIcon gear={best} size={28} alt="" />}
+                      {best && <MiningItemIcon gear={best} size={26} alt="" />}
                       <strong>{TOOL_KIND_LABEL[kind]}</strong>
-                      <span>· {best ? gearLabel(best) : "まだない（クラフトで作ろう）"}</span>
                       {recommended && best && (
                         <span style={{ color: theme.category.orange, fontWeight: 800 }}>おすすめ</span>
                       )}
                       {selected && best && (
-                        <span style={{ color: theme.category.green, fontWeight: 800 }}>装備中</span>
+                        <span style={{ color: theme.category.green, fontWeight: 800 }}>つかう</span>
                       )}
                     </div>
-                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
-                      効果: {TOOL_EFFECT_BLURB[kind]}
+                    {best && (
+                      <div style={{ marginTop: 4, fontSize: 12, fontWeight: 800, color: theme.text.primary }}>
+                        いま使う: {gearLabel(best)}
+                      </div>
+                    )}
+                    <div style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: recommended ? theme.category.orange : theme.text.secondary,
+                      lineHeight: 1.4,
+                    }}>
+                      {toolEffectForGacha(kind, selectedGacha)}
                     </div>
-                    <div style={{ marginTop: 2, fontSize: 12, fontWeight: 800, color: recommended ? theme.category.orange : theme.text.tertiary, lineHeight: 1.45 }}>
-                      いま: {toolEffectForGacha(kind, selectedGacha)}
-                    </div>
+                    {selected && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: theme.text.tertiary, lineHeight: 1.4 }}>
+                        {TOOL_EFFECT_BLURB[kind]}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -550,54 +591,54 @@ export function MiningScreen({
           </div>
 
           <div style={card}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-              <div style={{ fontWeight: 800 }}>いまの補正（パーティ＋そうび）</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: theme.category.orange }}>
-                おまけ期待 +{boost.expectedExtra.toFixed(2)}
-              </div>
-            </div>
-            <div style={{ marginTop: 6, fontSize: 12, color: theme.text.secondary, lineHeight: 1.5 }}>
-              上のほるどうぐ・防具を変えると、ここの数字も変わるよ。
-            </div>
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-              {boost.lines.map((line) => (
-                <div
-                  key={line.label}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 10,
-                    background: line.active ? `${theme.category.green}14` : theme.fill.secondary,
-                    border: `1px solid ${line.active ? `${theme.category.green}55` : theme.stroke.tertiary}`,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <strong style={{ fontSize: 13 }}>{line.label}</strong>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: line.active ? theme.category.green : theme.text.secondary }}>
-                      {line.value}
-                    </span>
-                  </div>
-                  {line.hint && (
-                    <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>{line.hint}</div>
-                  )}
+            <button
+              type="button"
+              onClick={() => setBoostDetailOpen((v) => !v)}
+              style={{
+                width: "100%",
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <div style={{ fontWeight: 800 }}>いまのつよさ</div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>
+                  {strength.label} {boostDetailOpen ? "▲" : "▼"}
                 </div>
-              ))}
-            </div>
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, color: theme.text.secondary }}>
+                くわしく見る（パーセント）
+              </div>
+            </button>
+            {boostDetailOpen && (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {boost.lines.map((line) => (
+                  <div
+                    key={line.label}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      background: line.active ? `${theme.category.green}14` : theme.fill.secondary,
+                      border: `1px solid ${line.active ? `${theme.category.green}55` : theme.stroke.tertiary}`,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <strong style={{ fontSize: 13 }}>{line.label}</strong>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: line.active ? theme.category.green : theme.text.secondary }}>
+                        {line.value}
+                      </span>
+                    </div>
+                    {line.hint && (
+                      <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>{line.hint}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-
-          <button
-            type="button"
-            onClick={onDig}
-            disabled={digBusy || mining.tickets < 1 || !mining.unlockedGachas.includes(selectedGacha)}
-            style={{
-              ...btnPrimary,
-              width: "100%",
-              fontSize: 16,
-              padding: "14px 16px",
-              opacity: digBusy || mining.tickets < 1 ? 0.45 : 1,
-            }}
-          >
-            🎫1枚でほる
-          </button>
 
           {lastDig && digFx === "idle" && (
             <div style={{ ...card, borderColor: `${theme.category.orange}66`, backgroundColor: `${theme.category.orange}10` }}>
@@ -618,17 +659,17 @@ export function MiningScreen({
         </div>
       )}
 
-      {tab === "equip" && (
+      {overlay === "equip" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ ...card, backgroundColor: `${theme.accent.primary}10` }}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>ほるどうぐのそうび</div>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>そうびをえらぶ</div>
             <div style={{ fontSize: 13, lineHeight: 1.6, color: theme.text.secondary }}>
-              「ほる」タブでも選べるよ。ここでは剣・斧・ツルハシを一覧からそうびできるよ。
+              ほるタブでは種類だけ選ぶよ。ここで強いどうぐ・よろいをそうびするよ。
             </div>
           </div>
 
           <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>ほるどうぐ（剣・斧・ツルハシ）</div>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>ほるどうぐ（いちばん強いものをそうび）</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {(["axe", "sword", "pickaxe"] as ToolKind[]).map((kind) => {
                 const best = bestOwnedTool(mining, kind);
@@ -670,7 +711,7 @@ export function MiningScreen({
           </div>
 
           <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>防具（鉄から）</div>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>よろい（鉄から）</div>
             {armorSlots.map((slot) => {
               const owned = ownedArmorForSlot(mining, slot);
               const current = mining.equipped[slot];
@@ -724,164 +765,168 @@ export function MiningScreen({
             })}
           </div>
 
-          <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>この装備での補正（{GACHA_META[selectedGacha].label}）</div>
-            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8 }}>
-              「ほる」タブで選んでいるガチャ基準だよ
-            </div>
-            {boost.lines.filter((l) => l.active).map((line) => (
-              <div key={line.label} style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
-                {line.label}: {line.value}
-              </div>
-            ))}
-            {boost.lines.every((l) => !l.active || l.label === "きほん個数") && (
-              <div style={{ fontSize: 12, color: theme.text.tertiary }}>まだ特別な補正はないよ</div>
-            )}
+          <div style={{ fontSize: 12, color: theme.text.secondary, lineHeight: 1.5, padding: "0 4px" }}>
+            つよさのくわしい数字は「ほる」タブで見れるよ（いまの場所: {GACHA_META[selectedGacha].label}）
           </div>
         </div>
       )}
 
-      {tab === "craft" && (
+      {!overlay && tab === "craft" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {!hasWorkbench(mining) && (
             <div style={{ ...card, backgroundColor: `${theme.category.yellow}18` }}>
               まずは板材と棒を作って、作業台を作ろう！
             </div>
           )}
-          {recipes.map((recipe) => {
-            const progress = recipeProgress(recipe.costs, have);
-            const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
-            const hasUpgradeBase = !upgradeFrom || !!mining.crafted[upgradeFrom];
-            const bedFull = !!(recipe.grantsBed && slots >= MAX_BEDS);
-            const ok =
-              canAffordRecipe(recipe.costs, have)
-              && hasUpgradeBase
-              && !(recipe.craftFlag && mining.crafted[recipe.craftFlag])
-              && !bedFull
-              && (!recipe.needsWorkbench || hasWorkbench(mining))
-              && (!recipe.needsFurnace || hasFurnace(mining));
-            const owned = !!(recipe.craftFlag && mining.crafted[recipe.craftFlag]) || bedFull;
-            return (
-              <div key={recipe.id} style={card}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ fontWeight: 900, fontSize: 15 }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        {recipe.grantsBed ? (
-                          <MiningItemIcon bed emoji={recipe.emoji} size={28} alt="" />
-                        ) : recipe.craftFlag ? (
-                          <MiningItemIcon gear={recipe.craftFlag} emoji={recipe.emoji} size={28} alt="" />
-                        ) : recipe.outputs?.[0] ? (
-                          <MiningItemIcon material={recipe.outputs[0].material} emoji={recipe.emoji} size={28} alt="" />
-                        ) : (
-                          <span>{recipe.emoji}</span>
-                        )}
-                        <span>{recipe.label}{recipe.grantsBed ? `（${slots}/{MAX_BEDS}）` : ""}</span>
-                      </span>
-                      {owned && <span style={{ marginLeft: 8, color: theme.category.green, fontSize: 12 }}>{recipe.grantsBed ? "満員" : "所持"}</span>}
-                    </div>
-                    {upgradeFrom && (
-                      <div style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: hasUpgradeBase ? theme.category.green : theme.category.orange,
-                      }}>
-                        強化もと:{" "}
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle" }}>
-                          <MiningItemIcon gear={upgradeFrom} size={16} alt="" />
-                          {gearLabel(upgradeFrom)}
-                        </span>{" "}
-                        {hasUpgradeBase ? "OK" : "が必要"}
-                      </div>
-                    )}
-                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
-                      {progress.map((p) => (
-                        <div
-                          key={p.cost.material}
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: p.ok ? theme.category.green : theme.text.secondary,
-                          }}
-                        >
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><MiningItemIcon material={p.cost.material} size={18} alt="" />{MATERIAL_META[p.cost.material].label}</span>
-                          {" "}{p.have}/{p.cost.amount}
-                          {!p.ok && <span style={{ marginLeft: 6, color: theme.category.orange }}>あと{p.need}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!ok || owned}
-                    onClick={() => onCraft(recipe)}
+          {unlockCard && (
+            <div style={{ ...card, borderColor: `${theme.category.orange}66`, backgroundColor: `${theme.category.orange}12` }}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>{unlockCard.title}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {unlockCard.requirements.map((req) => (
+                  <div
+                    key={req.label}
                     style={{
-                      ...btnPrimary,
-                      opacity: ok && !owned ? 1 : 0.4,
-                      whiteSpace: "nowrap",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: req.done ? theme.category.green : theme.text.secondary,
                     }}
                   >
-                    つくる
-                  </button>
-                </div>
+                    {req.done ? "✓" : "・"} {req.label}
+                    {!req.done && <span style={{ marginLeft: 6, color: theme.category.orange }}>まだ</span>}
+                  </div>
+                ))}
               </div>
-            );
-          })}
+            </div>
+          )}
+          {(() => {
+            const annotated = recipes.map((recipe) => {
+              const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
+              const hasUpgradeBase = !upgradeFrom || !!mining.crafted[upgradeFrom];
+              const bedFull = !!(recipe.grantsBed && slots >= MAX_BEDS);
+              const owned = !!(recipe.craftFlag && mining.crafted[recipe.craftFlag]) || bedFull;
+              const ok =
+                canAffordRecipe(recipe.costs, have)
+                && hasUpgradeBase
+                && !owned
+                && (!recipe.needsWorkbench || hasWorkbench(mining))
+                && (!recipe.needsFurnace || hasFurnace(mining));
+              return { recipe, upgradeFrom, hasUpgradeBase, bedFull, owned, ok };
+            });
+            const ready = annotated.filter((a) => a.ok);
+            const recommended = annotated.filter((a) => a.recipe.grantsBed && !a.owned && slots < MAX_BEDS);
+            const readyIds = new Set(ready.map((a) => a.recipe.id));
+            const recommendedIds = new Set(recommended.map((a) => a.recipe.id));
+            const rest = annotated.filter((a) => !readyIds.has(a.recipe.id) && !recommendedIds.has(a.recipe.id));
+            const shownRest = craftShowAll ? rest : rest.slice(0, 4);
 
-          <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>こうかん所（採掘ポイント）</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForLog(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("原木を1つこうかんした！"); }
-                }}
-              >
-                原木1（⚡{exchangeCost(EXCHANGE_LOG_COST, mining)}）
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForCobble(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("丸石を1つこうかんした！"); }
-                }}
-              >
-                丸石1（⚡{exchangeCost(8, mining)}）
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForWool(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("羊毛を1つこうかんした！"); }
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <MiningItemIcon material="wool" size={18} alt="" />
-                  羊毛1（⚡{exchangeCost(EXCHANGE_WOOL_COST, mining)}）
-                </span>
-              </button>
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11, color: theme.text.tertiary, lineHeight: 1.45 }}>
-              羊毛はもり掘りでもゲットできるよ。こうかんは高めだよ。
-            </div>
-          </div>
+            const renderRecipe = (a: typeof annotated[number]) => {
+              const { recipe, upgradeFrom, hasUpgradeBase, owned, ok } = a;
+              const progress = recipeProgress(recipe.costs, have);
+              return (
+                <div key={recipe.id} style={card}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontWeight: 900, fontSize: 15 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          {recipe.grantsBed ? (
+                            <MiningItemIcon bed emoji={recipe.emoji} size={28} alt="" />
+                          ) : recipe.craftFlag ? (
+                            <MiningItemIcon gear={recipe.craftFlag} emoji={recipe.emoji} size={28} alt="" />
+                          ) : recipe.outputs?.[0] ? (
+                            <MiningItemIcon material={recipe.outputs[0].material} emoji={recipe.emoji} size={28} alt="" />
+                          ) : (
+                            <span>{recipe.emoji}</span>
+                          )}
+                          <span>{recipe.label}{recipe.grantsBed ? `（${slots}/${MAX_BEDS}）` : ""}</span>
+                        </span>
+                        {owned && <span style={{ marginLeft: 8, color: theme.category.green, fontSize: 12 }}>{recipe.grantsBed ? "満員" : "所持"}</span>}
+                      </div>
+                      {upgradeFrom && (
+                        <div style={{
+                          marginTop: 6,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: hasUpgradeBase ? theme.category.green : theme.category.orange,
+                        }}>
+                          強化もと:{" "}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle" }}>
+                            <MiningItemIcon gear={upgradeFrom} size={16} alt="" />
+                            {gearLabel(upgradeFrom)}
+                          </span>{" "}
+                          {hasUpgradeBase ? "OK" : "が必要"}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                        {progress.map((p) => (
+                          <div
+                            key={p.cost.material}
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color: p.ok ? theme.category.green : theme.text.secondary,
+                            }}
+                          >
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              <MiningItemIcon material={p.cost.material} size={18} alt="" />
+                              {MATERIAL_META[p.cost.material].label}
+                            </span>
+                            {" "}{p.have}/{p.cost.amount}
+                            {!p.ok && <span style={{ marginLeft: 6, color: theme.category.orange }}>あと{p.need}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!ok || owned}
+                      onClick={() => onCraft(recipe)}
+                      style={{
+                        ...btnPrimary,
+                        opacity: ok && !owned ? 1 : 0.4,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      つくる
+                    </button>
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <>
+                {recommended.length > 0 && (
+                  <div style={{ fontWeight: 800, fontSize: 13, color: theme.category.orange }}>おすすめ</div>
+                )}
+                {recommended.map(renderRecipe)}
+                {ready.length > 0 && (
+                  <div style={{ fontWeight: 800, fontSize: 13, color: theme.category.green, marginTop: recommended.length ? 4 : 0 }}>
+                    いまつくれる
+                  </div>
+                )}
+                {ready.filter((a) => !recommendedIds.has(a.recipe.id)).map(renderRecipe)}
+                {(shownRest.length > 0 || rest.length > 4) && (
+                  <div style={{ fontWeight: 800, fontSize: 13, color: theme.text.secondary, marginTop: 4 }}>ほかのレシピ</div>
+                )}
+                {shownRest.map(renderRecipe)}
+                {rest.length > 4 && (
+                  <button type="button" style={{ ...btnGhost, width: "100%" }} onClick={() => setCraftShowAll((v) => !v)}>
+                    {craftShowAll ? "とじる" : `もっとみる（あと${rest.length - 4}）`}
+                  </button>
+                )}
+              </>
+            );
+          })()}
+
         </div>
       )}
 
-      {tab === "party" && (
+      {overlay === "party" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 6 }}>スロットを選んでシールを入れてね</div>
             <div style={{ fontSize: 12, color: theme.text.secondary, lineHeight: 1.6 }}>
-              得意カテゴリとレベルが高いほど、その素材が増えやすいよ。レアリティは関係ないよ。
+              いまほる場所「{GACHA_META[selectedGacha].label}」向きのとくいだと効きやすいよ。
               ベッド {slots}/{MAX_BEDS}（クラフトで増える）
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -1042,20 +1087,116 @@ export function MiningScreen({
         </div>
       )}
 
-      {tab === "bag" && (
+      {!overlay && tab === "bag" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>こうかん所</div>
+            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
+              採掘ポイント（⚡）を素材にかえたり、ネザークォーツを⚡にかえたりできるよ。
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                style={btnGhost}
+                onClick={() => {
+                  const r = exchangeQuartzForPoints(mining);
+                  if (r.error) showToast(r.error);
+                  else { onChange(r.state); showToast(`ネザークォーツを⚡${QUARTZ_TO_POINTS}にかえした！`); }
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <MiningItemIcon material="nether_quartz" size={18} alt="" />
+                  クォーツ1 → ⚡{QUARTZ_TO_POINTS}
+                </span>
+              </button>
+              <button
+                type="button"
+                style={btnGhost}
+                onClick={() => {
+                  const r = exchangePointsForLog(mining);
+                  if (r.error) showToast(r.error);
+                  else { onChange(r.state); showToast("原木を1つこうかんした！"); }
+                }}
+              >
+                原木1（⚡{exchangeCost(EXCHANGE_LOG_COST, mining)}）
+              </button>
+              <button
+                type="button"
+                style={btnGhost}
+                onClick={() => {
+                  const r = exchangePointsForCobble(mining);
+                  if (r.error) showToast(r.error);
+                  else { onChange(r.state); showToast("丸石を1つこうかんした！"); }
+                }}
+              >
+                丸石1（⚡{exchangeCost(8, mining)}）
+              </button>
+              <button
+                type="button"
+                style={btnGhost}
+                onClick={() => {
+                  const r = exchangePointsForWool(mining);
+                  if (r.error) showToast(r.error);
+                  else { onChange(r.state); showToast("羊毛を1つこうかんした！"); }
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <MiningItemIcon material="wool" size={18} alt="" />
+                  羊毛1（⚡{exchangeCost(EXCHANGE_WOOL_COST, mining)}）
+                </span>
+              </button>
+              <button
+                type="button"
+                style={btnGhost}
+                onClick={() => {
+                  const r = exchangePointsForDebris(mining);
+                  if (r.error) showToast(r.error);
+                  else { onChange(r.state); showToast("古代の残骸を1つこうかんした！"); }
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <MiningItemIcon material="ancient_debris" size={18} alt="" />
+                  残骸1（⚡{exchangeCost(EXCHANGE_DEBRIS_COST, mining)}）
+                </span>
+              </button>
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11, color: theme.text.tertiary, lineHeight: 1.45 }}>
+              ネザーの主ドロップはクォーツ。金の原石はたまに出るよ。羊毛・残骸のこうかんは高めの救済だよ。
+              {netheriteFullComplete(mining) && (
+                <span style={{ display: "block", marginTop: 4, color: theme.category.green, fontWeight: 800 }}>
+                  ネザライトそろい特典: ネザーで残骸が出やすい＋たまに+1
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 8 }}>素材</div>
+            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8 }}>タップするとクラフトへ行くよ</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
               {(Object.keys(MATERIAL_META) as MaterialId[]).map((id) => {
                 const n = have(id);
                 if (n <= 0 && id !== "log" && id !== "plank" && id !== "stick" && id !== "wool" && id !== "cobble") return null;
                 return (
-                  <div key={id} style={{ minWidth: 72, padding: 8, borderRadius: 10, background: theme.fill.secondary }}>
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => { setOverlay(null); setTab("craft"); }}
+                    style={{
+                      minWidth: 72,
+                      padding: 8,
+                      borderRadius: 10,
+                      background: theme.fill.secondary,
+                      border: `1px solid ${theme.stroke.tertiary}`,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      color: theme.text.primary,
+                    }}
+                  >
                     <MiningItemIcon material={id} size={32} alt={MATERIAL_META[id].label} />
                     <div style={{ fontSize: 12, fontWeight: 800 }}>{MATERIAL_META[id].label}</div>
                     <div style={{ fontWeight: 900 }}>{n}</div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -1078,6 +1219,33 @@ export function MiningScreen({
         </div>
       )}
 
+      {!overlay && tab === "mine" && (
+        <div
+          style={{
+            position: "fixed",
+            left: 16,
+            right: 72,
+            bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+            zIndex: 35,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onDig}
+            disabled={digDisabled}
+            style={{
+              ...btnPrimary,
+              width: "100%",
+              fontSize: 16,
+              padding: "14px 16px",
+              opacity: digDisabled ? 0.45 : 1,
+            }}
+          >
+            🎫{mining.tickets}枚 · 1枚でほる
+          </button>
+        </div>
+      )}
+
       <DigFxOverlay
         phase={digFx}
         gacha={selectedGacha}
@@ -1087,7 +1255,11 @@ export function MiningScreen({
 
       {toast && (
         <div style={{
-          position: "fixed", left: 16, right: 16, bottom: 24, zIndex: 200,
+          position: "fixed", left: 16, right: 16,
+          bottom: tab === "mine"
+            ? "calc(max(env(safe-area-inset-bottom, 16px), 16px) + 64px)"
+            : 24,
+          zIndex: 200,
           padding: "12px 16px", borderRadius: 14, background: "rgba(0,0,0,0.82)",
           color: "#fff", fontWeight: 800, textAlign: "center",
         }}>

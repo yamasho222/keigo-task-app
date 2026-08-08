@@ -14,6 +14,7 @@ export type MaterialId =
   | "diamond_shard"
   | "diamond"
   | "ancient_debris"
+  | "nether_quartz"
   | "netherite_scrap"
   | "netherite_ingot";
 
@@ -91,6 +92,7 @@ export const MATERIAL_META: Record<
   diamond_shard: { label: "ダイヤの欠片", emoji: "💎", image: "/mining/Diamond.png" },
   diamond: { label: "ダイヤモンド", emoji: "💠", image: "/mining/Diamond.png" },
   ancient_debris: { label: "古代の残骸", emoji: "🌑", image: "/mining/Ancient_Debris.png" },
+  nether_quartz: { label: "ネザークォーツ", emoji: "⬜", image: "/mining/Nether_Quartz.png" },
   netherite_scrap: { label: "ネザライトの欠片", emoji: "📎", image: "/mining/Netherite_Scrap.webp" },
   netherite_ingot: { label: "ネザライトインゴット", emoji: "🛡️", image: "/mining/Netherite_Ingot.png" },
 };
@@ -165,13 +167,13 @@ export const TOOL_KIND_LABEL: Record<ToolKind, string> = {
 export const TOOL_EFFECT_BLURB: Record<ToolKind, string> = {
   axe: "もりで 素材が+1しやすい（量アップ）",
   sword: "3個が出やすい。鉄・金はインゴット直、ダイヤはダイヤ直が増える",
-  pickaxe: "こうざんで 素材が+1しやすい。ネザーは古代の残骸が出やすい",
+  pickaxe: "こうざんで 素材が+1しやすい。ネザーは古代の残骸が出やすい（強いツルハシほど出やすい）",
 };
 
 export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
-  helmet: "きょうのあたり日が見える。そのガチャの最初の1回は+1確定",
-  chest: "採掘ポイントのこうかんが少しお得",
-  leggings: "どのガチャでも 素材が+1しやすい",
+  helmet: "きょうのあたり日がわかる。最初の1回は+1かくてい",
+  chest: "⚡こうかんが少しお得",
+  leggings: "どこでも素材が+1しやすい",
   boots: "まれにチケットがもどる",
 };
 
@@ -184,7 +186,7 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   }
   if (kind === "pickaxe") {
     if (gacha === "wood") return "こうざんのときだけ量アップ（いまの場所では効かない）";
-    if (gacha === "nether") return "いまのネザーで 素材+1／残骸が出やすい";
+    if (gacha === "nether") return "いまのネザーで 古代の残骸が出やすい";
     return "いまのこうざんで 素材+1 が出やすい";
   }
   // sword
@@ -205,8 +207,8 @@ export const GEAR_TIER_LABEL: Record<GearTier, string> = {
 
 export const ARMOR_KIND_LABEL: Record<ArmorKind, string> = {
   helmet: "ヘルメット",
-  chest: "チェスト",
-  leggings: "レギンス",
+  chest: "むねあて",
+  leggings: "すねあて",
   boots: "ブーツ",
 };
 

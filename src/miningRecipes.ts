@@ -223,8 +223,8 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("axe_iron", "鉄の斧", "🪓", "iron_ingot", 3, "iron"),
   toolRecipe("pickaxe_iron", "鉄のツルハシ", "⛏️", "iron_ingot", 3, "iron"),
   armorRecipe("helmet_iron", "鉄のヘルメット", "iron_ingot", 5, "iron"),
-  armorRecipe("chest_iron", "鉄のチェスト", "iron_ingot", 8, "iron"),
-  armorRecipe("leggings_iron", "鉄のレギンス", "iron_ingot", 7, "iron"),
+  armorRecipe("chest_iron", "鉄のむねあて", "iron_ingot", 8, "iron"),
+  armorRecipe("leggings_iron", "鉄のすねあて", "iron_ingot", 7, "iron"),
   armorRecipe("boots_iron", "鉄のブーツ", "iron_ingot", 4, "iron"),
 
   // 金（任意ルート）
@@ -232,8 +232,8 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("axe_gold", "金の斧", "🪓", "gold_ingot", 3, "gold"),
   toolRecipe("pickaxe_gold", "金のツルハシ", "⛏️", "gold_ingot", 3, "gold"),
   armorRecipe("helmet_gold", "金のヘルメット", "gold_ingot", 5, "gold"),
-  armorRecipe("chest_gold", "金のチェスト", "gold_ingot", 8, "gold"),
-  armorRecipe("leggings_gold", "金のレギンス", "gold_ingot", 7, "gold"),
+  armorRecipe("chest_gold", "金のむねあて", "gold_ingot", 8, "gold"),
+  armorRecipe("leggings_gold", "金のすねあて", "gold_ingot", 7, "gold"),
   armorRecipe("boots_gold", "金のブーツ", "gold_ingot", 4, "gold"),
 
   // ダイヤ
@@ -241,8 +241,8 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("axe_diamond", "ダイヤの斧", "🪓", "diamond", 3, "diamond"),
   toolRecipe("pickaxe_diamond", "ダイヤのツルハシ", "⛏️", "diamond", 3, "diamond"),
   armorRecipe("helmet_diamond", "ダイヤのヘルメット", "diamond", 5, "diamond"),
-  armorRecipe("chest_diamond", "ダイヤのチェスト", "diamond", 8, "diamond"),
-  armorRecipe("leggings_diamond", "ダイヤのレギンス", "diamond", 7, "diamond"),
+  armorRecipe("chest_diamond", "ダイヤのむねあて", "diamond", 8, "diamond"),
+  armorRecipe("leggings_diamond", "ダイヤのすねあて", "diamond", 7, "diamond"),
   armorRecipe("boots_diamond", "ダイヤのブーツ", "diamond", 4, "diamond"),
 
   // ネザライト強化
@@ -250,8 +250,8 @@ export const MINING_RECIPES: MiningRecipe[] = [
   netheriteUpgrade("axe_netherite", "ネザライトの斧", "🪓"),
   netheriteUpgrade("pickaxe_netherite", "ネザライトのツルハシ", "⛏️"),
   netheriteUpgrade("helmet_netherite", "ネザライトのヘルメット", "🛡️"),
-  netheriteUpgrade("chest_netherite", "ネザライトのチェスト", "🛡️"),
-  netheriteUpgrade("leggings_netherite", "ネザライトのレギンス", "🛡️"),
+  netheriteUpgrade("chest_netherite", "ネザライトのむねあて", "🛡️"),
+  netheriteUpgrade("leggings_netherite", "ネザライトのすねあて", "🛡️"),
   netheriteUpgrade("boots_netherite", "ネザライトのブーツ", "🛡️"),
 ];
 
