@@ -8,7 +8,7 @@ import {
   stoneToolsComplete,
   woodToolsComplete,
 } from "./miningProgress";
-import type { MiningRecipe } from "./miningRecipes";
+import type { MiningRecipe, RecipeId } from "./miningRecipes";
 import type { ArmorKind, CraftedGearId, GachaId, MaterialId, MiningState } from "./miningTypes";
 import {
   ARMOR_EFFECT_SHORT,
@@ -204,9 +204,9 @@ export function miningNextHero(mining: MiningState): NextHero {
  * クラフトタブ「おすすめ」に出すレシピID（進行順）。
  * いまの目標に直結するものを先頭にする（ベッドを常時先頭にしない）。
  */
-export function recommendedCraftRecipeIds(mining: MiningState): string[] {
-  const ids: string[] = [];
-  const push = (id: string) => {
+export function recommendedCraftRecipeIds(mining: MiningState): RecipeId[] {
+  const ids: RecipeId[] = [];
+  const push = (id: RecipeId) => {
     if (!ids.includes(id)) ids.push(id);
   };
   const planks = getMaterialCount(mining, "plank");
