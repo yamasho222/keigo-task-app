@@ -36,6 +36,13 @@ import {
   isBuddyMaxed, xpToNextLevel,
   type BuddyProgressMap,
 } from "./buddyProgress";
+import { normalizeMiningState, type MiningState } from "./miningTypes";
+import { addMiningPoints, addTickets } from "./miningProgress";
+import { MiningScreen } from "./MiningScreen";
+import {
+  buildDevSandboxSeed,
+  isDevSandboxEmpty,
+} from "./devSandboxSeed";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
 import { BuddySelectPrompt } from "./BuddySelectPrompt";
 import { BuddyFrame } from "./BuddyFrame";
@@ -107,7 +114,7 @@ export interface ActiveChildContext {
 
 // ── Types & Data ──────────────────────────────────────
 
-type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "show_parent_oneoff" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
+type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "show_parent_oneoff" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list" | "mining";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type SwipeMode = "delete" | "skip";
 
@@ -383,6 +390,8 @@ interface StoredState {
   buddyXpEarnedToday?: number;
   /** 相棒XPを付与済みのフェーズ（sessionTreatKey）。取り消し→再チェックでのXP再取得を防ぐ */
   buddyXpStampedSessions?: Record<string, boolean>;
+  /** マイクラ風採掘・クラフト */
+  mining?: MiningState;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -1537,6 +1546,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [buddyXpDate, setBuddyXpDate] = useState(stored.buddyXpDate ?? "");
   const [buddyXpEarnedToday, setBuddyXpEarnedToday] = useState(stored.buddyXpEarnedToday ?? 0);
   const [buddyXpStampedSessions, setBuddyXpStampedSessions] = useState<Record<string, boolean>>(stored.buddyXpStampedSessions ?? {});
+  const [mining, setMining] = useState<MiningState>(() => normalizeMiningState(stored.mining));
+  const miningRef = useRef(mining);
+  useEffect(() => { miningRef.current = mining; }, [mining]);
   const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
   const [buddyLevelUp, setBuddyLevelUp] = useState<{ name: string; level: number } | null>(null);
   const buddyIdRef = useRef(buddyId);
@@ -1571,6 +1583,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const fullDayBonusClaimedRef = useRef<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
   const pityArmedRef = useRef(stored.pityArmed ?? false);
   const stickerAlbumRef = useRef(stickerAlbum);
+  const devSeedAppliedRef = useRef(false);
   const gameTimerStartRef = useRef<number | null>(null);
   const gameTimerPausedTotalRef = useRef(0);
   const gameTimerPauseStartRef = useRef<number | null>(null);
@@ -1874,6 +1887,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       buddyXpDate,
       buddyXpEarnedToday,
       buddyXpStampedSessions,
+      mining,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1896,6 +1910,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     missionHistory, missionEveningNudgeDate, catchUpDays,
     duplicateStreak, pityArmed, duplicateTokens,
     buddyId, buddyProgress, buddyXpDate, buddyXpEarnedToday, buddyXpStampedSessions,
+    mining,
   ]);
 
   useEffect(() => {
@@ -2617,6 +2632,36 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setBuddyXpToast(null), 1400);
   };
 
+  const applyDevSandboxSeed = () => {
+    const seed = buildDevSandboxSeed({
+      mining: miningRef.current,
+      duplicateTokens,
+      stickerAlbum: stickerAlbumRef.current,
+      buddyProgress: buddyProgressRef.current,
+      buddyId: buddyIdRef.current,
+    });
+
+    setDuplicateTokens(seed.duplicateTokens);
+    setMining(seed.mining);
+    miningRef.current = seed.mining;
+    setStickerAlbum(seed.stickerAlbum);
+    stickerAlbumRef.current = seed.stickerAlbum;
+    saveStickerAlbum(seed.stickerAlbum);
+    setBuddyProgress(seed.buddyProgress);
+    buddyProgressRef.current = seed.buddyProgress;
+    setBuddyId(seed.buddyId);
+    buddyIdRef.current = seed.buddyId;
+    setBuddyXpToast("開発用の体験データをセットしました");
+    setTimeout(() => setBuddyXpToast(null), 2200);
+  };
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || devSeedAppliedRef.current) return;
+    devSeedAppliedRef.current = true;
+    if (!isDevSandboxEmpty(miningRef.current, duplicateTokens)) return;
+    applyDevSandboxSeed();
+  }, []);
+
   /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり）。付与できたら true */
   const grantBuddyXpFromStamp = (): boolean => {
     if (activeCatchUpDate) return false;
@@ -2650,6 +2695,65 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (grantBuddyXpFromStamp()) {
       setBuddyXpStampedSessions((p) => ({ ...p, [key]: true }));
     }
+  };
+
+  /** 採掘チケット（フェーズハンコ1回＝1枚）。やり直し日は付与しない */
+  const grantMiningTicketFromSession = (session: SessionId) => {
+    if (activeCatchUpDate) return;
+    const key = sessionTreatKey(todayKey(), session);
+    setMining((prev) => {
+      if (prev.ticketStampedSessions[key]) return prev;
+      let next = addTickets(prev, 1);
+      next = addMiningPoints(next, 1);
+      return {
+        ...next,
+        ticketStampedSessions: { ...next.ticketStampedSessions, [key]: true },
+      };
+    });
+  };
+
+  /** 全日クリア＋4連ストリーク票 */
+  const grantMiningTicketsForFullDay = (
+    date: string,
+    newHistory: Record<string, DayHistory>,
+    lateDays: Record<string, boolean>,
+    onTimeToday: boolean,
+  ) => {
+    if (activeCatchUpDate) return;
+    if (!onTimeToday) return;
+    setMining((prev) => {
+      let next = prev;
+      if (!next.fullDayTicketClaimed[date]) {
+        next = addTickets(next, 1);
+        next = {
+          ...next,
+          fullDayTicketClaimed: { ...next.fullDayTicketClaimed, [date]: true },
+        };
+      }
+      const streak = getFullDayStreak(newHistory, lateDays);
+      if (streak > 0 && streak % 4 === 0 && !next.streakTicketClaimed[streak]) {
+        next = addTickets(next, 1);
+        next = {
+          ...next,
+          streakTicketClaimed: { ...next.streakTicketClaimed, [streak]: true },
+        };
+      }
+      return next;
+    });
+  };
+
+  /** ミッション／単発ミッションの親ハンコでチケット追加 */
+  const grantMiningTicketBonus = (claimKey: string) => {
+    if (activeCatchUpDate) return;
+    setMining((prev) => {
+      if (prev.ticketStampedSessions[claimKey]) return prev;
+      let next = addTickets(prev, 1);
+      next = addMiningPoints(next, 1);
+      return {
+        ...next,
+        ticketStampedSessions: { ...next.ticketStampedSessions, [claimKey]: true },
+      };
+    });
   };
 
   const selectBuddy = (stickerId: string) => {
@@ -3129,6 +3233,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setOneOffSpecialStampApproved(true);
     triggerStamp();
     grantBuddyXpFromStamp();
+    if (pending) grantMiningTicketBonus(`oneoff:${pending.claimKey}`);
     setTimeout(() => {
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
@@ -3366,6 +3471,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setMissionApprovedSessions(nextApproved);
     triggerStamp();
     grantBuddyXpFromStamp();
+    grantMiningTicketBonus(`mission:${currentTodayKey}:${missionParentPhase}`);
     if (isAllMissionPhasesParentApproved(nextApproved)) {
       setMissionHistory((h) => ({
         ...h,
@@ -3436,6 +3542,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setHistory(newHistory);
     triggerStamp();
     grantBuddyXpFromSessionStamp(parentSession);
+    grantMiningTicketFromSession(parentSession);
 
     const treatKey = sessionTreatKey(today, parentSession);
     let needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
@@ -3449,6 +3556,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const onTimeToday = isFullDayCompletionOnTime(fullDayFirstCompletedAt[today]);
     const isFullDayToday = isFullDay(updatedDay, new Date());
     const dayRewardsOk = isFullDayToday && onTimeToday;
+
+    if (dayRewardsOk) {
+      grantMiningTicketsForFullDay(today, newHistory, lateDays, onTimeToday);
+    }
 
     const fullDayBonusEligible = dayRewardsOk
       && !fullDayBonusClaimed[today]
@@ -4146,6 +4257,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
+              { icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => { navigateToScreen("mining"); setShowMenu(false); } },
               { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
                 setShowTokenShop(true);
                 setShowMenu(false);
@@ -4168,6 +4280,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 },
               ] : []),
               ...(import.meta.env.DEV ? [
+                { icon: "🧰", label: "体験フルセットを入れる（開発用）", action: () => {
+                  applyDevSandboxSeed();
+                  navigateToScreen("mining");
+                  setShowMenu(false);
+                } },
                 { icon: "⛏️", label: "MCシールプレビュー（全16枚）", action: () => {
                   openTreatQueue(getStickersByCategory("minecraft").map((s) => ({
                     mode: "daily" as const,
@@ -4248,6 +4365,32 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setBuddyProgress(next);
                   buddyProgressRef.current = next;
                   showBuddyLevelUp(id, BUDDY_MAX_LEVEL);
+                  setShowMenu(false);
+                } },
+                { icon: "🎫", label: "採掘チケット+10（テスト）", action: () => {
+                  setMining((m) => addTickets(m, 10));
+                  setShowMenu(false);
+                } },
+                { icon: "🪵", label: "原木+20（テスト）", action: () => {
+                  setMining((m) => ({
+                    ...m,
+                    materials: { ...m.materials, log: (m.materials.log ?? 0) + 20 },
+                  }));
+                  setShowMenu(false);
+                } },
+                { icon: "🪨", label: "丸石+20（テスト）", action: () => {
+                  setMining((m) => ({
+                    ...m,
+                    materials: { ...m.materials, cobble: (m.materials.cobble ?? 0) + 20 },
+                  }));
+                  setShowMenu(false);
+                } },
+                { icon: "⚡", label: "採掘ポイント+50（テスト）", action: () => {
+                  setMining((m) => addMiningPoints(m, 50));
+                  setShowMenu(false);
+                } },
+                { icon: "⛏️", label: "こうざん画面を開く（テスト）", action: () => {
+                  navigateToScreen("mining");
                   setShowMenu(false);
                 } },
                 { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {
@@ -4733,6 +4876,46 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             onOpenBuddySelect={() => setShowBuddyPrompt(true)}
             onBack={goHome}
             onSelectCatchUpDay={openCatchUpDay}
+          />
+        )}
+
+        {screen === "mining" && (
+          <MiningScreen
+            mining={mining}
+            stickerAlbum={stickerAlbum}
+            buddyProgress={buddyProgress}
+            dateKey={todayKey()}
+            onChange={setMining}
+            onEnsureStickers={(ids) => {
+              setStickerAlbum((prev) => {
+                const next = [...prev];
+                let changed = false;
+                for (const id of ids) {
+                  if (!next.includes(id) && REWARD_LOOKUP[id]) {
+                    next.push(id);
+                    changed = true;
+                  }
+                }
+                if (!changed) return prev;
+                stickerAlbumRef.current = next;
+                saveStickerAlbum(next);
+                return next;
+              });
+              setBuddyProgress((prev) => {
+                let next = { ...prev };
+                let changed = false;
+                for (const id of ids) {
+                  if (!prev[id]) {
+                    next = { ...next, [id]: { level: 1, xp: 0 } };
+                    changed = true;
+                  }
+                }
+                if (!changed) return prev;
+                buddyProgressRef.current = next;
+                return next;
+              });
+            }}
+            onBack={goHome}
           />
         )}
 

@@ -165,6 +165,13 @@ function authErrorMessage(err: unknown): string {
     ? String((err as { code?: string }).code)
     : "";
   const raw = err instanceof Error ? err.message : String(err ?? "");
+  if (/sessionStorage|initial state/i.test(raw)) {
+    return (
+      "このiPhoneのSafariがログイン情報を保存できません。"
+      + " プライベートブラウズをオフにし、設定 → Safari → 「すべてのCookieをブロック」をオフにしてから、"
+      + "ホーム画面のアイコンではなく Safari で https://app-nine-phi-bomgfkrycz.vercel.app を開き直してください。"
+    );
+  }
   if (code === "auth/unauthorized-domain" || /unauthorized.domain/i.test(raw)) {
     return "このドメインは Firebase の承認済みドメインに登録されていません。";
   }
@@ -189,13 +196,28 @@ function authErrorMessage(err: unknown): string {
   return "Googleログインに失敗しました。";
 }
 
+function canUseSessionStorage(): boolean {
+  try {
+    const key = "__keigo_ss_test__";
+    sessionStorage.setItem(key, "1");
+    sessionStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function completeGoogleRedirectSignIn(): Promise<UserCredential | null> {
   if (!auth) return null;
+  // iPhone で sessionStorage 不可のとき getRedirectResult 自体が落ちるので握りつぶす
+  if (isAppleMobile() && !canUseSessionStorage()) return null;
   if (!redirectResultPromise) {
     redirectResultPromise = getRedirectResult(auth)
       .then((result) => result)
       .catch((err) => {
         redirectResultPromise = null;
+        const raw = err instanceof Error ? err.message : String(err ?? "");
+        if (/sessionStorage|initial state/i.test(raw)) return null;
         throw Object.assign(err instanceof Error ? err : new Error(authErrorMessage(err)), {
           message: authErrorMessage(err),
         });
@@ -209,24 +231,22 @@ export async function signInWithGoogle() {
 
   const gisClientId = (import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID as string | undefined)?.trim();
 
-  // iPhone / iPad: GIS（redirect を使わない）が最優先
+  // iPhone / iPad: sessionStorage 依存の popup/redirect は使わない（GIS のみ）
   if (isAppleMobile()) {
-    if (gisClientId) {
+    if (!gisClientId) {
+      throw new Error(
+        "iPhone用のログイン設定（VITE_GOOGLE_WEB_CLIENT_ID）が入っていません。最新版アプリを開き直すか、管理者に連絡してください。",
+      );
+    }
+    if (!canUseSessionStorage()) {
+      // GIS は動くことが多いが、極端に Cookie 全ブロックだと厳しい
+      console.warn("sessionStorage inaccessible; trying GIS anyway");
+    }
+    try {
       await signInWithGoogleIdentityServices(gisClientId);
       return;
-    }
-    // Client ID 未設定時はポップアップを試し、失敗時は設定手順を出す
-    try {
-      await signInWithPopup(auth, googleProvider);
-      return;
     } catch (err) {
-      throw new Error(
-        `${authErrorMessage(err)}\n\n`
-        + "iPhoneで安定してログインするには、Firebase の Google「ウェブクライアント ID」を "
-        + "Vercel の環境変数 VITE_GOOGLE_WEB_CLIENT_ID に追加してください。\n"
-        + "また redirect_uri_mismatch の場合は Google Cloud に "
-        + "https://app-nine-phi-bomgfkrycz.vercel.app/__/auth/handler を追加してください。",
-      );
+      throw new Error(authErrorMessage(err));
     }
   }
 
