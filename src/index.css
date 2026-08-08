@@ -2155,3 +2155,78 @@ button {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* ===== こうざん／クラフト ハンバーガー初回案内 ===== */
+.mining-menu-tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  pointer-events: none;
+}
+/* 穴あきは fab-hole の box-shadow。dim は透明のクリック受け */
+.mining-menu-tutorial-dim {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+.mining-menu-tutorial-fab-hole {
+  position: absolute;
+  right: 10px;
+  bottom: max(env(safe-area-inset-bottom, 0px), 4px);
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.mining-menu-tutorial-card {
+  position: absolute;
+  left: 16px;
+  right: 80px;
+  bottom: calc(max(env(safe-area-inset-bottom, 0px), 10px) + 64px);
+  pointer-events: auto;
+  animation: mining-menu-tutorial-pop 0.28s ease-out;
+}
+@keyframes mining-menu-tutorial-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.mining-menu-tutorial-fab.is-pulse {
+  animation: mining-menu-tutorial-fab-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mining-menu-tutorial-fab-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(91, 142, 255, 0.55), 0 4px 16px rgba(0,0,0,0.12); }
+  50% { box-shadow: 0 0 0 10px rgba(91, 142, 255, 0), 0 4px 16px rgba(0,0,0,0.12); }
+}
+.mining-menu-tutorial-new-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: #ff9500;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+}
+.mining-menu-tutorial-new-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  background: #ff9500;
+  border-radius: 6px;
+  padding: 2px 6px;
+  letter-spacing: 0.02em;
+}
+.mining-menu-tutorial-row.is-highlight {
+  animation: mining-menu-tutorial-row-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mining-menu-tutorial-row-pulse {
+  0%, 100% { background-color: rgba(91, 142, 255, 0.08); }
+  50% { background-color: rgba(91, 142, 255, 0.2); }
+}

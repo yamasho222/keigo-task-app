@@ -40,6 +40,14 @@ import { normalizeMiningState, type MiningState } from "./miningTypes";
 import { addMiningPoints, addTickets } from "./miningProgress";
 import { MiningScreen } from "./MiningScreen";
 import {
+  MiningHamburgerCoachmark,
+  MiningMenuTipBanner,
+  isMiningMenuTutorialDone,
+  markMiningMenuTutorialDone,
+  resetMiningMenuTutorial,
+  type MiningMenuTutorialStep,
+} from "./MiningMenuTutorial";
+import {
   buildDevSandboxSeed,
   buildDevTicketsOnlySeed,
   topUpDevTicketsPoints,
@@ -1611,6 +1619,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>(getInitialScreen());
   const [showMenu,     setShowMenu]     = useState(false);
+  const [miningMenuTutorial, setMiningMenuTutorial] = useState<MiningMenuTutorialStep>("idle");
+  const miningMenuTutorialStartedRef = useRef(false);
+  const miningMenuItemRef = useRef<HTMLButtonElement | null>(null);
   const [showTokenShop, setShowTokenShop] = useState(false);
   const [showBuddyPrompt, setShowBuddyPrompt] = useState(false);
   const [showPendingRewardsSheet, setShowPendingRewardsSheet] = useState(false);
@@ -1636,6 +1647,36 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const streak = getStreak(history, sessionSickSkip);
   useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  const completeMiningMenuTutorial = () => {
+    markMiningMenuTutorialDone();
+    setMiningMenuTutorial("idle");
+  };
+
+  const startMiningMenuTutorialPreview = () => {
+    resetMiningMenuTutorial();
+    miningMenuTutorialStartedRef.current = true;
+    setShowMenu(false);
+    setMiningMenuTutorial("hamburger");
+  };
+
+  // こうざん／クラフト初回：ハンバーガー案内
+  useEffect(() => {
+    if (miningMenuTutorialStartedRef.current) return;
+    if (isMiningMenuTutorialDone()) return;
+    if (isWorkTimerLocked) return;
+    miningMenuTutorialStartedRef.current = true;
+    const t = window.setTimeout(() => setMiningMenuTutorial("hamburger"), 700);
+    return () => window.clearTimeout(t);
+  }, [isWorkTimerLocked]);
+
+  useEffect(() => {
+    if (miningMenuTutorial !== "menuItem" || !showMenu) return;
+    const t = window.setTimeout(() => {
+      miningMenuItemRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [miningMenuTutorial, showMenu]);
 
   const activeSessionIds = getActiveSessionIds();
 
@@ -4303,13 +4344,19 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       <button
         type="button"
         aria-label="メニューを開く"
-        onClick={() => { if (!isWorkTimerLocked) setShowMenu(true); }}
+        className={miningMenuTutorial === "hamburger" ? "mining-menu-tutorial-fab is-pulse" : undefined}
+        onClick={() => {
+          if (isWorkTimerLocked) return;
+          setShowMenu(true);
+          if (miningMenuTutorial === "hamburger") setMiningMenuTutorial("menuItem");
+        }}
         disabled={isWorkTimerLocked}
         style={{
           position: "fixed",
           right: 16,
           bottom: "max(env(safe-area-inset-bottom, 0px), 10px)",
-          zIndex: 80, width: 48, height: 48, borderRadius: 14,
+          zIndex: miningMenuTutorial === "hamburger" ? 120 : 80,
+          width: 48, height: 48, borderRadius: 14,
           backgroundColor: theme.fill.secondary, border: `1px solid ${theme.stroke.secondary}`,
           boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
           cursor: isWorkTimerLocked ? "default" : "pointer",
@@ -4329,16 +4376,32 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             {unclaimedRewardCount}
           </span>
         )}
+        {miningMenuTutorial === "hamburger" && unclaimedRewardCount <= 0 && (
+          <span className="mining-menu-tutorial-new-dot" aria-hidden>N</span>
+        )}
         {[0,1,2].map((i) => (
           <span key={i} style={{ display: "block", width: 18, height: 2, borderRadius: 2, backgroundColor: theme.text.secondary }} />
         ))}
       </button>
 
+      {miningMenuTutorial === "hamburger" && !showMenu && (
+        <MiningHamburgerCoachmark
+          onView={() => {
+            setShowMenu(true);
+            setMiningMenuTutorial("menuItem");
+          }}
+          onDismiss={completeMiningMenuTutorial}
+        />
+      )}
+
       {/* ── ハンバーガーメニュー オーバーレイ */}
       {showMenu && (
         <div
           data-modal-overlay
-          onClick={() => setShowMenu(false)}
+          onClick={() => {
+            setShowMenu(false);
+            if (miningMenuTutorial === "menuItem") setMiningMenuTutorial("hamburger");
+          }}
           style={{
             position: "fixed", inset: 0, zIndex: 90,
             backgroundColor: "rgba(0,0,0,0.45)",
@@ -4360,11 +4423,17 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             {/* メニューヘッダー */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px 12px", flexShrink: 0 }}>
               <span style={{ fontSize: 15, fontWeight: 700, color: theme.text.primary }}>メニュー</span>
-              <button onClick={() => setShowMenu(false)} style={{
+              <button onClick={() => {
+                setShowMenu(false);
+                if (miningMenuTutorial === "menuItem") setMiningMenuTutorial("hamburger");
+              }} style={{
                 background: "none", border: "none", cursor: "pointer",
                 color: theme.text.tertiary, fontSize: 22, lineHeight: 1, padding: 4,
               }}>✕</button>
             </div>
+            {miningMenuTutorial === "menuItem" && (
+              <MiningMenuTipBanner onGotIt={completeMiningMenuTutorial} />
+            )}
             {/* メニュー項目（スクロール） */}
             <div style={{
               flex: 1, minHeight: 0, overflowY: "auto",
@@ -4402,8 +4471,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
-              { icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
+              { id: "mining", icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
                 if (import.meta.env.DEV) applyDevSandboxSeed();
+                completeMiningMenuTutorial();
                 navigateToScreen("mining");
                 setShowMenu(false);
               } },
@@ -4429,6 +4499,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 },
               ] : []),
               ...(import.meta.env.DEV ? [
+                { icon: "📘", label: "こうざん案内を再表示（開発用）", action: () => {
+                  startMiningMenuTutorialPreview();
+                } },
                 { icon: "🧰", label: "体験フルセットを入れる（開発用）", action: () => {
                   applyDevSandboxSeed();
                   navigateToScreen("mining");
@@ -4671,17 +4744,34 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setShowMenu(false);
                 } },
               ] : []),
-            ].map(({ icon, label, action }) => (
-              <button key={label} onClick={action} style={{
-                display: "flex", alignItems: "center", gap: 14,
-                padding: "16px 20px", background: "none", border: "none",
-                cursor: "pointer", textAlign: "left", width: "100%",
-                borderBottom: `1px solid ${theme.stroke.secondary}`,
-              }}>
+            ].map(({ icon, label, action, id }: { icon: string; label: string; action: () => void; id?: string }) => {
+              const highlightMining = miningMenuTutorial === "menuItem" && id === "mining";
+              const showNewBadge = id === "mining" && !isMiningMenuTutorialDone();
+              return (
+              <button
+                key={label}
+                ref={id === "mining" ? miningMenuItemRef : undefined}
+                type="button"
+                onClick={action}
+                className={highlightMining ? "mining-menu-tutorial-row is-highlight" : undefined}
+                style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "16px 20px",
+                  background: highlightMining ? `${theme.accent.primary}14` : "none",
+                  border: "none",
+                  cursor: "pointer", textAlign: "left", width: "100%",
+                  borderBottom: `1px solid ${theme.stroke.secondary}`,
+                  boxShadow: highlightMining ? `inset 3px 0 0 ${theme.accent.primary}` : undefined,
+                }}
+              >
                 <span style={{ fontSize: 22 }}>{icon}</span>
-                <span style={{ fontSize: 15, color: theme.text.primary, fontWeight: 600 }}>{label}</span>
+                <span style={{ fontSize: 15, color: theme.text.primary, fontWeight: 600, flex: 1 }}>{label}</span>
+                {showNewBadge && (
+                  <span className="mining-menu-tutorial-new-badge">NEW</span>
+                )}
               </button>
-            ))}
+              );
+            })}
             </div>
           </div>
         </div>
