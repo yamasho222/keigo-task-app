@@ -1648,8 +1648,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const streak = getStreak(history, sessionSickSkip);
   useEffect(() => { screenRef.current = screen; }, [screen]);
 
-  const completeMiningMenuTutorial = () => {
-    markMiningMenuTutorialDone();
+  /** この起動中だけ案内をしまう（次回起動ではまた出す） */
+  const dismissMiningMenuTutorialSession = () => {
     setMiningMenuTutorial("idle");
   };
 
@@ -1660,7 +1660,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setMiningMenuTutorial("hamburger");
   };
 
-  // こうざん／クラフト初回：ハンバーガー案内
+  // こうざん／クラフト未訪問なら、起動ごとにハンバーガー案内
   useEffect(() => {
     if (miningMenuTutorialStartedRef.current) return;
     if (isMiningMenuTutorialDone()) return;
@@ -1669,6 +1669,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const t = window.setTimeout(() => setMiningMenuTutorial("hamburger"), 700);
     return () => window.clearTimeout(t);
   }, [isWorkTimerLocked]);
+
+  // 一度でもこうざん／クラフトへ入ったら、以降は案内しない
+  useEffect(() => {
+    if (screen !== "mining") return;
+    markMiningMenuTutorialDone();
+    setMiningMenuTutorial("idle");
+  }, [screen]);
 
   useEffect(() => {
     if (miningMenuTutorial !== "menuItem" || !showMenu) return;
@@ -4390,7 +4397,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             setShowMenu(true);
             setMiningMenuTutorial("menuItem");
           }}
-          onDismiss={completeMiningMenuTutorial}
+          onDismiss={dismissMiningMenuTutorialSession}
         />
       )}
 
@@ -4432,7 +4439,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               }}>✕</button>
             </div>
             {miningMenuTutorial === "menuItem" && (
-              <MiningMenuTipBanner onGotIt={completeMiningMenuTutorial} />
+              <MiningMenuTipBanner onGotIt={dismissMiningMenuTutorialSession} />
             )}
             {/* メニュー項目（スクロール） */}
             <div style={{
@@ -4473,7 +4480,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
               { id: "mining", icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
                 if (import.meta.env.DEV) applyDevSandboxSeed();
-                completeMiningMenuTutorial();
                 navigateToScreen("mining");
                 setShowMenu(false);
               } },

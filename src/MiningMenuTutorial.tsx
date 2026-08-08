@@ -1,8 +1,11 @@
 import type { CSSProperties } from "react";
 import { theme } from "./theme";
 
-/** こうざん／クラフトのハンバーガー初回案内（見たフラグ） */
-export const MINING_MENU_TUTORIAL_KEY = "keigo-mining-menu-tutorial-v1";
+/**
+ * こうざん／クラフトを一度でも開いたか。
+ * 未訪問のあいだは、アプリ起動のたびにハンバーガー案内を出す。
+ */
+export const MINING_MENU_TUTORIAL_KEY = "keigo-mining-visited-v1";
 
 export type MiningMenuTutorialStep = "idle" | "hamburger" | "menuItem";
 
@@ -14,6 +17,7 @@ export function isMiningMenuTutorialDone(): boolean {
   }
 }
 
+/** こうざん／クラフト画面へ入ったときに呼ぶ */
 export function markMiningMenuTutorialDone(): void {
   try {
     localStorage.setItem(MINING_MENU_TUTORIAL_KEY, "1");
@@ -118,7 +122,7 @@ export function MiningMenuTipBanner({ onGotIt }: { onGotIt: () => void }) {
         チケットをつかって、ほったりクラフトできるよ
       </div>
       <button type="button" style={{ ...btnPrimary, width: "100%", flex: "none" }} onClick={onGotIt}>
-        わかった
+        あとで
       </button>
     </div>
   );
