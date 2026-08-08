@@ -34,10 +34,34 @@ export interface MiningRecipe {
   /** かまどが必要 */
   needsFurnace?: boolean;
   /**
+   * 精錬の燃料（いずれか1つ）。石炭1／板材2／原木2 など。
+   * ある場合は costs に燃料を含めず、こちらで支払う。
+   */
+  fuelOptions?: RecipeCost[];
+  /**
    * このガチャが解放されていると表示。
    * 未指定は最初から表示。
    */
   requiresUnlock?: GachaId;
+}
+
+/** 精錬燃料の標準（石炭1、なければ板材2か原木2） */
+export const SMELT_FUEL_OPTIONS: RecipeCost[] = [
+  { material: "coal", amount: 1 },
+  { material: "plank", amount: 2 },
+  { material: "log", amount: 2 },
+];
+
+/** 持てる燃料を優先順（石炭→板材→原木）で選ぶ */
+export function pickFuelOption(
+  fuelOptions: RecipeCost[] | undefined,
+  have: (id: MaterialId) => number,
+): RecipeCost | null {
+  if (!fuelOptions?.length) return null;
+  for (const opt of fuelOptions) {
+    if (have(opt.material) >= opt.amount) return opt;
+  }
+  return null;
 }
 
 function toolRecipe(
@@ -159,16 +183,14 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("axe_stone", "石の斧", "🪓", "cobble", 3, "stone"),
   toolRecipe("pickaxe_stone", "石のツルハシ", "⛏️", "cobble", 3, "stone"),
 
-  // 精錬
+  // 精錬（かまど＋燃料：石炭1 または 板材/原木2）
   {
     id: "smelt_iron",
     label: "鉄インゴット（精錬）",
     emoji: "⚙️",
     outputs: [{ material: "iron_ingot", amount: 1 }],
-    costs: [
-      { material: "iron_ore", amount: 1 },
-      { material: "plank", amount: 1 },
-    ],
+    costs: [{ material: "iron_ore", amount: 1 }],
+    fuelOptions: SMELT_FUEL_OPTIONS,
     needsFurnace: true,
     requiresUnlock: "iron",
   },
@@ -177,10 +199,8 @@ export const MINING_RECIPES: MiningRecipe[] = [
     label: "金インゴット（精錬）",
     emoji: "🥇",
     outputs: [{ material: "gold_ingot", amount: 1 }],
-    costs: [
-      { material: "gold_ore", amount: 1 },
-      { material: "plank", amount: 1 },
-    ],
+    costs: [{ material: "gold_ore", amount: 1 }],
+    fuelOptions: SMELT_FUEL_OPTIONS,
     needsFurnace: true,
     requiresUnlock: "gold",
   },
@@ -189,10 +209,8 @@ export const MINING_RECIPES: MiningRecipe[] = [
     label: "ネザライトの欠片（精錬）",
     emoji: "📎",
     outputs: [{ material: "netherite_scrap", amount: 1 }],
-    costs: [
-      { material: "ancient_debris", amount: 1 },
-      { material: "plank", amount: 1 },
-    ],
+    costs: [{ material: "ancient_debris", amount: 1 }],
+    fuelOptions: SMELT_FUEL_OPTIONS,
     needsFurnace: true,
     requiresUnlock: "nether",
   },
@@ -273,8 +291,11 @@ export function recipeProgress(
 export function canAffordRecipe(
   costs: RecipeCost[],
   have: (id: MaterialId) => number,
+  fuelOptions?: RecipeCost[],
 ): boolean {
-  return costs.every((c) => have(c.material) >= c.amount);
+  if (!costs.every((c) => have(c.material) >= c.amount)) return false;
+  if (fuelOptions?.length) return pickFuelOption(fuelOptions, have) !== null;
+  return true;
 }
 
 /** 解放状況に応じて表示するレシピ */

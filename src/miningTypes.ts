@@ -22,7 +22,7 @@ export type MaterialId =
 export const MAX_BEDS = 3;
 export const BED_IMAGE = "/mining/White_Bed.png";
 
-export type GachaId = "wood" | "stone" | "iron" | "gold" | "diamond" | "nether";
+export type GachaId = "wood" | "stone" | "iron" | "coal" | "gold" | "diamond" | "nether";
 
 export type GearSlot = "tool" | "helmet" | "chest" | "leggings" | "boots";
 
@@ -42,6 +42,7 @@ export type MiningSpecialty =
   | "wood"
   | "cobble"
   | "iron"
+  | "coal"
   | "gold"
   | "diamond"
   | "netherite";
@@ -145,6 +146,16 @@ export function gearImage(id: CraftedGearId): string | undefined {
   return GEAR_IMAGE[id];
 }
 
+export const GACHA_ORDER: GachaId[] = [
+  "wood",
+  "stone",
+  "iron",
+  "coal",
+  "gold",
+  "diamond",
+  "nether",
+];
+
 export const GACHA_META: Record<
   GachaId,
   { label: string; emoji: string; specialty: MiningSpecialty }
@@ -152,6 +163,7 @@ export const GACHA_META: Record<
   wood: { label: "もり", emoji: "🌲", specialty: "wood" },
   stone: { label: "いしのどうくつ", emoji: "⛰️", specialty: "cobble" },
   iron: { label: "てつのこうざん", emoji: "⛏️", specialty: "iron" },
+  coal: { label: "せきたんのやま", emoji: "⬛", specialty: "coal" },
   gold: { label: "きんのこうざん", emoji: "🌟", specialty: "gold" },
   diamond: { label: "ダイヤのしんそう", emoji: "💎", specialty: "diamond" },
   nether: { label: "ネザー", emoji: "🔥", specialty: "netherite" },
@@ -166,7 +178,7 @@ export const TOOL_KIND_LABEL: Record<ToolKind, string> = {
 /** ほるどうぐ（剣・斧・ツルハシ）の効果説明 */
 export const TOOL_EFFECT_BLURB: Record<ToolKind, string> = {
   axe: "もりで 素材が+1しやすい（量アップ）",
-  sword: "3個が出やすい。鉄・金はインゴット直、ダイヤはダイヤ直が増える",
+  sword: "たまに素材+3（斧・ツルハシの+1より出にくい）。鉄・金はインゴット直、ダイヤはダイヤ直も",
   pickaxe: "こうざんで 素材が+1しやすい。ネザーは古代の残骸が出やすい（強いツルハシほど出やすい）",
 };
 
@@ -187,13 +199,14 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (kind === "pickaxe") {
     if (gacha === "wood") return "こうざんのときだけ量アップ（いまの場所では効かない）";
     if (gacha === "nether") return "いまのネザーで 古代の残骸が出やすい";
+    if (gacha === "coal") return "いまのせきたんのやまで 石炭+1 が出やすい";
     return "いまのこうざんで 素材+1 が出やすい";
   }
-  // sword
-  if (gacha === "iron" || gacha === "gold") return "3個率アップ＋インゴット直が増える";
-  if (gacha === "diamond") return "3個率アップ＋ダイヤ直が増える";
-  if (gacha === "nether") return "3個率アップ＋残骸が出やすい";
-  return "3個が出やすくなる";
+  // sword: 3個率は上がるが、斧・ツルハシの+1より低い
+  if (gacha === "iron" || gacha === "gold") return "たまに素材+3＋インゴット直（+1より弱め）";
+  if (gacha === "diamond") return "たまに素材+3＋ダイヤ直（+1より弱め）";
+  if (gacha === "nether") return "たまに素材+3（+1より弱め）。残骸はツルハシ向き";
+  return "たまに素材+3（斧・ツルハシの+1より出にくい）";
 }
 
 export const GEAR_TIER_LABEL: Record<GearTier, string> = {
@@ -233,6 +246,7 @@ export const SPECIALTY_META: Record<
   wood: { label: "原木・棒", emoji: "🌲", gachaHint: "もり" },
   cobble: { label: "丸石", emoji: "🪨", gachaHint: "いしのどうくつ" },
   iron: { label: "鉄", emoji: "⛏️", gachaHint: "てつのこうざん" },
+  coal: { label: "石炭", emoji: "⬛", gachaHint: "せきたんのやま" },
   gold: { label: "金", emoji: "🌟", gachaHint: "きんのこうざん" },
   diamond: { label: "ダイヤ", emoji: "💎", gachaHint: "ダイヤのしんそう" },
   netherite: { label: "ネザー", emoji: "🔥", gachaHint: "ネザー" },
@@ -291,7 +305,7 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
 
   const unlocked: GachaId[] = Array.isArray(raw.unlockedGachas)
     ? raw.unlockedGachas.filter((id): id is GachaId =>
-        id === "wood" || id === "stone" || id === "iron" || id === "gold" || id === "diamond" || id === "nether",
+        id === "wood" || id === "stone" || id === "iron" || id === "coal" || id === "gold" || id === "diamond" || id === "nether",
       )
     : ["wood"];
   if (!unlocked.includes("wood")) unlocked.unshift("wood");

@@ -168,6 +168,7 @@ export function buildDevSandboxSeed({
           "wood",
           "stone",
           "iron",
+          "coal",
           "gold",
           "diamond",
           "nether",

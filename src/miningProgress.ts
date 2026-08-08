@@ -5,6 +5,7 @@ import { REWARD_LOOKUP } from "./stickerRewards";
 import {
   canAffordRecipe,
   NETHERITE_UPGRADE_REQUIRES,
+  pickFuelOption,
   visibleRecipes,
   type MiningRecipe,
 } from "./miningRecipes";
@@ -156,6 +157,7 @@ export function refreshUnlocks(state: MiningState): MiningState {
   if (woodToolsComplete(state)) unlocked.add("stone");
   if (stoneToolsComplete(state)) {
     unlocked.add("iron");
+    unlocked.add("coal");
     unlocked.add("gold");
   }
   if (ironFullComplete(state)) unlocked.add("diamond");
@@ -271,7 +273,6 @@ export function previewDigBoost(params: {
 }): DigBoostPreview {
   const usedTool = bestOwnedTool(params.state, params.toolKind);
   const jackpotRate = swordJackpotRate(usedTool);
-  const twoRate = 0.1;
   const toolPlus1Rate = toolPlus1Chance(usedTool, params.gacha);
   const leggingsPlus1Rate = leggingsPlus1Chance(params.state);
   const party = partySpecialtyBonus(params.state, params.buddyProgress, params.gacha);
@@ -285,12 +286,14 @@ export function previewDigBoost(params: {
   const expectedExtra =
     toolPlus1Rate + leggingsPlus1Rate + party.bonusChance + (luckyToday ? 1 : 0);
   const pct = (n: number) => `${Math.round(n * 100)}%`;
+  // きほん個数（1 / +1=2 / +3）。+1 はだいたい3〜4回に1回
+  const twoRate = 0.28;
   const oneRate = Math.max(0, 1 - jackpotRate - twoRate);
   const lines: DigBoostLine[] = [
     {
       label: "きほん個数",
-      value: `1個 ${pct(oneRate)} / 2個 ${pct(twoRate)} / 3個 ${pct(jackpotRate)}`,
-      hint: parseToolId(usedTool)?.kind === "sword" ? "剣で3個率アップ" : "剣なしは3個率5%",
+      value: `1個 ${pct(oneRate)} / +1 ${pct(twoRate)} / +3 ${pct(jackpotRate)}`,
+      hint: parseToolId(usedTool)?.kind === "sword" ? "剣でたまに素材+3（+1より弱め）" : "剣なしは素材+3が5%",
       active: true,
     },
     {
@@ -367,9 +370,57 @@ export interface DigResult {
   state: MiningState;
   drops: { material: MaterialId; amount: number }[];
   breakdown: string[];
+  /** あたり／大あたりの理由（子ども向け表示） */
+  hitReasons: string[];
   ticketRefunded: boolean;
   usedTool: CraftedGearId | null;
   baseCount: number;
+}
+
+/** 掘り結果の盛り上がり段階（演出用） */
+export type DigHitTier = "normal" | "good" | "great";
+
+const GREAT_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
+  "diamond",
+  "iron_ingot",
+  "gold_ingot",
+]);
+
+const GOOD_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
+  "ancient_debris",
+]);
+
+/** ふつう / あたり / 大あたり
+ * あたり: きほん素材+1（baseCount===2）、または残骸（ネザー）
+ * 大あたり: きほん素材+3、ダイヤ直、インゴット直、チケットもどり
+ * おまけ（棒・羊毛・石炭おまけ等）は演出に入れない
+ */
+export function digHitTier(result: DigResult): DigHitTier {
+  if (
+    result.ticketRefunded
+    || result.baseCount >= 3
+    || result.drops.some((d) => GREAT_DROP_MATERIALS.has(d.material))
+  ) {
+    return "great";
+  }
+  if (
+    result.baseCount === 2
+    || result.drops.some((d) => GOOD_DROP_MATERIALS.has(d.material))
+  ) {
+    return "good";
+  }
+  return "normal";
+}
+
+/** 結果一覧で目立たせるドロップか */
+export function isDigHighlightDrop(
+  material: MaterialId,
+  amount: number,
+  tier: DigHitTier,
+): boolean {
+  if (GREAT_DROP_MATERIALS.has(material) || GOOD_DROP_MATERIALS.has(material)) return true;
+  if (tier !== "normal" && amount >= 2) return true;
+  return false;
 }
 
 export function resolveDig(params: {
@@ -388,17 +439,21 @@ export function resolveDig(params: {
 
   const usedTool = bestOwnedTool(state, params.toolKind);
   const breakdown: string[] = [];
+  const hitReasons: string[] = [];
 
   const jackpotRate = swordJackpotRate(usedTool);
   let baseCount: number;
   {
     const r = rand();
-    const twoRate = 0.1;
+    // きほん素材+1（=2個）をだいたい3〜4回に1回
+    const twoRate = 0.28;
     if (r < jackpotRate) baseCount = 3;
     else if (r < jackpotRate + twoRate) baseCount = 2;
     else baseCount = 1;
   }
   breakdown.push(`きほん ${baseCount}`);
+  if (baseCount >= 3) hitReasons.push("きほんが素材+3");
+  else if (baseCount === 2) hitReasons.push("きほんが素材+1");
 
   let bonus = 0;
   const toolChance = toolPlus1Chance(usedTool, params.gacha);
@@ -409,7 +464,7 @@ export function resolveDig(params: {
   const legChance = leggingsPlus1Chance(state);
   if (legChance > 0 && rand() < legChance) {
     bonus += 1;
-    breakdown.push("レギンス +1");
+    breakdown.push("すねあて +1");
   }
 
   const party = partySpecialtyBonus(state, params.buddyProgress, params.gacha);
@@ -435,11 +490,12 @@ export function resolveDig(params: {
     params.gacha === "wood" ? "log"
       : params.gacha === "stone" ? "cobble"
         : params.gacha === "iron" ? "iron_ore"
-          : params.gacha === "gold" ? "gold_ore"
-            : params.gacha === "diamond" ? "diamond_shard"
-              : "nether_quartz";
+          : params.gacha === "coal" ? "coal"
+            : params.gacha === "gold" ? "gold_ore"
+              : params.gacha === "diamond" ? "diamond_shard"
+                : "nether_quartz";
 
-    const drops: { material: MaterialId; amount: number }[] = [];
+  const drops: { material: MaterialId; amount: number }[] = [];
   const primaryAmount = baseCount + bonus + luckyBonus;
   const toolParsed = parseToolId(usedTool);
   const hasSword = toolParsed?.kind === "sword";
@@ -450,6 +506,7 @@ export function resolveDig(params: {
     if (rand() < directRate) {
       drops.push({ material: "diamond", amount: 1 });
       breakdown.push(hasSword ? "剣でダイヤ直！" : "ダイヤ直！");
+      hitReasons.push(hasSword ? "剣でダイヤ直" : "ダイヤ直");
     }
   } else if (params.gacha === "nether") {
     // 主ドロップはネザークォーツ（⚡にこうかん可）。金はおまけ。
@@ -464,9 +521,11 @@ export function resolveDig(params: {
     if (rand() < Math.min(0.65, debrisRate)) {
       drops.push({ material: "ancient_debris", amount: 1 });
       breakdown.push(setBonus ? "古代の残骸！（そろい特典つき）" : "古代の残骸！");
+      hitReasons.push(setBonus ? "古代の残骸（そろい特典）" : "古代の残骸");
       if (setBonus && rand() < 0.15) {
         drops.push({ material: "ancient_debris", amount: 1 });
         breakdown.push("そろいおまけ残骸+1！");
+        hitReasons.push("そろいおまけ残骸+1");
       }
     }
     if (rand() < 0.12) {
@@ -477,6 +536,7 @@ export function resolveDig(params: {
     if (hasSword && rand() < 0.22) {
       drops.push({ material: "iron_ingot", amount: primaryAmount });
       breakdown.push("剣でインゴット直！");
+      hitReasons.push("剣で鉄インゴット直");
     } else {
       drops.push({ material: "iron_ore", amount: primaryAmount });
     }
@@ -484,6 +544,7 @@ export function resolveDig(params: {
     if (hasSword && rand() < 0.22) {
       drops.push({ material: "gold_ingot", amount: primaryAmount });
       breakdown.push("剣でインゴット直！");
+      hitReasons.push("剣で金インゴット直");
     } else {
       drops.push({ material: "gold_ore", amount: primaryAmount });
     }
@@ -506,7 +567,12 @@ export function resolveDig(params: {
     drops.push({ material: "log", amount: 1 });
     breakdown.push("おまけ 原木");
   }
-  if ((params.gacha === "iron" || params.gacha === "gold") && rand() < 0.15) {
+  if (params.gacha === "coal" && rand() < 0.15) {
+    drops.push({ material: "cobble", amount: 1 });
+    breakdown.push("おまけ 丸石");
+  }
+  // 石炭の主産地は「せきたんのやま」。鉄・金ではごくまれなおまけのみ
+  if ((params.gacha === "iron" || params.gacha === "gold") && rand() < 0.05) {
     drops.push({ material: "coal", amount: 1 });
     breakdown.push("おまけ 石炭");
   }
@@ -518,6 +584,7 @@ export function resolveDig(params: {
     state.tickets += 1;
     ticketRefunded = true;
     breakdown.push("ブーツでチケットもどった！");
+    hitReasons.push("ブーツでチケットもどり");
   }
 
   for (const d of drops) {
@@ -536,6 +603,7 @@ export function resolveDig(params: {
     state,
     drops,
     breakdown,
+    hitReasons,
     ticketRefunded,
     usedTool,
     baseCount,
@@ -563,14 +631,20 @@ export function tryCraft(
     return { state, error: `先に${gearLabel(upgradeFrom)} を作ってね` };
   }
   const have = (id: MaterialId) => getMaterialCount(state, id);
-  if (!canAffordRecipe(recipe.costs, have)) {
-    return { state, error: "材料が足りないよ" };
+  if (!canAffordRecipe(recipe.costs, have, recipe.fuelOptions)) {
+    return { state, error: recipe.fuelOptions?.length ? "材料か燃料が足りないよ" : "材料が足りないよ" };
   }
 
+  const fuel = pickFuelOption(recipe.fuelOptions, have);
   const materials = { ...state.materials };
   for (const c of recipe.costs) {
     materials[c.material] = getMaterialCount(state, c.material) - c.amount;
     if ((materials[c.material] ?? 0) <= 0) delete materials[c.material];
+  }
+  if (fuel) {
+    const left = (materials[fuel.material] ?? 0) - fuel.amount;
+    if (left > 0) materials[fuel.material] = left;
+    else delete materials[fuel.material];
   }
   if (recipe.outputs) {
     for (const o of recipe.outputs) {

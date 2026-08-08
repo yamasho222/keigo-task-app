@@ -721,6 +721,12 @@ button {
   background: rgba(10, 14, 20, 0.55);
   backdrop-filter: blur(2px);
 }
+.mining-dig-overlay.is-hit-good-bg {
+  background: rgba(18, 40, 20, 0.58);
+}
+.mining-dig-overlay.is-hit-great-bg {
+  background: rgba(40, 22, 8, 0.62);
+}
 .mining-dig-card {
   width: min(360px, 100%);
   border-radius: 20px;
@@ -737,6 +743,24 @@ button {
 }
 .mining-dig-card.is-reveal {
   animation: miningDigReveal 0.4s ease-out;
+}
+.mining-dig-card.is-hit-good {
+  border-color: #7bc87f;
+  background: linear-gradient(180deg, #f4fff4 0%, #eef8ff 100%);
+  box-shadow: 0 18px 48px rgba(46, 125, 50, 0.22);
+  animation: miningDigRevealGood 0.5s ease-out;
+}
+.mining-dig-card.is-hit-great {
+  border-color: #ffb020;
+  background: linear-gradient(180deg, #fff8e8 0%, #ffe8c8 55%, #fff4ec 100%);
+  box-shadow: 0 20px 56px rgba(255, 149, 0, 0.35);
+  animation: miningDigRevealGreat 0.55s ease-out;
+}
+.mining-dig-burst {
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 2px;
+  animation: miningDigBurst 0.7s ease-out both;
 }
 .mining-dig-scene {
   font-size: 54px;
@@ -767,6 +791,41 @@ button {
   font-weight: 900;
   color: #1a1a1a;
 }
+.mining-dig-title.is-good {
+  color: #2e7d32;
+  font-size: 26px;
+}
+.mining-dig-title.is-great {
+  color: #c45a00;
+  font-size: 30px;
+  animation: miningDigTitlePop 0.55s ease-out;
+}
+.mining-dig-hit-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #666;
+}
+.mining-dig-hit-reasons {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  text-align: left;
+}
+.mining-dig-hit-reasons-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: #444;
+  margin-bottom: 4px;
+}
+.mining-dig-hit-reason {
+  font-size: 13px;
+  font-weight: 800;
+  color: #333;
+  line-height: 1.45;
+}
 .mining-dig-sub {
   margin-top: 4px;
   font-size: 13px;
@@ -788,6 +847,12 @@ button {
   border-radius: 12px;
   background: rgba(91, 142, 255, 0.12);
   animation: miningDropIn 0.45s ease-out both;
+}
+.mining-dig-drop.is-highlight {
+  background: rgba(255, 149, 0, 0.18);
+  border: 1.5px solid rgba(255, 149, 0, 0.55);
+  transform-origin: center;
+  animation: miningDropInHighlight 0.55s ease-out both;
 }
 .mining-dig-drop:nth-child(2) { animation-delay: 0.08s; }
 .mining-dig-drop:nth-child(3) { animation-delay: 0.16s; }
@@ -818,6 +883,12 @@ button {
   background: #5b8eff;
   color: #fff;
 }
+.mining-dig-card.is-hit-great .mining-dig-close {
+  background: #ff9500;
+}
+.mining-dig-card.is-hit-good .mining-dig-close {
+  background: #34c759;
+}
 @keyframes miningDigPop {
   from { opacity: 0; transform: scale(0.88) translateY(12px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
@@ -825,6 +896,26 @@ button {
 @keyframes miningDigReveal {
   from { opacity: 0.4; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
+}
+@keyframes miningDigRevealGood {
+  0% { opacity: 0.35; transform: scale(0.94); }
+  70% { transform: scale(1.03); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes miningDigRevealGreat {
+  0% { opacity: 0.2; transform: scale(0.88) rotate(-1deg); }
+  55% { transform: scale(1.06) rotate(1deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+@keyframes miningDigTitlePop {
+  0% { transform: scale(0.7); opacity: 0.4; }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes miningDigBurst {
+  0% { opacity: 0; transform: scale(0.6) translateY(8px); }
+  50% { opacity: 1; transform: scale(1.15) translateY(0); }
+  100% { opacity: 0.95; transform: scale(1); }
 }
 @keyframes miningDigSwing {
   0%, 100% { transform: rotate(-18deg) translateY(0); }
@@ -842,4 +933,9 @@ button {
 @keyframes miningDropIn {
   from { opacity: 0; transform: translateY(10px) scale(0.94); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes miningDropInHighlight {
+  0% { opacity: 0; transform: translateY(12px) scale(0.88); }
+  65% { transform: translateY(0) scale(1.06); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }

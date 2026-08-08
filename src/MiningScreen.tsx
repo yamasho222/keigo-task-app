@@ -29,6 +29,8 @@ import {
   recommendToolKind,
   recipesForState,
   resolveDig,
+  digHitTier,
+  isDigHighlightDrop,
   setPartySlot,
   specialtyForGacha,
   tryCraft,
@@ -41,6 +43,7 @@ import { boostStrengthLabel, miningNextGoal, nextGachaUnlock } from "./miningUiH
 import {
   ARMOR_KIND_LABEL,
   GACHA_META,
+  GACHA_ORDER,
   MATERIAL_META,
   MAX_BEDS,
   TOOL_KIND_LABEL,
@@ -162,9 +165,21 @@ function DigFxOverlay({
 }) {
   if (phase === "idle") return null;
   const meta = GACHA_META[gacha];
+  const tier = result && phase === "reveal" ? digHitTier(result) : "normal";
+  const title =
+    tier === "great" ? "大あたり！"
+      : tier === "good" ? "あたり！"
+        : "ほった！";
+  const cardClass = [
+    "mining-dig-card",
+    phase === "reveal" ? "is-reveal" : "is-swing",
+    phase === "reveal" && tier === "good" ? "is-hit-good" : "",
+    phase === "reveal" && tier === "great" ? "is-hit-great" : "",
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className="mining-dig-overlay" role="dialog" aria-modal="true">
-      <div className={`mining-dig-card ${phase === "reveal" ? "is-reveal" : "is-swing"}`}>
+    <div className={`mining-dig-overlay${tier === "great" ? " is-hit-great-bg" : tier === "good" ? " is-hit-good-bg" : ""}`} role="dialog" aria-modal="true">
+      <div className={cardClass}>
         {phase === "swing" && (
           <>
             <div className="mining-dig-scene">{meta.emoji}</div>
@@ -182,15 +197,44 @@ function DigFxOverlay({
         )}
         {phase === "reveal" && result && (
           <>
-            <div className="mining-dig-title">ほった！</div>
-            <div className="mining-dig-drops">
-              {result.drops.map((d) => (
-                <div key={d.material} className="mining-dig-drop">
-                  <span className="mining-dig-drop-emoji"><MiningItemIcon material={d.material} size={28} alt={MATERIAL_META[d.material].label} /></span>
-                  <span className="mining-dig-drop-label">{MATERIAL_META[d.material].label}</span>
-                  <span className="mining-dig-drop-amount">×{d.amount}</span>
+            {(tier === "good" || tier === "great") && (
+              <div className="mining-dig-burst" aria-hidden>
+                {tier === "great" ? "✨🌟✨" : "✨"}
+              </div>
+            )}
+            <div className={`mining-dig-title${tier !== "normal" ? ` is-${tier}` : ""}`}>{title}</div>
+            {tier === "great" && (
+              <div className="mining-dig-hit-sub">すごいのが出た！</div>
+            )}
+            {tier === "good" && (
+              <div className="mining-dig-hit-sub">ちょっといい感じ！</div>
+            )}
+            {tier !== "normal" && result.hitReasons.length > 0 && (
+              <div className="mining-dig-hit-reasons">
+                <div className="mining-dig-hit-reasons-title">
+                  {tier === "great" ? "大あたりの理由" : "あたりの理由"}
                 </div>
-              ))}
+                {result.hitReasons.map((reason) => (
+                  <div key={reason} className="mining-dig-hit-reason">・{reason}</div>
+                ))}
+              </div>
+            )}
+            <div className="mining-dig-drops">
+              {result.drops.map((d, i) => {
+                const highlight = isDigHighlightDrop(d.material, d.amount, tier);
+                return (
+                  <div
+                    key={`${d.material}-${i}`}
+                    className={`mining-dig-drop${highlight ? " is-highlight" : ""}`}
+                  >
+                    <span className="mining-dig-drop-emoji">
+                      <MiningItemIcon material={d.material} size={highlight ? 34 : 28} alt={MATERIAL_META[d.material].label} />
+                    </span>
+                    <span className="mining-dig-drop-label">{MATERIAL_META[d.material].label}</span>
+                    <span className="mining-dig-drop-amount">×{d.amount}</span>
+                  </div>
+                );
+              })}
             </div>
             <div className="mining-dig-breakdown">
               {result.breakdown.join(" · ")}
@@ -251,6 +295,13 @@ export function MiningScreen({
     return () => window.clearTimeout(t);
   }, [digFx]);
 
+  useEffect(() => {
+    if (digFx !== "reveal" || !lastDig) return;
+    const tier = digHitTier(lastDig);
+    if (tier === "great") navigator.vibrate?.([28, 35, 28, 35, 70]);
+    else if (tier === "good") navigator.vibrate?.([18, 28, 36]);
+  }, [digFx, lastDig]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2200);
@@ -306,6 +357,7 @@ export function MiningScreen({
     const unlockMessages: { id: typeof result.state.unlockedGachas[number]; label: string }[] = [
       { id: "stone", label: "いしのどうくつ が解放された！" },
       { id: "iron", label: "てつのこうざん が解放された！" },
+      { id: "coal", label: "せきたんのやま が解放された！（石炭がほれるよ）" },
       { id: "gold", label: "きんのこうざん が解放された！" },
       { id: "diamond", label: "ダイヤのしんそう が解放された！" },
       { id: "nether", label: "ネザー が解放された！" },
@@ -492,13 +544,13 @@ export function MiningScreen({
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 10 }}>どこをほる？</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(Object.keys(GACHA_META) as GachaId[]).map((gid) => {
+              {GACHA_ORDER.map((gid) => {
                 const meta = GACHA_META[gid];
                 const unlocked = mining.unlockedGachas.includes(gid);
                 const isLucky = lucky === gid;
                 const lockHint =
                   gid === "stone" ? "木の剣・斧・ツルハシで解放"
-                    : gid === "iron" || gid === "gold" ? "石の剣・斧・ツルハシで解放"
+                    : gid === "iron" || gid === "gold" || gid === "coal" ? "石の剣・斧・ツルハシで解放"
                       : gid === "diamond" ? "鉄フル（どうぐ3＋防具4）で解放"
                         : gid === "nether" ? "ダイヤの剣・斧・ツルハシで解放"
                           : "ロック";
@@ -520,6 +572,9 @@ export function MiningScreen({
                     }}
                   >
                     <span style={{ fontWeight: 900 }}>{meta.emoji} {meta.label}</span>
+                    {unlocked && gid === "coal" && (
+                      <span style={{ marginLeft: 8, fontSize: 12, color: theme.text.secondary }}>石炭がとれる</span>
+                    )}
                     {!unlocked && <span style={{ marginLeft: 8, fontSize: 12 }}>{lockHint}</span>}
                     {isLucky && unlocked && (
                       <span style={{ marginLeft: 8, color: theme.category.orange, fontWeight: 800 }}>★あたり日</span>
@@ -664,7 +719,7 @@ export function MiningScreen({
           <div style={{ ...card, backgroundColor: `${theme.accent.primary}10` }}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>そうびをえらぶ</div>
             <div style={{ fontSize: 13, lineHeight: 1.6, color: theme.text.secondary }}>
-              ほるタブでは種類だけ選ぶよ。ここで強いどうぐ・よろいをそうびするよ。
+              ほるタブでは種類だけ選ぶよ。ここで強いどうぐ・ぼうぐをそうびするよ。
             </div>
           </div>
 
@@ -711,58 +766,74 @@ export function MiningScreen({
           </div>
 
           <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>よろい（鉄から）</div>
-            {armorSlots.map((slot) => {
-              const owned = ownedArmorForSlot(mining, slot);
-              const current = mining.equipped[slot];
-              return (
-                <div key={slot} style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 2 }}>{ARMOR_KIND_LABEL[slot]}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginBottom: 6, lineHeight: 1.45 }}>
-                    効果: {ARMOR_EFFECT_BLURB[slot]}
-                  </div>
-                  {owned.length === 0 ? (
-                    <div style={{ fontSize: 12, color: theme.text.tertiary }}>まだないよ（鉄クラフト後）</div>
-                  ) : (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {owned.map((id) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => {
-                            onChange(equipArmor(mining, slot, id));
-                            showToast(`${gearLabel(id)} を装備した！`);
-                          }}
-                          style={{
-                            ...btnGhost,
-                            borderColor: current === id ? theme.category.green : theme.stroke.secondary,
-                            backgroundColor: current === id ? `${theme.category.green}18` : theme.fill.secondary,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                          }}
-                        >
-                          <MiningItemIcon gear={id} size={22} alt="" />
-                          {gearLabel(id)}
-                        </button>
-                      ))}
-                      {current && (
-                        <button
-                          type="button"
-                          style={btnGhost}
-                          onClick={() => {
-                            onChange(equipArmor(mining, slot, null));
-                            showToast("はずしたよ");
-                          }}
-                        >
-                          はずす
-                        </button>
-                      )}
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>ぼうぐ（かぶる・きるもの）</div>
+            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 10, lineHeight: 1.45 }}>
+              鉄からつくれるよ。部位ごとに1つそうびできるよ。
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {armorSlots.map((slot) => {
+                const owned = ownedArmorForSlot(mining, slot);
+                const current = mining.equipped[slot];
+                return (
+                  <div
+                    key={slot}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      border: `1px solid ${theme.stroke.tertiary}`,
+                      backgroundColor: theme.fill.quaternary,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 2, fontSize: 15 }}>{ARMOR_KIND_LABEL[slot]}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.45 }}>
+                      効果: {ARMOR_EFFECT_BLURB[slot]}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    {owned.length === 0 ? (
+                      <div style={{ fontSize: 12, color: theme.text.tertiary }}>まだないよ（鉄クラフト後）</div>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {owned.map((id) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => {
+                              onChange(equipArmor(mining, slot, id));
+                              showToast(`${gearLabel(id)} を装備した！`);
+                            }}
+                            style={{
+                              ...btnGhost,
+                              borderColor: current === id ? theme.category.green : theme.stroke.secondary,
+                              backgroundColor: current === id ? `${theme.category.green}18` : theme.bg.editor,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <MiningItemIcon gear={id} size={22} alt="" />
+                            {gearLabel(id)}
+                            {current === id && (
+                              <span style={{ color: theme.category.green, fontWeight: 800 }}>そうび中</span>
+                            )}
+                          </button>
+                        ))}
+                        {current && (
+                          <button
+                            type="button"
+                            style={btnGhost}
+                            onClick={() => {
+                              onChange(equipArmor(mining, slot, null));
+                              showToast("はずしたよ");
+                            }}
+                          >
+                            はずす
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div style={{ fontSize: 12, color: theme.text.secondary, lineHeight: 1.5, padding: "0 4px" }}>
@@ -805,7 +876,7 @@ export function MiningScreen({
               const bedFull = !!(recipe.grantsBed && slots >= MAX_BEDS);
               const owned = !!(recipe.craftFlag && mining.crafted[recipe.craftFlag]) || bedFull;
               const ok =
-                canAffordRecipe(recipe.costs, have)
+                canAffordRecipe(recipe.costs, have, recipe.fuelOptions)
                 && hasUpgradeBase
                 && !owned
                 && (!recipe.needsWorkbench || hasWorkbench(mining))
@@ -822,6 +893,9 @@ export function MiningScreen({
             const renderRecipe = (a: typeof annotated[number]) => {
               const { recipe, upgradeFrom, hasUpgradeBase, owned, ok } = a;
               const progress = recipeProgress(recipe.costs, have);
+              const fuelPicked = recipe.fuelOptions
+                ? recipe.fuelOptions.find((f) => have(f.material) >= f.amount) ?? null
+                : null;
               return (
                 <div key={recipe.id} style={card}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
@@ -874,6 +948,40 @@ export function MiningScreen({
                             {!p.ok && <span style={{ marginLeft: 6, color: theme.category.orange }}>あと{p.need}</span>}
                           </div>
                         ))}
+                        {recipe.fuelOptions && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: theme.text.secondary, marginBottom: 4 }}>
+                              燃料（どれか1つ）{recipe.needsFurnace ? "・かまど必要" : ""}
+                            </div>
+                            <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 6, lineHeight: 1.45 }}>
+                              石炭は「せきたんのやま」でほれるよ。板材・原木でも代用できるよ。
+                            </div>
+                            {recipe.fuelOptions.map((f) => {
+                              const h = have(f.material);
+                              const fOk = h >= f.amount;
+                              const using = fuelPicked?.material === f.material;
+                              return (
+                                <div
+                                  key={f.material}
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    color: fOk ? theme.category.green : theme.text.secondary,
+                                    marginBottom: 2,
+                                  }}
+                                >
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                    <MiningItemIcon material={f.material} size={18} alt="" />
+                                    {MATERIAL_META[f.material].label}
+                                  </span>
+                                  {" "}{h}/{f.amount}
+                                  {using && <span style={{ marginLeft: 6, color: theme.accent.primary }}>←つかう</span>}
+                                  {!fOk && <span style={{ marginLeft: 6, color: theme.category.orange }}>あと{f.amount - h}</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <button
