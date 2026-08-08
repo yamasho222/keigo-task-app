@@ -6,6 +6,7 @@ import {
   isSevenDayMilestoneStreak,
   isThirtyDayMilestoneStreak,
   isThreeDayMilestoneStreak,
+  isTrueFullDay,
 } from "./RecordCalendar";
 import { parseDateKey } from "./japaneseCalendar";
 import {
@@ -242,13 +243,14 @@ export function evaluateStreakMilestones(
   fifteenDayTreatPending: Record<string, number>,
   thirtyDayTreatPending: Record<string, number>,
   lateDays?: Record<string, boolean>,
+  sickSkip?: Record<string, DayHistory>,
 ): StreakMilestoneEvaluation | null {
   const today = todayDateKey();
-  if (!isFullDay(history[today], new Date())) return null;
+  if (!isTrueFullDay(history[today], sickSkip?.[today], new Date())) return null;
   // 今日が遅延日なら連続マイルストーンは出さない
   if (lateDays?.[today]) return null;
 
-  const fullDayStreak = getFullDayStreak(history, lateDays);
+  const fullDayStreak = getFullDayStreak(history, lateDays, sickSkip);
   const { lastThreeDay, lastWeekly, lastFifteenDay, lastThirtyDay } = normalizeStreakRewardBaseline(
     fullDayStreak,
     lastThreeDayRewardStreak,
