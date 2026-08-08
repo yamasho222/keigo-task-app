@@ -18,7 +18,7 @@ import {
   unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
-import { RecordScreen, getStreak, isFullDay, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, isFifteenDayMilestoneStreak, isThirtyDayMilestoneStreak, buildLateDaysMap, isFullDayCompletionOnTime, isPastFullDayDeadline, type DayHistory } from "./RecordCalendar";
+import { RecordScreen, getStreak, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, isFifteenDayMilestoneStreak, isThirtyDayMilestoneStreak, buildLateDaysMap, isFullDayCompletionOnTime, isPastFullDayDeadline, dayHasActiveSickSkip, isTrueFullDay, type DayHistory } from "./RecordCalendar";
 import {
   NewRecordOverlay, TreatOverlay, StickerFrameWithBadge, StickerImg,
   type NewRecordCelebration, type TreatMode,
@@ -340,6 +340,8 @@ interface StoredState {
   eveningTasks: Task[];
   homeTasks: Task[];
   history: Record<string, DayHistory>;
+  /** dateKey → 体調スキップしたフェーズ */
+  sessionSickSkip?: Record<string, DayHistory>;
   bestTimes?: Record<string, number>;
   taskCompletedAt?: Record<string, string>;
   gamePlayTimes?: Record<string, number>;
@@ -688,6 +690,7 @@ function hydrateStoredState(data: StoredState): StoredState {
     daytimeApproved: data.daytimeApproved ?? false,
     eveningApproved: data.eveningApproved ?? false,
     homeApproved: data.homeApproved ?? false,
+    sessionSickSkip: data.sessionSickSkip ?? {},
     oneOffSpecialTreatPending: normalizeOneOffSpecialTreatPending(
       data.oneOffSpecialTreatPending as Record<string, unknown> | undefined,
       (claimKey) => resolveOneOffFloorFromTaskLists(lists, claimKey),
@@ -713,6 +716,7 @@ function loadStoredState(): StoredState {
           hydrated.homeTasks,
         ),
         history: hydrated.history ?? {},
+        sessionSickSkip: hydrated.sessionSickSkip ?? {},
         bestTimes: hydrated.bestTimes,
         taskCompletedAt: hydrated.taskCompletedAt,
         stickerAlbum: hydrated.stickerAlbum,
@@ -736,6 +740,7 @@ function loadStoredState(): StoredState {
       HOME_TASKS_DEFAULT,
     ),
     history: {},
+    sessionSickSkip: {},
   };
 }
 
@@ -1440,6 +1445,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [eveningApproved, setEveningApproved] = useState(stored.eveningApproved);
   const [homeApproved,    setHomeApproved]    = useState(stored.homeApproved);
   const [history,        setHistory]        = useState<Record<string, DayHistory>>(stored.history ?? {});
+  const [sessionSickSkip, setSessionSickSkip] = useState<Record<string, DayHistory>>(stored.sessionSickSkip ?? {});
   const [bestTimes,      setBestTimes]      = useState<Record<string, number>>(stored.bestTimes ?? {});
   const [taskCompletedAt, setTaskCompletedAt] = useState<Record<string, string>>(stored.taskCompletedAt ?? {});
   const [gamePlayTimes,  setGamePlayTimes]  = useState<Record<string, number>>(stored.gamePlayTimes ?? {});
@@ -1626,7 +1632,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const alarmSettingsRef = useRef(alarmSettings);
   useEffect(() => { alarmSettingsRef.current = alarmSettings; }, [alarmSettings]);
 
-  const streak = getStreak(history);
+  const streak = getStreak(history, sessionSickSkip);
   useEffect(() => { screenRef.current = screen; }, [screen]);
 
   const activeSessionIds = getActiveSessionIds();
@@ -1847,6 +1853,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       eveningTasks,
       homeTasks,
       history,
+      sessionSickSkip,
       bestTimes,
       taskCompletedAt,
       gamePlayTimes,
@@ -1898,7 +1905,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
     morningApproved, daytimeApproved, eveningApproved, homeApproved,
     morningTasks, daytimeTasks, eveningTasks, homeTasks,
-    history, bestTimes, taskCompletedAt, gamePlayTimes,
+    history, sessionSickSkip, bestTimes, taskCompletedAt, gamePlayTimes,
     dailyTreatClaimed, dailyTreatPending, fullDayBonusClaimed, fullDayBonusTreatPending,
     deadlineFullDayCompletedAt, deadlineTreatClaimed, deadlineTreatPending,
     lastWeeklyRewardStreak, weeklyTreatPending, lastThreeDayRewardStreak, threeDayTreatPending,
@@ -2069,6 +2076,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     sessionState[session].setApproved(false);
     const updatedDay = { ...prev, [session]: false };
     setHistory({ ...history, [today]: updatedDay });
+    setSessionSickSkip((prevSkip) => {
+      const day = prevSkip[today];
+      if (!day?.[session]) return prevSkip;
+      const nextDay = { ...day, [session]: false };
+      return { ...prevSkip, [today]: nextDay };
+    });
     // 獲得済み記録（dailyTreatClaimed / fullDayBonusClaimed）は消さない。
     // 消すと「タスク取り消し→再完了」でごほうびを何度ももらえてしまう。
     const treatKey = sessionTreatKey(today, session);
@@ -2078,6 +2091,51 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[treatKey];
       return next;
     });
+    setStampVisible(false);
+  };
+
+  /** 体調スキップ: ごほうびなし・連続は橋渡し。親はんこ不要でタイマー可 */
+  const applySickSkip = (session: SessionId) => {
+    if (activeCatchUpDate) return;
+    const today = todayKey();
+    const ok = window.confirm(
+      "この時間帯を休みにします。ごほうびはなしで、連続記録は途切れません。よろしいですか？",
+    );
+    if (!ok) return;
+
+    const prev = history[today] ?? emptyDayHistory();
+    const updatedDay = { ...prev, [session]: true };
+    setHistory({ ...history, [today]: updatedDay });
+    setSessionSickSkip((prevSkip) => {
+      const day = prevSkip[today] ?? emptyDayHistory();
+      return { ...prevSkip, [today]: { ...day, [session]: true } };
+    });
+    sessionState[session].setApproved(true);
+    setStampVisible(false);
+    setParentSession(session);
+    setParentCtx({
+      label: SESSION_META[session].label,
+      taskNames: ["体調のため休み"],
+      completedAt: fmtTime(new Date()),
+    });
+    if (isSessionScreen(screen)) setPrevScreen(screen);
+    setScreen("show_parent");
+  };
+
+  const cancelSickSkip = (session: SessionId) => {
+    if (activeCatchUpDate) return;
+    const today = todayKey();
+    if (!sessionSickSkip[today]?.[session]) return;
+    const ok = window.confirm("体調スキップを取り消しますか？");
+    if (!ok) return;
+    const prev = history[today] ?? emptyDayHistory();
+    setHistory({ ...history, [today]: { ...prev, [session]: false } });
+    setSessionSickSkip((prevSkip) => {
+      const day = prevSkip[today];
+      if (!day) return prevSkip;
+      return { ...prevSkip, [today]: { ...day, [session]: false } };
+    });
+    sessionState[session].setApproved(false);
     setStampVisible(false);
   };
 
@@ -2730,7 +2788,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           fullDayTicketClaimed: { ...next.fullDayTicketClaimed, [date]: true },
         };
       }
-      const streak = getFullDayStreak(newHistory, lateDays);
+      const streak = getFullDayStreak(newHistory, lateDays, sessionSickSkip);
       if (streak > 0 && streak % 4 === 0 && !next.streakTicketClaimed[streak]) {
         next = addTickets(next, 1);
         next = {
@@ -3541,11 +3599,17 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const newHistory = { ...history, [today]: updatedDay };
     setHistory(newHistory);
     triggerStamp();
-    grantBuddyXpFromSessionStamp(parentSession);
-    grantMiningTicketFromSession(parentSession);
+
+    const sickToday = sessionSickSkip[today];
+    const rewardsBlocked = dayHasActiveSickSkip(sickToday, new Date());
+
+    if (!rewardsBlocked) {
+      grantBuddyXpFromSessionStamp(parentSession);
+      grantMiningTicketFromSession(parentSession);
+    }
 
     const treatKey = sessionTreatKey(today, parentSession);
-    let needsDaily = !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
+    let needsDaily = !rewardsBlocked && !isSessionTreatClaimed(dailyTreatClaimed, today, parentSession);
     // 21:31以降の親チェックではフェーズごほうびなし（日中分の未受け取りは残す）
     if (needsDaily && isPastFullDayDeadline()) {
       needsDaily = false;
@@ -3554,8 +3618,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
     const lateDays = buildLateDaysMap(fullDayFirstCompletedAt);
     const onTimeToday = isFullDayCompletionOnTime(fullDayFirstCompletedAt[today]);
-    const isFullDayToday = isFullDay(updatedDay, new Date());
-    const dayRewardsOk = isFullDayToday && onTimeToday;
+    const isTrueFullToday = isTrueFullDay(updatedDay, sickToday, new Date());
+    const dayRewardsOk = !rewardsBlocked && isTrueFullToday && onTimeToday;
 
     if (dayRewardsOk) {
       grantMiningTicketsForFullDay(today, newHistory, lateDays, onTimeToday);
@@ -3570,7 +3634,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const deadlineRewardToQueue = deadlineRewardFloor && deadlineTreatPending[today] === undefined
       ? deadlineRewardFloor
       : undefined;
-    const fullDayStreak = getFullDayStreak(newHistory, lateDays);
+    const fullDayStreak = getFullDayStreak(newHistory, lateDays, sessionSickSkip);
     const { lastThreeDay, lastWeekly, lastFifteenDay, lastThirtyDay } = normalizeStreakRewardBaseline(
       fullDayStreak,
       lastThreeDayRewardStreak,
@@ -3650,6 +3714,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       fifteenDayTreatPending,
       thirtyDayTreatPending,
       lateDays,
+      sessionSickSkip,
     );
 
     if (!milestone) return;
@@ -3700,7 +3765,18 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       setStampVisible(false);
       return;
     }
+    const today = todayKey();
+    const wasSickSkip = !!sessionSickSkip[today]?.[parentSession];
     sessionState[parentSession].setApproved(false);
+    if (wasSickSkip) {
+      const prev = history[today] ?? emptyDayHistory();
+      setHistory({ ...history, [today]: { ...prev, [parentSession]: false } });
+      setSessionSickSkip((prevSkip) => {
+        const day = prevSkip[today];
+        if (!day) return prevSkip;
+        return { ...prevSkip, [today]: { ...day, [parentSession]: false } };
+      });
+    }
     setStampVisible(false);
   };
 
@@ -4776,6 +4852,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 onOpenBuddySelect={() => setShowBuddyPrompt(true)}
                 duplicateTokens={duplicateTokens}
                 onTrainBuddy={trainBuddyWithToken}
+                sickSkipActive={!inCatchUp && !!sessionSickSkip[todayKey()]?.[sid]}
+                sessionApproved={getContextApproved(sid)}
+                onSickSkip={!inCatchUp ? () => applySickSkip(sid) : undefined}
+                onCancelSickSkip={!inCatchUp ? () => cancelSickSkip(sid) : undefined}
               />
             ))}
           </SessionPhaseSwipe>
@@ -4871,6 +4951,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             buddyProgress={buddyProgress}
             buddyXpEarnedToday={buddyXpDate === todayKey() ? buddyXpEarnedToday : 0}
             lateDays={buildLateDaysMap(fullDayFirstCompletedAt)}
+            sickSkip={sessionSickSkip}
             onSelectBuddy={selectBuddy}
             onTrainBuddy={trainBuddyWithToken}
             onOpenBuddySelect={() => setShowBuddyPrompt(true)}
@@ -6440,6 +6521,12 @@ interface TaskScreenProps {
   onOpenBuddySelect?: () => void;
   duplicateTokens?: number;
   onTrainBuddy?: (stickerId: string) => void;
+  /** このフェーズが体調スキップ済みか */
+  sickSkipActive?: boolean;
+  /** 親チェック／体調スキップで承認済みか */
+  sessionApproved?: boolean;
+  onSickSkip?: () => void;
+  onCancelSickSkip?: () => void;
 }
 
 function TaskScreen({
@@ -6466,6 +6553,10 @@ function TaskScreen({
   onOpenBuddySelect,
   duplicateTokens = 0,
   onTrainBuddy,
+  sickSkipActive = false,
+  sessionApproved = false,
+  onSickSkip,
+  onCancelSickSkip,
 }: TaskScreenProps) {
   const [showBuddyDetail, setShowBuddyDetail] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
@@ -6557,9 +6648,56 @@ function TaskScreen({
         <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 3, letterSpacing: 0.8, textTransform: "uppercase" }}>
           {timeLabel}
         </div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: theme.text.primary, lineHeight: 1.2 }}>
-          {label}
+        <div style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 10,
+        }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: theme.text.primary, lineHeight: 1.2, flex: 1, minWidth: 0 }}>
+            {label}
+          </div>
+          {!catchUpMode && (onSickSkip || onCancelSickSkip) && (sickSkipActive || !sessionApproved) && (
+            <button
+              type="button"
+              disabled={interactionLocked}
+              onClick={() => {
+                if (interactionLocked) return;
+                if (sickSkipActive) onCancelSickSkip?.();
+                else onSickSkip?.();
+              }}
+              style={{
+                flexShrink: 0,
+                marginTop: 2,
+                padding: "4px 8px",
+                borderRadius: 8,
+                border: `1px solid ${sickSkipActive ? theme.category.orange : theme.stroke.tertiary}`,
+                backgroundColor: sickSkipActive ? `${theme.category.orange}18` : "transparent",
+                color: sickSkipActive ? theme.category.orange : theme.text.tertiary,
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: interactionLocked ? "default" : "pointer",
+                opacity: interactionLocked ? 0.5 : 1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {sickSkipActive ? "スキップを取り消す" : "体調がわるいとき"}
+            </button>
+          )}
         </div>
+        {sickSkipActive && !catchUpMode && (
+          <div style={{
+            marginTop: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            color: theme.text.secondary,
+            backgroundColor: `${theme.category.orange}14`,
+            borderRadius: 10,
+            padding: "8px 10px",
+          }}>
+            体調のため休み中（ごほうびなし・連続は途切れません）
+          </div>
+        )}
       </div>
 
       {showBuddyBanner && onOpenBuddySelect && buddyItem && buddyEntry && buddyId ? (
