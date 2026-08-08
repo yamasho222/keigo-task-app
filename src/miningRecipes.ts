@@ -242,7 +242,7 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("pickaxe_iron", "鉄のツルハシ", "⛏️", "iron_ingot", 3, "iron"),
   armorRecipe("helmet_iron", "鉄のヘルメット", "iron_ingot", 5, "iron"),
   armorRecipe("chest_iron", "鉄のむねあて", "iron_ingot", 8, "iron"),
-  armorRecipe("leggings_iron", "鉄のすねあて", "iron_ingot", 7, "iron"),
+  armorRecipe("leggings_iron", "鉄のレギンス", "iron_ingot", 7, "iron"),
   armorRecipe("boots_iron", "鉄のブーツ", "iron_ingot", 4, "iron"),
 
   // 金（任意ルート）
@@ -251,7 +251,7 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("pickaxe_gold", "金のツルハシ", "⛏️", "gold_ingot", 3, "gold"),
   armorRecipe("helmet_gold", "金のヘルメット", "gold_ingot", 5, "gold"),
   armorRecipe("chest_gold", "金のむねあて", "gold_ingot", 8, "gold"),
-  armorRecipe("leggings_gold", "金のすねあて", "gold_ingot", 7, "gold"),
+  armorRecipe("leggings_gold", "金のレギンス", "gold_ingot", 7, "gold"),
   armorRecipe("boots_gold", "金のブーツ", "gold_ingot", 4, "gold"),
 
   // ダイヤ
@@ -260,7 +260,7 @@ export const MINING_RECIPES: MiningRecipe[] = [
   toolRecipe("pickaxe_diamond", "ダイヤのツルハシ", "⛏️", "diamond", 3, "diamond"),
   armorRecipe("helmet_diamond", "ダイヤのヘルメット", "diamond", 5, "diamond"),
   armorRecipe("chest_diamond", "ダイヤのむねあて", "diamond", 8, "diamond"),
-  armorRecipe("leggings_diamond", "ダイヤのすねあて", "diamond", 7, "diamond"),
+  armorRecipe("leggings_diamond", "ダイヤのレギンス", "diamond", 7, "diamond"),
   armorRecipe("boots_diamond", "ダイヤのブーツ", "diamond", 4, "diamond"),
 
   // ネザライト強化
@@ -269,7 +269,7 @@ export const MINING_RECIPES: MiningRecipe[] = [
   netheriteUpgrade("pickaxe_netherite", "ネザライトのツルハシ", "⛏️"),
   netheriteUpgrade("helmet_netherite", "ネザライトのヘルメット", "🛡️"),
   netheriteUpgrade("chest_netherite", "ネザライトのむねあて", "🛡️"),
-  netheriteUpgrade("leggings_netherite", "ネザライトのすねあて", "🛡️"),
+  netheriteUpgrade("leggings_netherite", "ネザライトのレギンス", "🛡️"),
   netheriteUpgrade("boots_netherite", "ネザライトのブーツ", "🛡️"),
 ];
 
@@ -302,4 +302,134 @@ export function canAffordRecipe(
 export function visibleRecipes(unlockedGachas: GachaId[]): MiningRecipe[] {
   const set = new Set(unlockedGachas);
   return MINING_RECIPES.filter((r) => !r.requiresUnlock || set.has(r.requiresUnlock));
+}
+
+/** 3×3クラフトの形を見せる用（操作はさせない）。精錬は null */
+export function craftGridForRecipe(recipe: MiningRecipe): (MaterialId | null)[] | null {
+  if (recipe.fuelOptions?.length) return null;
+  const empty = (): (MaterialId | null)[] => Array.from({ length: 9 }, () => null);
+  const id = String(recipe.id);
+  const main = recipe.costs.find((c) => c.material !== "stick")?.material ?? null;
+  const hasStick = recipe.costs.some((c) => c.material === "stick");
+
+  if (id.startsWith("sword_") && main && hasStick) {
+    const g = empty();
+    g[1] = main;
+    g[4] = main;
+    g[7] = "stick";
+    return g;
+  }
+  if (id.startsWith("pickaxe_") && main && hasStick) {
+    const g = empty();
+    g[0] = main;
+    g[1] = main;
+    g[2] = main;
+    g[4] = "stick";
+    g[7] = "stick";
+    return g;
+  }
+  if (id.startsWith("axe_") && main && hasStick) {
+    const g = empty();
+    g[0] = main;
+    g[1] = main;
+    g[3] = main;
+    g[4] = "stick";
+    g[7] = "stick";
+    return g;
+  }
+  if (id.startsWith("helmet_") && main) {
+    const g = empty();
+    g[0] = main;
+    g[1] = main;
+    g[2] = main;
+    g[3] = main;
+    g[5] = main;
+    return g;
+  }
+  if (id.startsWith("chest_") && main) {
+    const g = empty();
+    g[0] = main;
+    g[2] = main;
+    g[3] = main;
+    g[4] = main;
+    g[5] = main;
+    g[6] = main;
+    g[7] = main;
+    g[8] = main;
+    return g;
+  }
+  if (id.startsWith("leggings_") && main) {
+    const g = empty();
+    g[0] = main;
+    g[1] = main;
+    g[2] = main;
+    g[3] = main;
+    g[5] = main;
+    g[6] = main;
+    g[8] = main;
+    return g;
+  }
+  if (id.startsWith("boots_") && main) {
+    const g = empty();
+    g[3] = main;
+    g[5] = main;
+    g[6] = main;
+    g[8] = main;
+    return g;
+  }
+  if (recipe.id === "workbench") {
+    const g = empty();
+    g[0] = "plank";
+    g[1] = "plank";
+    g[3] = "plank";
+    g[4] = "plank";
+    return g;
+  }
+  if (recipe.id === "furnace") {
+    const g = empty();
+    for (const i of [0, 1, 2, 3, 5, 6, 7, 8]) g[i] = "cobble";
+    return g;
+  }
+  if (recipe.id === "bed") {
+    const g = empty();
+    g[0] = "wool";
+    g[1] = "wool";
+    g[2] = "wool";
+    g[3] = "plank";
+    g[4] = "plank";
+    g[5] = "plank";
+    return g;
+  }
+  if (recipe.id === "plank_batch") {
+    const g = empty();
+    g[4] = "log";
+    return g;
+  }
+  if (recipe.id === "stick_batch") {
+    const g = empty();
+    g[1] = "plank";
+    g[4] = "plank";
+    return g;
+  }
+  if (recipe.id === "diamond_from_shards") {
+    return Array.from({ length: 9 }, () => "diamond_shard" as MaterialId);
+  }
+  if (recipe.id === "netherite_ingot_craft") {
+    const g = empty();
+    g[0] = "netherite_scrap";
+    g[1] = "netherite_scrap";
+    g[2] = "gold_ingot";
+    g[3] = "netherite_scrap";
+    g[4] = "netherite_scrap";
+    g[5] = "gold_ingot";
+    g[6] = "gold_ingot";
+    g[8] = "gold_ingot";
+    return g;
+  }
+  if (main && id.includes("netherite")) {
+    const g = empty();
+    g[4] = main;
+    return g;
+  }
+  return null;
 }

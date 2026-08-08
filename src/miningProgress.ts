@@ -306,24 +306,24 @@ export function previewDigBoost(params: {
     {
       label: "パーティ +1",
       value: party.bonusChance > 0 ? pct(party.bonusChance) : "なし",
-      hint: party.detail.length ? party.detail.join(" / ") : "得意一致で上がる",
+      hint: party.detail.length ? party.detail.join(" / ") : "とくいが合うと上がる",
       active: party.bonusChance > 0,
     },
     {
       label: "レギンス +1",
       value: leggingsPlus1Rate > 0 ? pct(leggingsPlus1Rate) : "なし",
-      hint: "鉄の防具から",
+      hint: "鉄のぼうぐから",
       active: leggingsPlus1Rate > 0,
     },
     {
-      label: "あたり日おまけ",
-      value: luckyToday ? "今回+1確定" : (hasHelmet ? "きょうは別ガチャ" : "ヘルメットが必要"),
+      label: "きょうのこううん日",
+      value: luckyToday ? "今回+1かくてい" : (hasHelmet ? "きょうはべつのほりば" : "ヘルメットが必要"),
       active: luckyToday,
     },
     {
-      label: "ブーツ返還",
+      label: "ブーツで🎫もどり",
       value: bootsRefundRate > 0 ? pct(bootsRefundRate) : "なし",
-      hint: "チケットが戻ることがある",
+      hint: "たまにチケットがもどる",
       active: bootsRefundRate > 0,
     },
   ];
@@ -465,7 +465,7 @@ export function resolveDig(params: {
   const legChance = leggingsPlus1Chance(state);
   if (legChance > 0 && rand() < legChance) {
     bonus += 1;
-    breakdown.push("すねあて +1");
+    breakdown.push("レギンス +1");
   }
 
   const party = partySpecialtyBonus(state, params.buddyProgress, params.gacha);
@@ -521,8 +521,8 @@ export function resolveDig(params: {
     if (setBonus) debrisRate += 0.08;
     if (rand() < Math.min(0.65, debrisRate)) {
       drops.push({ material: "ancient_debris", amount: 1 });
-      breakdown.push(setBonus ? "古代の残骸！（そろい特典つき）" : "古代の残骸！");
-      hitReasons.push(setBonus ? "古代の残骸（そろい特典）" : "古代の残骸");
+      breakdown.push(setBonus ? "古代の残骸！（そろいボーナス）" : "古代の残骸！");
+      hitReasons.push(setBonus ? "古代の残骸（そろいボーナス）" : "古代の残骸");
       if (setBonus && rand() < 0.15) {
         drops.push({ material: "ancient_debris", amount: 1 });
         breakdown.push("そろいおまけ残骸+1！");
@@ -626,7 +626,7 @@ export function tryCraft(
     return { state, error: "もう持っているよ" };
   }
   if (recipe.grantsBed && partySlotCount(state) >= MAX_BEDS) {
-    return { state, error: "ベッドはもう3つあるよ（パーティ満員）" };
+    return { state, error: "ベッドはもう3つあるよ（なかまいっぱい）" };
   }
   const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
   if (upgradeFrom && !state.crafted[upgradeFrom]) {
@@ -746,7 +746,7 @@ export const QUARTZ_TO_POINTS = 3;
 export function exchangePointsForLog(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_LOG_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `採掘ポイントが${cost}必要だよ` };
+    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -763,7 +763,7 @@ export function exchangePointsForLog(state: MiningState): { state: MiningState; 
 export function exchangePointsForCobble(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(8, state);
   if (state.miningPoints < cost) {
-    return { state, error: `採掘ポイントが${cost}必要だよ` };
+    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -780,7 +780,7 @@ export function exchangePointsForCobble(state: MiningState): { state: MiningStat
 export function exchangePointsForWool(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_WOOL_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `採掘ポイントが${cost}必要だよ` };
+    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -797,7 +797,7 @@ export function exchangePointsForWool(state: MiningState): { state: MiningState;
 export function exchangePointsForDebris(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_DEBRIS_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `採掘ポイントが${cost}必要だよ` };
+    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
   }
   return {
     state: {

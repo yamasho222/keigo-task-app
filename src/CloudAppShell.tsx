@@ -328,5 +328,18 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
     );
   }
 
-  return <div key={appKey}>{children(activeContext)}</div>;
+  return (
+    <div
+      key={appKey}
+      style={{
+        height: "100%",
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {children(activeContext)}
+    </div>
+  );
 }

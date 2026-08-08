@@ -1,6 +1,7 @@
 import type { BuddyProgressMap } from "./buddyProgress";
 import { ALL_REWARDS } from "./stickerRewards";
 import {
+  emptyMiningState,
   type CraftedGearId,
   type MaterialId,
   type MiningState,
@@ -115,6 +116,31 @@ export interface DevSandboxSeed {
   stickerAlbum: string[];
   buddyProgress: BuddyProgressMap;
   buddyId: string | null;
+}
+
+/** チケット／こうかん⭐だけ十分。素材・クラフト・装備は空（序盤から掘り直し用） */
+export function buildDevTicketsOnlySeed(mining: MiningState): MiningState {
+  const blank = emptyMiningState();
+  return {
+    ...mining,
+    tickets: Math.max(mining.tickets, DEV_TICKETS),
+    miningPoints: Math.max(mining.miningPoints, DEV_MINING_POINTS),
+    materials: {},
+    crafted: {},
+    unlockedGachas: ["wood"],
+    bedCount: 1,
+    partyIds: [null, null, null],
+    equipped: { ...blank.equipped },
+  };
+}
+
+/** 素材・装備は触らず、チケット／こうかん⭐だけ足りなければ補充 */
+export function topUpDevTicketsPoints(mining: MiningState): MiningState {
+  return {
+    ...mining,
+    tickets: Math.max(mining.tickets, DEV_TICKETS),
+    miningPoints: Math.max(mining.miningPoints, DEV_MINING_POINTS),
+  };
 }
 
 /** 既存データは減らさず、体験に必要な量まで補充する。 */

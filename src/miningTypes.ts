@@ -169,41 +169,64 @@ export const GACHA_META: Record<
   nether: { label: "ネザー", emoji: "🔥", specialty: "netherite" },
 };
 
+/**
+ * 掘り演出用の正面ブロック画像（`public/mining/` 直下）。
+ * 未配置時は色面フォールバック。
+ */
+export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
+  wood: "/mining/tree.png",
+  stone: "/mining/Stone.png",
+  iron: "/mining/Iron_Ore.png",
+  coal: "/mining/Coal_Ore.png",
+  gold: "/mining/Gold_Ore.webp",
+  diamond: "/mining/Diamond_Ore.png",
+  nether: "/mining/Netherrack.webp",
+};
+
 export const TOOL_KIND_LABEL: Record<ToolKind, string> = {
   sword: "剣",
   axe: "斧",
   pickaxe: "ツルハシ",
 };
 
-/** ほるどうぐ（剣・斧・ツルハシ）の効果説明 */
+/** ほるどうぐ（剣・斧・ツルハシ）の効果説明（クラフトカード・そうび用・子ども向け） */
 export const TOOL_EFFECT_BLURB: Record<ToolKind, string> = {
-  axe: "もりで量アップ",
-  sword: "たまに素材+3／レア直（+1より弱め）",
-  pickaxe: "こうざんで量アップ／ネザーは残骸向き",
+  axe: "もりでたくさんほれやすい",
+  sword: "たまにたくさん／レアが出やすい",
+  pickaxe: "こうざんでたくさんほれやすい",
 };
 
+/** 装備画面のデフォルト一言（子ども向け） */
+export const ARMOR_EFFECT_SHORT: Record<ArmorKind, string> = {
+  helmet: "きょうのラッキー場所がわかる",
+  chest: "こうかんがお得",
+  leggings: "たまに素材+1",
+  boots: "まれに🎫もどる",
+};
+
+/** 折りたたみ用のくわしい説明 */
 export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
-  helmet: "きょうのあたり日がわかる。最初の1回は+1かくてい",
-  chest: "⚡こうかんが少しお得",
-  leggings: "どこでも素材が+1しやすい",
+  helmet: "きょうのこううん日がわかる。最初の1回は+1かくてい",
+  chest: "こうかん⭐でのこうかんが少しお得",
+  leggings: "こううんで素材が+1しやすい",
   boots: "まれにチケットがもどる",
 };
 
 /** いま掘る場所に対して、そのほるどうぐが効くか一言 */
 export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (kind === "axe") {
-    return gacha === "wood" ? "いま効く：量アップ" : "もりのときだけ効く";
+    return gacha === "wood" ? "いま効く：たくさんほれる" : "もりのときだけ効く";
   }
   if (kind === "pickaxe") {
     if (gacha === "wood") return "こうざんのときだけ効く";
     if (gacha === "nether") return "いま効く：残骸が出やすい";
     if (gacha === "coal") return "いま効く：石炭+1";
-    return "いま効く：量アップ";
+    return "いま効く：たくさんほれる";
   }
   if (gacha === "iron" || gacha === "gold") return "たまに+3／インゴット直";
   if (gacha === "diamond") return "たまに+3／ダイヤ直";
   if (gacha === "nether") return "たまに+3（残骸はツルハシ向き）";
-  return "たまに素材+3（+1より弱め）";
+  return "たまに素材+3";
 }
 
 export const GEAR_TIER_LABEL: Record<GearTier, string> = {
@@ -218,7 +241,7 @@ export const GEAR_TIER_LABEL: Record<GearTier, string> = {
 export const ARMOR_KIND_LABEL: Record<ArmorKind, string> = {
   helmet: "ヘルメット",
   chest: "むねあて",
-  leggings: "すねあて",
+  leggings: "レギンス",
   boots: "ブーツ",
 };
 

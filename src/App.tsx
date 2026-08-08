@@ -41,6 +41,8 @@ import { addMiningPoints, addTickets } from "./miningProgress";
 import { MiningScreen } from "./MiningScreen";
 import {
   buildDevSandboxSeed,
+  buildDevTicketsOnlySeed,
+  topUpDevTicketsPoints,
 } from "./devSandboxSeed";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
 import { BuddySelectPrompt } from "./BuddySelectPrompt";
@@ -1555,6 +1557,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const miningRef = useRef(mining);
   useEffect(() => { miningRef.current = mining; }, [mining]);
   const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
+  const [buddyXpToastNav, setBuddyXpToastNav] = useState<"mining" | null>(null);
   const [buddyLevelUp, setBuddyLevelUp] = useState<{ name: string; level: number } | null>(null);
   const buddyIdRef = useRef(buddyId);
   const buddyProgressRef = useRef(buddyProgress);
@@ -2690,9 +2693,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const showMiningTicketToast = (amount: number) => {
-    setBuddyXpToast(`🎫 +${amount} こうざんでほれる！`);
+    setBuddyXpToast(`🎫 +${amount} こうざんでほれる！ タップ→`);
+    setBuddyXpToastNav("mining");
     navigator.vibrate?.([18, 30, 24]);
-    setTimeout(() => setBuddyXpToast(null), 1800);
+    window.setTimeout(() => {
+      setBuddyXpToast(null);
+      setBuddyXpToastNav(null);
+    }, 2800);
   };
 
   const applyDevSandboxSeed = () => {
@@ -2718,6 +2725,22 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setBuddyXpToast(null), 2200);
   };
 
+  /** チケット／こうかん⭐だけ潤沢。装備・素材・解放は初期状態 */
+  const applyDevTicketsOnlySeed = () => {
+    const next = buildDevTicketsOnlySeed(miningRef.current);
+    setMining(next);
+    miningRef.current = next;
+    setBuddyXpToast("チケットだけの初期状態にしました");
+    setTimeout(() => setBuddyXpToast(null), 2200);
+  };
+
+  /** チケット／こうかん⭐だけ不足分を補充（装備・素材は触らない） */
+  const topUpDevMiningCurrency = () => {
+    const next = topUpDevTicketsPoints(miningRef.current);
+    setMining(next);
+    miningRef.current = next;
+  };
+
   useEffect(() => {
     if (!import.meta.env.DEV || devSeedAppliedRef.current) return;
     devSeedAppliedRef.current = true;
@@ -2730,7 +2753,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (screen !== "mining") return;
     const m = miningRef.current;
     if (m.tickets >= 50 && m.miningPoints >= 100) return;
-    applyDevSandboxSeed();
+    // フルセットで上書きせず、通貨だけ補充（チケットのみモードを壊さない）
+    topUpDevMiningCurrency();
   }, [screen]);
 
   /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり）。付与できたら true */
@@ -4108,14 +4132,23 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const dayLabel = getDayLabel();
 
   return (
-    <div style={{ width: "100%", minHeight: "100dvh", backgroundColor: theme.bg.editor, position: "relative", overflow: "hidden" }}>
+    <div style={{
+      width: "100%",
+      height: "100%",
+      flex: 1,
+      minHeight: 0,
+      backgroundColor: theme.bg.editor,
+      position: "relative",
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column",
+    }}>
       <AnimStyles />
 
       {cloud && (
         <div
           style={{
-            position: "sticky",
-            top: 0,
+            flexShrink: 0,
             zIndex: 70,
             display: "flex",
             alignItems: "center",
@@ -4219,7 +4252,20 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       )}
 
       {buddyXpToast && (
-        <div className="buddy-xp-toast" key={buddyXpToast}>{buddyXpToast}</div>
+        <div
+          className={`buddy-xp-toast${buddyXpToastNav ? " is-clickable" : ""}`}
+          key={buddyXpToast}
+          role={buddyXpToastNav ? "button" : undefined}
+          onClick={() => {
+            if (buddyXpToastNav === "mining") {
+              navigateToScreen("mining");
+              setBuddyXpToast(null);
+              setBuddyXpToastNav(null);
+            }
+          }}
+        >
+          {buddyXpToast}
+        </div>
       )}
       {buddyLevelUp && (
         <div className="buddy-levelup-overlay">
@@ -4262,7 +4308,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         style={{
           position: "fixed",
           right: 16,
-          bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
+          bottom: "max(env(safe-area-inset-bottom, 0px), 10px)",
           zIndex: 80, width: 48, height: 48, borderRadius: 14,
           backgroundColor: theme.fill.secondary, border: `1px solid ${theme.stroke.secondary}`,
           boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
@@ -4385,6 +4431,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               ...(import.meta.env.DEV ? [
                 { icon: "🧰", label: "体験フルセットを入れる（開発用）", action: () => {
                   applyDevSandboxSeed();
+                  navigateToScreen("mining");
+                  setShowMenu(false);
+                } },
+                { icon: "🎫", label: "チケットだけ／装備なし（開発用）", action: () => {
+                  applyDevTicketsOnlySeed();
                   navigateToScreen("mining");
                   setShowMenu(false);
                 } },

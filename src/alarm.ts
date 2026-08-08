@@ -395,3 +395,97 @@ export function stopAlarm() {
   if (stopTimeout) { clearTimeout(stopTimeout); stopTimeout = null; }
   if (beepInterval) { clearInterval(beepInterval); beepInterval = null; }
 }
+
+/** こうざん用の短い効果音（破壊・ドロップ・進捗など） */
+export type MiningSfx =
+  | "crack"
+  | "break"
+  | "drop"
+  | "rare"
+  | "portal"
+  | "progress"
+  | "craft"
+  | "smelt"
+  | "chapter"
+  | "ambient_wood"
+  | "ambient_cave"
+  | "ambient_nether";
+
+export async function playMiningSfx(kind: MiningSfx): Promise<boolean> {
+  const ok = await unlockAudio();
+  if (!ok) return false;
+  const ctx = getAudioContext();
+  if (!ctx || ctx.state !== "running") return false;
+  const t = ctx.currentTime;
+  switch (kind) {
+    case "crack":
+      noiseBurst(ctx, t, 0.04, 0.32, 1400);
+      tone(ctx, t, 90 + Math.random() * 40, "square", 0.18, 0.04);
+      break;
+    case "break":
+      noiseBurst(ctx, t, 0.08, 0.55, 800);
+      noiseBurst(ctx, t, 0.16, 0.4, 320, 0.04);
+      tone(ctx, t, 140, "sawtooth", 0.28, 0.09);
+      tone(ctx, t, 70, "square", 0.22, 0.12, 0.05);
+      break;
+    case "drop":
+      tone(ctx, t, 520, "triangle", 0.32, 0.08);
+      tone(ctx, t, 700, "triangle", 0.28, 0.1, 0.07);
+      break;
+    case "rare":
+      tone(ctx, t, 660, "triangle", 0.4, 0.1);
+      tone(ctx, t, 880, "triangle", 0.36, 0.12, 0.09);
+      tone(ctx, t, 1175, "triangle", 0.32, 0.16, 0.18);
+      break;
+    case "portal":
+      sweep(ctx, t, 180, 420, "sawtooth", 0.28, 0.55);
+      sweep(ctx, t, 420, 200, "sine", 0.22, 0.6);
+      break;
+    case "progress":
+      tone(ctx, t, 784, "sine", 0.36, 0.1);
+      tone(ctx, t, 1046, "sine", 0.32, 0.14, 0.09);
+      break;
+    case "craft":
+      // 作業台ガチャン＋軽いキラ
+      noiseBurst(ctx, t, 0.05, 0.4, 900);
+      tone(ctx, t, 220, "square", 0.2, 0.06);
+      tone(ctx, t, 880, "triangle", 0.28, 0.1, 0.08);
+      tone(ctx, t, 1175, "triangle", 0.22, 0.12, 0.16);
+      break;
+    case "smelt":
+      noiseBurst(ctx, t, 0.12, 0.28, 600);
+      tone(ctx, t, 160, "sawtooth", 0.2, 0.14);
+      tone(ctx, t, 320, "triangle", 0.18, 0.2, 0.1);
+      break;
+    case "chapter":
+      tone(ctx, t, 523, "sine", 0.4, 0.12);
+      tone(ctx, t, 659, "sine", 0.36, 0.14, 0.1);
+      tone(ctx, t, 784, "sine", 0.34, 0.16, 0.2);
+      tone(ctx, t, 1046, "triangle", 0.3, 0.2, 0.32);
+      break;
+    case "ambient_wood":
+      tone(ctx, t, 980, "sine", 0.12, 0.05);
+      tone(ctx, t, 1320, "sine", 0.1, 0.04, 0.12);
+      break;
+    case "ambient_cave":
+      tone(ctx, t, 180, "sine", 0.14, 0.08);
+      tone(ctx, t, 240, "triangle", 0.1, 0.1, 0.15);
+      break;
+    case "ambient_nether":
+      sweep(ctx, t, 90, 140, "sawtooth", 0.12, 0.35);
+      tone(ctx, t, 70, "square", 0.1, 0.2, 0.1);
+      break;
+  }
+  return true;
+}
+
+/** ほりば選択時の短い環境音 */
+export function playGachaAmbient(gacha: GachaIdLike): void {
+  void playMiningSfx(
+    gacha === "wood" ? "ambient_wood"
+      : gacha === "nether" ? "ambient_nether"
+        : "ambient_cave",
+  );
+}
+
+type GachaIdLike = "wood" | "stone" | "iron" | "coal" | "gold" | "diamond" | "nether";
