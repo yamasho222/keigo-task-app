@@ -333,13 +333,11 @@ function rollWeightedTier<T extends string>(weights: Record<T, number>): T {
   return Object.keys(weights)[0] as T;
 }
 
-function pickFromStickerTier(collectedIds: string[], tier: StickerRarity): StickerReward {
-  const exclude = new Set(dedupeStickerIds(collectedIds));
+/** レア度内は所持・未所持を問わず均等抽選 */
+function pickFromStickerTier(_collectedIds: string[], tier: StickerRarity): StickerReward {
   const inTier = STICKER_REWARDS.filter((r) => r.rarity === tier);
-  const available = inTier.filter((r) => !exclude.has(r.id));
-  const pool = available.length > 0 ? available : inTier;
-  if (pool.length === 0) return pickStickerReward(collectedIds);
-  return pickRandom(pool);
+  if (inTier.length === 0) return pickStickerReward();
+  return pickRandom(inTier);
 }
 
 function pickFromStickerTiers(collectedIds: string[], weights: Record<StickerRarity, number>): StickerReward {
@@ -453,19 +451,14 @@ export function getAlbumCategoryGroups(collectedIds: string[]): AlbumCategoryGro
   });
 }
 
-export function pickStickerReward(collectedIds: string[]): StickerReward {
-  const exclude = new Set(dedupeStickerIds(collectedIds));
-  const available = STICKER_REWARDS.filter((r) => !exclude.has(r.id));
-  const pool = available.length > 0 ? available : STICKER_REWARDS;
-  return pickRandom(pool);
+/** 全シールから均等抽選（所持・未所持は問わない） */
+export function pickStickerReward(_collectedIds?: string[]): StickerReward {
+  return pickRandom(STICKER_REWARDS);
 }
 
 export function pickDailyReward(collectedIds: string[]): RewardItem {
-  const exclude = new Set(dedupeStickerIds(collectedIds));
-  const availableNormal = DAILY_EMOJI_REWARDS.filter((r) => !exclude.has(r.id));
-
-  if (Math.random() < DAILY_NORMAL_WEIGHT && availableNormal.length > 0) {
-    return pickRandom(availableNormal);
+  if (Math.random() < DAILY_NORMAL_WEIGHT) {
+    return pickRandom(DAILY_EMOJI_REWARDS);
   }
   return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_DAILY);
 }

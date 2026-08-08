@@ -36,6 +36,22 @@ import {
   isBuddyMaxed, xpToNextLevel,
   type BuddyProgressMap,
 } from "./buddyProgress";
+import { normalizeMiningState, type MiningState } from "./miningTypes";
+import { addMiningPoints, addTickets } from "./miningProgress";
+import { MiningScreen } from "./MiningScreen";
+import {
+  MiningHamburgerCoachmark,
+  MiningMenuTipBanner,
+  isMiningMenuTutorialDone,
+  markMiningMenuTutorialDone,
+  resetMiningMenuTutorial,
+  type MiningMenuTutorialStep,
+} from "./MiningMenuTutorial";
+import {
+  buildDevSandboxSeed,
+  buildDevTicketsOnlySeed,
+  topUpDevTicketsPoints,
+} from "./devSandboxSeed";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
 import { BuddySelectPrompt } from "./BuddySelectPrompt";
 import { BuddyFrame } from "./BuddyFrame";
@@ -107,7 +123,7 @@ export interface ActiveChildContext {
 
 // ── Types & Data ──────────────────────────────────────
 
-type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "show_parent_oneoff" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list";
+type ScreenId  = SessionId | "show_parent" | "show_parent_mission" | "show_parent_oneoff" | "timer" | "timer_end" | "alarm_settings" | "record" | "task_list" | "mining";
 type CelebType = "confetti" | "burst" | "stripes" | "bars" | "diagonal";
 type SwipeMode = "delete" | "skip";
 
@@ -385,6 +401,8 @@ interface StoredState {
   buddyXpEarnedToday?: number;
   /** 相棒XPを付与済みのフェーズ（sessionTreatKey）。取り消し→再チェックでのXP再取得を防ぐ */
   buddyXpStampedSessions?: Record<string, boolean>;
+  /** マイクラ風採掘・クラフト */
+  mining?: MiningState;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -1543,7 +1561,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [buddyXpDate, setBuddyXpDate] = useState(stored.buddyXpDate ?? "");
   const [buddyXpEarnedToday, setBuddyXpEarnedToday] = useState(stored.buddyXpEarnedToday ?? 0);
   const [buddyXpStampedSessions, setBuddyXpStampedSessions] = useState<Record<string, boolean>>(stored.buddyXpStampedSessions ?? {});
+  const [mining, setMining] = useState<MiningState>(() => normalizeMiningState(stored.mining));
+  const miningRef = useRef(mining);
+  useEffect(() => { miningRef.current = mining; }, [mining]);
   const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
+  const [buddyXpToastNav, setBuddyXpToastNav] = useState<"mining" | null>(null);
   const [buddyLevelUp, setBuddyLevelUp] = useState<{ name: string; level: number } | null>(null);
   const buddyIdRef = useRef(buddyId);
   const buddyProgressRef = useRef(buddyProgress);
@@ -1577,6 +1599,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const fullDayBonusClaimedRef = useRef<Record<string, boolean>>(stored.fullDayBonusClaimed ?? {});
   const pityArmedRef = useRef(stored.pityArmed ?? false);
   const stickerAlbumRef = useRef(stickerAlbum);
+  const devSeedAppliedRef = useRef(false);
   const gameTimerStartRef = useRef<number | null>(null);
   const gameTimerPausedTotalRef = useRef(0);
   const gameTimerPauseStartRef = useRef<number | null>(null);
@@ -1596,6 +1619,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>(getInitialScreen());
   const [showMenu,     setShowMenu]     = useState(false);
+  const [miningMenuTutorial, setMiningMenuTutorial] = useState<MiningMenuTutorialStep>("idle");
+  const miningMenuTutorialStartedRef = useRef(false);
+  const miningMenuItemRef = useRef<HTMLButtonElement | null>(null);
   const [showTokenShop, setShowTokenShop] = useState(false);
   const [showBuddyPrompt, setShowBuddyPrompt] = useState(false);
   const [showPendingRewardsSheet, setShowPendingRewardsSheet] = useState(false);
@@ -1621,6 +1647,36 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const streak = getStreak(history, sessionSickSkip);
   useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  const completeMiningMenuTutorial = () => {
+    markMiningMenuTutorialDone();
+    setMiningMenuTutorial("idle");
+  };
+
+  const startMiningMenuTutorialPreview = () => {
+    resetMiningMenuTutorial();
+    miningMenuTutorialStartedRef.current = true;
+    setShowMenu(false);
+    setMiningMenuTutorial("hamburger");
+  };
+
+  // こうざん／クラフト初回：ハンバーガー案内
+  useEffect(() => {
+    if (miningMenuTutorialStartedRef.current) return;
+    if (isMiningMenuTutorialDone()) return;
+    if (isWorkTimerLocked) return;
+    miningMenuTutorialStartedRef.current = true;
+    const t = window.setTimeout(() => setMiningMenuTutorial("hamburger"), 700);
+    return () => window.clearTimeout(t);
+  }, [isWorkTimerLocked]);
+
+  useEffect(() => {
+    if (miningMenuTutorial !== "menuItem" || !showMenu) return;
+    const t = window.setTimeout(() => {
+      miningMenuItemRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [miningMenuTutorial, showMenu]);
 
   const activeSessionIds = getActiveSessionIds();
 
@@ -1881,6 +1937,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       buddyXpDate,
       buddyXpEarnedToday,
       buddyXpStampedSessions,
+      mining,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     saveStickerAlbum(stickerAlbum);
@@ -1903,6 +1960,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     missionHistory, missionEveningNudgeDate, catchUpDays,
     duplicateStreak, pityArmed, duplicateTokens,
     buddyId, buddyProgress, buddyXpDate, buddyXpEarnedToday, buddyXpStampedSessions,
+    mining,
   ]);
 
   useEffect(() => {
@@ -2675,6 +2733,71 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setBuddyXpToast(null), 1400);
   };
 
+  const showMiningTicketToast = (amount: number) => {
+    setBuddyXpToast(`🎫 +${amount} こうざんでほれる！ タップ→`);
+    setBuddyXpToastNav("mining");
+    navigator.vibrate?.([18, 30, 24]);
+    window.setTimeout(() => {
+      setBuddyXpToast(null);
+      setBuddyXpToastNav(null);
+    }, 2800);
+  };
+
+  const applyDevSandboxSeed = () => {
+    const seed = buildDevSandboxSeed({
+      mining: miningRef.current,
+      duplicateTokens,
+      stickerAlbum: stickerAlbumRef.current,
+      buddyProgress: buddyProgressRef.current,
+      buddyId: buddyIdRef.current,
+    });
+
+    setDuplicateTokens(seed.duplicateTokens);
+    setMining(seed.mining);
+    miningRef.current = seed.mining;
+    setStickerAlbum(seed.stickerAlbum);
+    stickerAlbumRef.current = seed.stickerAlbum;
+    saveStickerAlbum(seed.stickerAlbum);
+    setBuddyProgress(seed.buddyProgress);
+    buddyProgressRef.current = seed.buddyProgress;
+    setBuddyId(seed.buddyId);
+    buddyIdRef.current = seed.buddyId;
+    setBuddyXpToast("開発用の体験データをセットしました");
+    setTimeout(() => setBuddyXpToast(null), 2200);
+  };
+
+  /** チケット／こうかん⭐だけ潤沢。装備・素材・解放は初期状態 */
+  const applyDevTicketsOnlySeed = () => {
+    const next = buildDevTicketsOnlySeed(miningRef.current);
+    setMining(next);
+    miningRef.current = next;
+    setBuddyXpToast("チケットだけの初期状態にしました");
+    setTimeout(() => setBuddyXpToast(null), 2200);
+  };
+
+  /** チケット／こうかん⭐だけ不足分を補充（装備・素材は触らない） */
+  const topUpDevMiningCurrency = () => {
+    const next = topUpDevTicketsPoints(miningRef.current);
+    setMining(next);
+    miningRef.current = next;
+  };
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || devSeedAppliedRef.current) return;
+    devSeedAppliedRef.current = true;
+    // 開発中は空判定せず必ず補充（Math.max なので減らない）
+    applyDevSandboxSeed();
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (screen !== "mining") return;
+    const m = miningRef.current;
+    if (m.tickets >= 50 && m.miningPoints >= 100) return;
+    // フルセットで上書きせず、通貨だけ補充（チケットのみモードを壊さない）
+    topUpDevMiningCurrency();
+  }, [screen]);
+
   /** 親スタンプ由来のXP（やり直し日は付与しない・1日上限あり）。付与できたら true */
   const grantBuddyXpFromStamp = (): boolean => {
     if (activeCatchUpDate) return false;
@@ -2708,6 +2831,75 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (grantBuddyXpFromStamp()) {
       setBuddyXpStampedSessions((p) => ({ ...p, [key]: true }));
     }
+  };
+
+  /** 採掘チケット（フェーズハンコ1回＝1枚）。やり直し日は付与しない */
+  const grantMiningTicketFromSession = (session: SessionId) => {
+    if (activeCatchUpDate) return;
+    const key = sessionTreatKey(todayKey(), session);
+    let granted = 0;
+    setMining((prev) => {
+      if (prev.ticketStampedSessions[key]) return prev;
+      granted = 1;
+      let next = addTickets(prev, 1);
+      next = addMiningPoints(next, 1);
+      return {
+        ...next,
+        ticketStampedSessions: { ...next.ticketStampedSessions, [key]: true },
+      };
+    });
+    if (granted > 0) showMiningTicketToast(granted);
+  };
+
+  /** 全日クリア＋4連ストリーク票 */
+  const grantMiningTicketsForFullDay = (
+    date: string,
+    newHistory: Record<string, DayHistory>,
+    lateDays: Record<string, boolean>,
+    onTimeToday: boolean,
+  ) => {
+    if (activeCatchUpDate) return;
+    if (!onTimeToday) return;
+    let granted = 0;
+    setMining((prev) => {
+      let next = prev;
+      if (!next.fullDayTicketClaimed[date]) {
+        next = addTickets(next, 1);
+        granted += 1;
+        next = {
+          ...next,
+          fullDayTicketClaimed: { ...next.fullDayTicketClaimed, [date]: true },
+        };
+      }
+      const streak = getFullDayStreak(newHistory, lateDays, sessionSickSkip);
+      if (streak > 0 && streak % 4 === 0 && !next.streakTicketClaimed[streak]) {
+        next = addTickets(next, 1);
+        granted += 1;
+        next = {
+          ...next,
+          streakTicketClaimed: { ...next.streakTicketClaimed, [streak]: true },
+        };
+      }
+      return next;
+    });
+    if (granted > 0) showMiningTicketToast(granted);
+  };
+
+  /** ミッション／単発ミッションの親ハンコでチケット追加 */
+  const grantMiningTicketBonus = (claimKey: string) => {
+    if (activeCatchUpDate) return;
+    let granted = 0;
+    setMining((prev) => {
+      if (prev.ticketStampedSessions[claimKey]) return prev;
+      granted = 1;
+      let next = addTickets(prev, 1);
+      next = addMiningPoints(next, 1);
+      return {
+        ...next,
+        ticketStampedSessions: { ...next.ticketStampedSessions, [claimKey]: true },
+      };
+    });
+    if (granted > 0) showMiningTicketToast(granted);
   };
 
   const selectBuddy = (stickerId: string) => {
@@ -3187,6 +3379,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setOneOffSpecialStampApproved(true);
     triggerStamp();
     grantBuddyXpFromStamp();
+    if (pending) grantMiningTicketBonus(`oneoff:${pending.claimKey}`);
     setTimeout(() => {
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
@@ -3424,6 +3617,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setMissionApprovedSessions(nextApproved);
     triggerStamp();
     grantBuddyXpFromStamp();
+    grantMiningTicketBonus(`mission:${currentTodayKey}:${missionParentPhase}`);
     if (isAllMissionPhasesParentApproved(nextApproved)) {
       setMissionHistory((h) => ({
         ...h,
@@ -3493,11 +3687,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const newHistory = { ...history, [today]: updatedDay };
     setHistory(newHistory);
     triggerStamp();
+
     const sickToday = sessionSickSkip[today];
     const rewardsBlocked = dayHasActiveSickSkip(sickToday, new Date());
 
     if (!rewardsBlocked) {
       grantBuddyXpFromSessionStamp(parentSession);
+      grantMiningTicketFromSession(parentSession);
     }
 
     const treatKey = sessionTreatKey(today, parentSession);
@@ -3512,6 +3708,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const onTimeToday = isFullDayCompletionOnTime(fullDayFirstCompletedAt[today]);
     const isTrueFullToday = isTrueFullDay(updatedDay, sickToday, new Date());
     const dayRewardsOk = !rewardsBlocked && isTrueFullToday && onTimeToday;
+
+    if (dayRewardsOk) {
+      grantMiningTicketsForFullDay(today, newHistory, lateDays, onTimeToday);
+    }
 
     const fullDayBonusEligible = dayRewardsOk
       && !fullDayBonusClaimed[today]
@@ -3973,14 +4173,23 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const dayLabel = getDayLabel();
 
   return (
-    <div style={{ width: "100%", minHeight: "100dvh", backgroundColor: theme.bg.editor, position: "relative", overflow: "hidden" }}>
+    <div style={{
+      width: "100%",
+      height: "100%",
+      flex: 1,
+      minHeight: 0,
+      backgroundColor: theme.bg.editor,
+      position: "relative",
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column",
+    }}>
       <AnimStyles />
 
       {cloud && (
         <div
           style={{
-            position: "sticky",
-            top: 0,
+            flexShrink: 0,
             zIndex: 70,
             display: "flex",
             alignItems: "center",
@@ -4084,7 +4293,20 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       )}
 
       {buddyXpToast && (
-        <div className="buddy-xp-toast" key={buddyXpToast}>{buddyXpToast}</div>
+        <div
+          className={`buddy-xp-toast${buddyXpToastNav ? " is-clickable" : ""}`}
+          key={buddyXpToast}
+          role={buddyXpToastNav ? "button" : undefined}
+          onClick={() => {
+            if (buddyXpToastNav === "mining") {
+              navigateToScreen("mining");
+              setBuddyXpToast(null);
+              setBuddyXpToastNav(null);
+            }
+          }}
+        >
+          {buddyXpToast}
+        </div>
       )}
       {buddyLevelUp && (
         <div className="buddy-levelup-overlay">
@@ -4122,13 +4344,19 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       <button
         type="button"
         aria-label="メニューを開く"
-        onClick={() => { if (!isWorkTimerLocked) setShowMenu(true); }}
+        className={miningMenuTutorial === "hamburger" ? "mining-menu-tutorial-fab is-pulse" : undefined}
+        onClick={() => {
+          if (isWorkTimerLocked) return;
+          setShowMenu(true);
+          if (miningMenuTutorial === "hamburger") setMiningMenuTutorial("menuItem");
+        }}
         disabled={isWorkTimerLocked}
         style={{
           position: "fixed",
           right: 16,
-          bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
-          zIndex: 80, width: 48, height: 48, borderRadius: 14,
+          bottom: "max(env(safe-area-inset-bottom, 0px), 10px)",
+          zIndex: miningMenuTutorial === "hamburger" ? 120 : 80,
+          width: 48, height: 48, borderRadius: 14,
           backgroundColor: theme.fill.secondary, border: `1px solid ${theme.stroke.secondary}`,
           boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
           cursor: isWorkTimerLocked ? "default" : "pointer",
@@ -4148,16 +4376,32 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             {unclaimedRewardCount}
           </span>
         )}
+        {miningMenuTutorial === "hamburger" && unclaimedRewardCount <= 0 && (
+          <span className="mining-menu-tutorial-new-dot" aria-hidden>N</span>
+        )}
         {[0,1,2].map((i) => (
           <span key={i} style={{ display: "block", width: 18, height: 2, borderRadius: 2, backgroundColor: theme.text.secondary }} />
         ))}
       </button>
 
+      {miningMenuTutorial === "hamburger" && !showMenu && (
+        <MiningHamburgerCoachmark
+          onView={() => {
+            setShowMenu(true);
+            setMiningMenuTutorial("menuItem");
+          }}
+          onDismiss={completeMiningMenuTutorial}
+        />
+      )}
+
       {/* ── ハンバーガーメニュー オーバーレイ */}
       {showMenu && (
         <div
           data-modal-overlay
-          onClick={() => setShowMenu(false)}
+          onClick={() => {
+            setShowMenu(false);
+            if (miningMenuTutorial === "menuItem") setMiningMenuTutorial("hamburger");
+          }}
           style={{
             position: "fixed", inset: 0, zIndex: 90,
             backgroundColor: "rgba(0,0,0,0.45)",
@@ -4179,11 +4423,17 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             {/* メニューヘッダー */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px 12px", flexShrink: 0 }}>
               <span style={{ fontSize: 15, fontWeight: 700, color: theme.text.primary }}>メニュー</span>
-              <button onClick={() => setShowMenu(false)} style={{
+              <button onClick={() => {
+                setShowMenu(false);
+                if (miningMenuTutorial === "menuItem") setMiningMenuTutorial("hamburger");
+              }} style={{
                 background: "none", border: "none", cursor: "pointer",
                 color: theme.text.tertiary, fontSize: 22, lineHeight: 1, padding: 4,
               }}>✕</button>
             </div>
+            {miningMenuTutorial === "menuItem" && (
+              <MiningMenuTipBanner onGotIt={completeMiningMenuTutorial} />
+            )}
             {/* メニュー項目（スクロール） */}
             <div style={{
               flex: 1, minHeight: 0, overflowY: "auto",
@@ -4221,6 +4471,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
+              { id: "mining", icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
+                if (import.meta.env.DEV) applyDevSandboxSeed();
+                completeMiningMenuTutorial();
+                navigateToScreen("mining");
+                setShowMenu(false);
+              } },
               { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
                 setShowTokenShop(true);
                 setShowMenu(false);
@@ -4243,6 +4499,19 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 },
               ] : []),
               ...(import.meta.env.DEV ? [
+                { icon: "📘", label: "こうざん案内を再表示（開発用）", action: () => {
+                  startMiningMenuTutorialPreview();
+                } },
+                { icon: "🧰", label: "体験フルセットを入れる（開発用）", action: () => {
+                  applyDevSandboxSeed();
+                  navigateToScreen("mining");
+                  setShowMenu(false);
+                } },
+                { icon: "🎫", label: "チケットだけ／装備なし（開発用）", action: () => {
+                  applyDevTicketsOnlySeed();
+                  navigateToScreen("mining");
+                  setShowMenu(false);
+                } },
                 { icon: "⛏️", label: "MCシールプレビュー（全16枚）", action: () => {
                   openTreatQueue(getStickersByCategory("minecraft").map((s) => ({
                     mode: "daily" as const,
@@ -4323,6 +4592,32 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setBuddyProgress(next);
                   buddyProgressRef.current = next;
                   showBuddyLevelUp(id, BUDDY_MAX_LEVEL);
+                  setShowMenu(false);
+                } },
+                { icon: "🎫", label: "採掘チケット+10（テスト）", action: () => {
+                  setMining((m) => addTickets(m, 10));
+                  setShowMenu(false);
+                } },
+                { icon: "🪵", label: "原木+20（テスト）", action: () => {
+                  setMining((m) => ({
+                    ...m,
+                    materials: { ...m.materials, log: (m.materials.log ?? 0) + 20 },
+                  }));
+                  setShowMenu(false);
+                } },
+                { icon: "🪨", label: "丸石+20（テスト）", action: () => {
+                  setMining((m) => ({
+                    ...m,
+                    materials: { ...m.materials, cobble: (m.materials.cobble ?? 0) + 20 },
+                  }));
+                  setShowMenu(false);
+                } },
+                { icon: "⚡", label: "採掘ポイント+50（テスト）", action: () => {
+                  setMining((m) => addMiningPoints(m, 50));
+                  setShowMenu(false);
+                } },
+                { icon: "⛏️", label: "こうざん画面を開く（テスト）", action: () => {
+                  navigateToScreen("mining");
                   setShowMenu(false);
                 } },
                 { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {
@@ -4449,17 +4744,34 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setShowMenu(false);
                 } },
               ] : []),
-            ].map(({ icon, label, action }) => (
-              <button key={label} onClick={action} style={{
-                display: "flex", alignItems: "center", gap: 14,
-                padding: "16px 20px", background: "none", border: "none",
-                cursor: "pointer", textAlign: "left", width: "100%",
-                borderBottom: `1px solid ${theme.stroke.secondary}`,
-              }}>
+            ].map(({ icon, label, action, id }: { icon: string; label: string; action: () => void; id?: string }) => {
+              const highlightMining = miningMenuTutorial === "menuItem" && id === "mining";
+              const showNewBadge = id === "mining" && !isMiningMenuTutorialDone();
+              return (
+              <button
+                key={label}
+                ref={id === "mining" ? miningMenuItemRef : undefined}
+                type="button"
+                onClick={action}
+                className={highlightMining ? "mining-menu-tutorial-row is-highlight" : undefined}
+                style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  padding: "16px 20px",
+                  background: highlightMining ? `${theme.accent.primary}14` : "none",
+                  border: "none",
+                  cursor: "pointer", textAlign: "left", width: "100%",
+                  borderBottom: `1px solid ${theme.stroke.secondary}`,
+                  boxShadow: highlightMining ? `inset 3px 0 0 ${theme.accent.primary}` : undefined,
+                }}
+              >
                 <span style={{ fontSize: 22 }}>{icon}</span>
-                <span style={{ fontSize: 15, color: theme.text.primary, fontWeight: 600 }}>{label}</span>
+                <span style={{ fontSize: 15, color: theme.text.primary, fontWeight: 600, flex: 1 }}>{label}</span>
+                {showNewBadge && (
+                  <span className="mining-menu-tutorial-new-badge">NEW</span>
+                )}
               </button>
-            ))}
+              );
+            })}
             </div>
           </div>
         </div>
@@ -4813,6 +5125,46 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             onOpenBuddySelect={() => setShowBuddyPrompt(true)}
             onBack={goHome}
             onSelectCatchUpDay={openCatchUpDay}
+          />
+        )}
+
+        {screen === "mining" && (
+          <MiningScreen
+            mining={mining}
+            stickerAlbum={stickerAlbum}
+            buddyProgress={buddyProgress}
+            dateKey={todayKey()}
+            onChange={setMining}
+            onEnsureStickers={(ids) => {
+              setStickerAlbum((prev) => {
+                const next = [...prev];
+                let changed = false;
+                for (const id of ids) {
+                  if (!next.includes(id) && REWARD_LOOKUP[id]) {
+                    next.push(id);
+                    changed = true;
+                  }
+                }
+                if (!changed) return prev;
+                stickerAlbumRef.current = next;
+                saveStickerAlbum(next);
+                return next;
+              });
+              setBuddyProgress((prev) => {
+                let next = { ...prev };
+                let changed = false;
+                for (const id of ids) {
+                  if (!prev[id]) {
+                    next = { ...next, [id]: { level: 1, xp: 0 } };
+                    changed = true;
+                  }
+                }
+                if (!changed) return prev;
+                buddyProgressRef.current = next;
+                return next;
+              });
+            }}
+            onBack={goHome}
           />
         )}
 
