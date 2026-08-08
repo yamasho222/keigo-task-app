@@ -12,12 +12,15 @@ import {
   xpToNextLevel, type BuddyProgressMap,
 } from "./buddyProgress";
 import {
-  completedSessionCount, isDaytimeSessionDay, isFullDayForDate, parseDateKey,
+  completedSessionCount, dayHasActiveSickSkip, hasNonSickSession, isDayBridged,
+  isDaytimeSessionDay, isFullDayForDate, isTrueFullDay, parseDateKey,
   requiredSessionCount,
 } from "./japaneseCalendar";
 import { formatCatchUpDateLabel, isCatchUpEligible } from "./catchUp";
 
 export interface DayHistory { morning: boolean; daytime: boolean; home: boolean; evening: boolean; }
+
+export type SickSkipMap = Record<string, DayHistory>;
 
 interface SessionFlags {
   morning: boolean;
@@ -39,6 +42,8 @@ export function isFullDay(day?: DayHistory, date: Date = new Date()): boolean {
   return isFullDayForDate(day, date);
 }
 
+export { isDayBridged, isTrueFullDay, dayHasActiveSickSkip, hasNonSickSession };
+
 function localDateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -49,6 +54,7 @@ function localDateKey(d: Date): string {
 export function getFullDayStreak(
   history: Record<string, DayHistory>,
   lateDays?: Record<string, boolean>,
+  sickSkip?: SickSkipMap,
 ): number {
   let streak = 0;
   const today = new Date();
@@ -58,7 +64,9 @@ export function getFullDayStreak(
     const key = localDateKey(d);
     // 21:31以降に全部完了した日は連続記録に入れない（ここで途切れる）
     if (lateDays?.[key]) break;
-    if (isFullDay(history[key], d)) streak++;
+    // 体調スキップで埋めた橋渡し日は + せず通り抜ける
+    if (isDayBridged(history[key], sickSkip?.[key], d)) continue;
+    if (isTrueFullDay(history[key], sickSkip?.[key], d)) streak++;
     else break;
   }
   return streak;
@@ -172,14 +180,21 @@ export function getNearestStreakMilestone(fullDayStreak: number): NearestStreakM
   return candidates[0];
 }
 
-export function getStreak(history: Record<string, DayHistory>): number {
+export function getStreak(
+  history: Record<string, DayHistory>,
+  sickSkip?: SickSkipMap,
+): number {
   let streak = 0;
   const today = new Date();
   for (let i = 0; i < 365; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const day = history[localDateKey(d)];
-    if (day && (day.morning || day.daytime || day.evening || day.home)) streak++;
+    const key = localDateKey(d);
+    const day = history[key];
+    const sick = sickSkip?.[key];
+    // 橋渡し日は連続に入れないが途切れもしない
+    if (isDayBridged(day, sick, d)) continue;
+    if (hasNonSickSession(day, sick)) streak++;
     else break;
   }
   return streak;
@@ -191,7 +206,13 @@ function dateKey(y: number, m: number, d: number) {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function cellStyle(flags: SessionFlags, isToday: boolean, date: Date, isLate = false): CSSProperties {
+function cellStyle(
+  flags: SessionFlags,
+  isToday: boolean,
+  date: Date,
+  isLate = false,
+  isBridge = false,
+): CSSProperties {
   const count = completedSessionCount(flags, date);
   const required = requiredSessionCount(date);
   const withDaytime = isDaytimeSessionDay(date);
@@ -206,6 +227,9 @@ function cellStyle(flags: SessionFlags, isToday: boolean, date: Date, isLate = f
     return { ...base, backgroundColor: theme.fill.secondary, color: theme.text.tertiary };
   }
   if (count === required) {
+    if (isBridge) {
+      return { ...base, backgroundColor: "#A8B5C4", color: "#fff" };
+    }
     // 21:31以降に全部完了 → 緑にせず「間に合わなかった」色
     if (isLate) {
       return { ...base, backgroundColor: "#8E8E93", color: "#fff" };
@@ -230,10 +254,19 @@ function cellStyle(flags: SessionFlags, isToday: boolean, date: Date, isLate = f
   };
 }
 
-function cellIcon(flags: SessionFlags, day: number, date: Date, isLate = false) {
+function cellIcon(
+  flags: SessionFlags,
+  day: number,
+  date: Date,
+  isLate = false,
+  isBridge = false,
+) {
   const count = completedSessionCount(flags, date);
   const required = requiredSessionCount(date);
-  if (count === required) return isLate ? "🕘" : "⭐";
+  if (count === required) {
+    if (isBridge) return <span style={{ fontSize: 11, fontWeight: 800 }}>休</span>;
+    return isLate ? "🕘" : "⭐";
+  }
   if (count >= Math.max(2, required - 1)) return "✨";
   if (flags.morning) return "🌅";
   if (flags.daytime) return "🌤";
@@ -252,6 +285,8 @@ interface Props {
   buddyXpEarnedToday?: number;
   /** 21:31以降に全部完了した日（連続記録対象外・カレンダー色変更） */
   lateDays?: Record<string, boolean>;
+  /** 体調スキップしたフェーズ（dateKey → DayHistory） */
+  sickSkip?: SickSkipMap;
   onSelectBuddy?: (stickerId: string) => void;
   onTrainBuddy?: (stickerId: string) => void;
   /** 今日の相棒を選ぶ／変えるシートを開く */
@@ -264,6 +299,7 @@ export function RecordScreen({
   history, streak, stickerAlbum, duplicateTokens = 0,
   buddyId = null, buddyProgress, buddyXpEarnedToday = 0,
   lateDays = {},
+  sickSkip = {},
   onSelectBuddy, onTrainBuddy, onOpenBuddySelect,
   onBack, onSelectCatchUpDay,
 }: Props) {
@@ -296,10 +332,10 @@ export function RecordScreen({
 
   const monthFull = Array.from({ length: lastDate }, (_, i) => {
     const key = dateKey(year, month, i + 1);
-    return isFullDay(history[key], parseDateKey(key));
+    return isTrueFullDay(history[key], sickSkip[key], parseDateKey(key));
   }).filter(Boolean).length;
 
-  const fullDayStreak = getFullDayStreak(history, lateDays);
+  const fullDayStreak = getFullDayStreak(history, lateDays, sickSkip);
   const nearestMilestone = fullDayStreak >= 1 ? getNearestStreakMilestone(fullDayStreak) : null;
   const uniqueAlbum = dedupeStickerIds(stickerAlbum);
   const albumGroups = getAlbumCategoryGroups(stickerAlbum);
@@ -390,7 +426,8 @@ export function RecordScreen({
           const isToday = key === todayStr;
           const catchUpEligible = !!onSelectCatchUpDay && isCatchUpEligible(key, history);
           const isLate = !!lateDays[key];
-          const baseStyle = cellStyle(flags, isToday, cellDate, isLate);
+          const isBridge = isDayBridged(history[key], sickSkip[key], cellDate);
+          const baseStyle = cellStyle(flags, isToday, cellDate, isLate, isBridge);
           return (
             <div
               key={key}
@@ -410,7 +447,7 @@ export function RecordScreen({
                 outlineOffset: catchUpEligible ? -1 : undefined,
               }}
             >
-              {cellIcon(flags, day, cellDate, isLate)}
+              {cellIcon(flags, day, cellDate, isLate, isBridge)}
             </div>
           );
         })}
@@ -432,6 +469,7 @@ export function RecordScreen({
         <span>🏠 帰宅後</span>
         <span>🌙 夜</span>
         <span>⭐ きょうは{todayRequired}つ全部</span>
+        <span>休 体調スキップ（連続は途切れない）</span>
       </div>
 
       {/* 今日の相棒 */}

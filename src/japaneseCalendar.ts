@@ -33,7 +33,7 @@ export function parseDateKey(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
-interface DayFlags {
+export interface DayFlags {
   morning: boolean;
   daytime: boolean;
   home: boolean;
@@ -52,4 +52,42 @@ export function requiredSessionCount(d: Date): number {
 export function isFullDayForDate(day: DayFlags | undefined, d: Date): boolean {
   if (!day) return false;
   return getActiveSessionIds(d).every((sid) => day[sid]);
+}
+
+/** その日の有効フェーズに体調スキップが1つ以上ある */
+export function dayHasActiveSickSkip(sick: DayFlags | undefined, d: Date = new Date()): boolean {
+  if (!sick) return false;
+  return getActiveSessionIds(d).some((sid) => !!sick[sid]);
+}
+
+/**
+ * 橋渡し日: 必要フェーズがすべて埋まっていて、うち1つ以上が体調スキップ。
+ * 連続には +1 しないが、途切れもしない。
+ */
+export function isDayBridged(
+  day: DayFlags | undefined,
+  sick: DayFlags | undefined,
+  d: Date = new Date(),
+): boolean {
+  return isFullDayForDate(day, d) && dayHasActiveSickSkip(sick, d);
+}
+
+/** 本番の全部クリア（体調スキップなし） */
+export function isTrueFullDay(
+  day: DayFlags | undefined,
+  sick: DayFlags | undefined,
+  d: Date = new Date(),
+): boolean {
+  return isFullDayForDate(day, d) && !dayHasActiveSickSkip(sick, d);
+}
+
+/** history 上で体調スキップ以外の完了がある */
+export function hasNonSickSession(
+  day: DayFlags | undefined,
+  sick: DayFlags | undefined,
+): boolean {
+  if (!day) return false;
+  return (["morning", "daytime", "home", "evening"] as const).some(
+    (sid) => !!day[sid] && !sick?.[sid],
+  );
 }
