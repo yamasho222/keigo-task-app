@@ -8,6 +8,7 @@ import {
   pickFuelOption,
   visibleRecipes,
   type MiningRecipe,
+  type RecipeCost,
 } from "./miningRecipes";
 import {
   CATEGORY_SPECIALTY,
@@ -160,7 +161,7 @@ export function refreshUnlocks(state: MiningState): MiningState {
     unlocked.add("coal");
     unlocked.add("gold");
   }
-  if (ironFullComplete(state)) unlocked.add("diamond");
+  if (ironToolsComplete(state)) unlocked.add("diamond");
   if (diamondToolsComplete(state)) unlocked.add("nether");
   return { ...state, unlockedGachas: [...unlocked] };
 }
@@ -513,7 +514,7 @@ export function resolveDig(params: {
     drops.push({ material: "nether_quartz", amount: primaryAmount });
     // A': 基本40%／ネザライトツルハシで約55%。揃え特典でさらに+。
     const setBonus = netheriteFullComplete(state);
-    let debrisRate = 0.4;
+    let debrisRate = 0.32;
     if (toolParsed?.kind === "pickaxe") {
       debrisRate += TIER_PLUS1[toolParsed.tier] * 0.5;
     }
@@ -613,6 +614,7 @@ export function resolveDig(params: {
 export function tryCraft(
   state: MiningState,
   recipe: MiningRecipe,
+  opts?: { fuel?: RecipeCost },
 ): { state: MiningState; error?: string } {
   if (recipe.needsWorkbench && !hasWorkbench(state)) {
     return { state, error: "先に作業台を作ってね" };
@@ -635,14 +637,29 @@ export function tryCraft(
     return { state, error: recipe.fuelOptions?.length ? "材料か燃料が足りないよ" : "材料が足りないよ" };
   }
 
-  const fuel = pickFuelOption(recipe.fuelOptions, have);
+  let fuel: RecipeCost | null = null;
+  if (recipe.fuelOptions?.length) {
+    if (opts?.fuel) {
+      const match = recipe.fuelOptions.find(
+        (f) => f.material === opts.fuel!.material && f.amount === opts.fuel!.amount,
+      );
+      if (!match || have(match.material) < match.amount) {
+        return { state, error: "選んだ燃料が足りないよ" };
+      }
+      fuel = match;
+    } else {
+      fuel = pickFuelOption(recipe.fuelOptions, have);
+    }
+    if (!fuel) return { state, error: "燃料が足りないよ" };
+  }
+
   const materials = { ...state.materials };
   for (const c of recipe.costs) {
     materials[c.material] = getMaterialCount(state, c.material) - c.amount;
     if ((materials[c.material] ?? 0) <= 0) delete materials[c.material];
   }
   if (fuel) {
-    const left = (materials[fuel.material] ?? 0) - fuel.amount;
+    const left = (materials[fuel.material] ?? getMaterialCount(state, fuel.material)) - fuel.amount;
     if (left > 0) materials[fuel.material] = left;
     else delete materials[fuel.material];
   }
@@ -724,7 +741,7 @@ export const EXCHANGE_WOOL_COST = 28;
 /** 古代の残骸は救済。ネザー掘りよりかなり高め */
 export const EXCHANGE_DEBRIS_COST = 90;
 /** ネザークォーツ1個を⚡にかえしたときの量（むねあて割引なし） */
-export const QUARTZ_TO_POINTS = 1;
+export const QUARTZ_TO_POINTS = 3;
 
 export function exchangePointsForLog(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_LOG_COST, state);

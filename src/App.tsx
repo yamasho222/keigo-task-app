@@ -2689,6 +2689,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setBuddyXpToast(null), 1400);
   };
 
+  const showMiningTicketToast = (amount: number) => {
+    setBuddyXpToast(`🎫 +${amount} こうざんでほれる！`);
+    navigator.vibrate?.([18, 30, 24]);
+    setTimeout(() => setBuddyXpToast(null), 1800);
+  };
+
   const applyDevSandboxSeed = () => {
     const seed = buildDevSandboxSeed({
       mining: miningRef.current,
@@ -2766,8 +2772,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const grantMiningTicketFromSession = (session: SessionId) => {
     if (activeCatchUpDate) return;
     const key = sessionTreatKey(todayKey(), session);
+    let granted = 0;
     setMining((prev) => {
       if (prev.ticketStampedSessions[key]) return prev;
+      granted = 1;
       let next = addTickets(prev, 1);
       next = addMiningPoints(next, 1);
       return {
@@ -2775,6 +2783,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         ticketStampedSessions: { ...next.ticketStampedSessions, [key]: true },
       };
     });
+    if (granted > 0) showMiningTicketToast(granted);
   };
 
   /** 全日クリア＋4連ストリーク票 */
@@ -2786,10 +2795,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   ) => {
     if (activeCatchUpDate) return;
     if (!onTimeToday) return;
+    let granted = 0;
     setMining((prev) => {
       let next = prev;
       if (!next.fullDayTicketClaimed[date]) {
         next = addTickets(next, 1);
+        granted += 1;
         next = {
           ...next,
           fullDayTicketClaimed: { ...next.fullDayTicketClaimed, [date]: true },
@@ -2798,6 +2809,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       const streak = getFullDayStreak(newHistory, lateDays, sessionSickSkip);
       if (streak > 0 && streak % 4 === 0 && !next.streakTicketClaimed[streak]) {
         next = addTickets(next, 1);
+        granted += 1;
         next = {
           ...next,
           streakTicketClaimed: { ...next.streakTicketClaimed, [streak]: true },
@@ -2805,13 +2817,16 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       }
       return next;
     });
+    if (granted > 0) showMiningTicketToast(granted);
   };
 
   /** ミッション／単発ミッションの親ハンコでチケット追加 */
   const grantMiningTicketBonus = (claimKey: string) => {
     if (activeCatchUpDate) return;
+    let granted = 0;
     setMining((prev) => {
       if (prev.ticketStampedSessions[claimKey]) return prev;
+      granted = 1;
       let next = addTickets(prev, 1);
       next = addMiningPoints(next, 1);
       return {
@@ -2819,6 +2834,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         ticketStampedSessions: { ...next.ticketStampedSessions, [claimKey]: true },
       };
     });
+    if (granted > 0) showMiningTicketToast(granted);
   };
 
   const selectBuddy = (stickerId: string) => {

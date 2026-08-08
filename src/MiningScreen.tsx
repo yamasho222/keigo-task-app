@@ -34,12 +34,13 @@ import {
   setPartySlot,
   specialtyForGacha,
   tryCraft,
+  woodToolsComplete,
   type DigResult,
   type MiningRecipe,
 } from "./miningProgress";
 import { NETHERITE_UPGRADE_REQUIRES, recipeProgress } from "./miningRecipes";
 import { MiningItemIcon } from "./MiningItemIcon";
-import { boostStrengthLabel, miningNextGoal, nextGachaUnlock } from "./miningUiHelpers";
+import { boostStrengthLabel, gachaForMaterial, GACHA_SURFACE, miningNextGoal, nextGachaUnlock } from "./miningUiHelpers";
 import {
   ARMOR_KIND_LABEL,
   GACHA_META,
@@ -156,13 +157,22 @@ function DigFxOverlay({
   phase,
   gacha,
   result,
+  canDigAgain,
+  onDigAgain,
   onClose,
 }: {
   phase: DigFxPhase;
   gacha: GachaId;
   result: DigResult | null;
+  canDigAgain: boolean;
+  onDigAgain: () => void;
   onClose: () => void;
 }) {
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  useEffect(() => {
+    setReasonsOpen(false);
+  }, [phase, result]);
+
   if (phase === "idle") return null;
   const meta = GACHA_META[gacha];
   const tier = result && phase === "reveal" ? digHitTier(result) : "normal";
@@ -179,7 +189,7 @@ function DigFxOverlay({
 
   return (
     <div className={`mining-dig-overlay${tier === "great" ? " is-hit-great-bg" : tier === "good" ? " is-hit-good-bg" : ""}`} role="dialog" aria-modal="true">
-      <div className={cardClass}>
+      <div className={cardClass} style={phase === "swing" ? { background: GACHA_SURFACE[gacha] } : undefined}>
         {phase === "swing" && (
           <>
             <div className="mining-dig-scene">{meta.emoji}</div>
@@ -209,26 +219,16 @@ function DigFxOverlay({
             {tier === "good" && (
               <div className="mining-dig-hit-sub">ちょっといい感じ！</div>
             )}
-            {tier !== "normal" && result.hitReasons.length > 0 && (
-              <div className="mining-dig-hit-reasons">
-                <div className="mining-dig-hit-reasons-title">
-                  {tier === "great" ? "大あたりの理由" : "あたりの理由"}
-                </div>
-                {result.hitReasons.map((reason) => (
-                  <div key={reason} className="mining-dig-hit-reason">・{reason}</div>
-                ))}
-              </div>
-            )}
             <div className="mining-dig-drops">
               {result.drops.map((d, i) => {
                 const highlight = isDigHighlightDrop(d.material, d.amount, tier);
                 return (
                   <div
                     key={`${d.material}-${i}`}
-                    className={`mining-dig-drop${highlight ? " is-highlight" : ""}`}
+                    className={`mining-dig-drop${highlight ? " is-highlight" : ""}${tier === "great" && highlight ? " is-great-pop" : ""}`}
                   >
                     <span className="mining-dig-drop-emoji">
-                      <MiningItemIcon material={d.material} size={highlight ? 34 : 28} alt={MATERIAL_META[d.material].label} />
+                      <MiningItemIcon material={d.material} size={highlight ? 36 : 28} alt={MATERIAL_META[d.material].label} />
                     </span>
                     <span className="mining-dig-drop-label">{MATERIAL_META[d.material].label}</span>
                     <span className="mining-dig-drop-amount">×{d.amount}</span>
@@ -236,6 +236,20 @@ function DigFxOverlay({
                 );
               })}
             </div>
+            {tier !== "normal" && result.hitReasons.length > 0 && (
+              <div className="mining-dig-hit-reasons">
+                <button
+                  type="button"
+                  className="mining-dig-hit-reasons-toggle"
+                  onClick={() => setReasonsOpen((v) => !v)}
+                >
+                  {reasonsOpen ? "▲" : "▼"} {tier === "great" ? "なぜ大あたり？" : "なぜあたり？"}
+                </button>
+                {reasonsOpen && result.hitReasons.map((reason) => (
+                  <div key={reason} className="mining-dig-hit-reason">・{reason}</div>
+                ))}
+              </div>
+            )}
             <div className="mining-dig-breakdown">
               {result.breakdown.join(" · ")}
               {result.usedTool ? ` · ${gearLabel(result.usedTool)}` : ""}
@@ -243,9 +257,16 @@ function DigFxOverlay({
             {result.ticketRefunded && (
               <div className="mining-dig-bonus">🎫 チケットがもどった！</div>
             )}
-            <button type="button" className="mining-dig-close" onClick={onClose}>
-              つぎへ
-            </button>
+            <div className="mining-dig-actions">
+              {canDigAgain && (
+                <button type="button" className="mining-dig-again" onClick={onDigAgain}>
+                  もういちどほる
+                </button>
+              )}
+              <button type="button" className="mining-dig-close" onClick={onClose}>
+                {canDigAgain ? "とじる" : "つぎへ"}
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -274,8 +295,13 @@ export function MiningScreen({
   const [digBusy, setDigBusy] = useState(false);
   const [boostDetailOpen, setBoostDetailOpen] = useState(false);
   const [craftShowAll, setCraftShowAll] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  /** 精錬レシピごとの燃料選択（material id） */
+  const [fuelChoice, setFuelChoice] = useState<Partial<Record<string, MaterialId>>>({});
 
   const recipes = useMemo(() => recipesForState(mining), [mining]);
+  const earlyGame = !woodToolsComplete(mining);
+  const supportExpanded = !earlyGame || supportOpen;
   const hasHelmet = !!(mining.equipped.helmet && mining.crafted[mining.equipped.helmet]);
   const lucky = luckyGachaForDate(dateKey, mining.unlockedGachas, hasHelmet);
   const boost = useMemo(
@@ -340,8 +366,39 @@ export function MiningScreen({
     setDigBusy(false);
   };
 
+  const digAgainFromFx = () => {
+    if (digFx !== "reveal") return;
+    if (mining.tickets < 1) {
+      showToast("チケットが足りないよ");
+      closeDigFx();
+      return;
+    }
+    const result = resolveDig({
+      state: mining,
+      gacha: selectedGacha,
+      toolKind,
+      buddyProgress,
+      dateKey,
+    });
+    if ("error" in result) {
+      showToast(result.error);
+      closeDigFx();
+      return;
+    }
+    onChange(result.state);
+    setLastDig(result);
+    setDigFx("swing");
+    setDigBusy(true);
+    navigator.vibrate?.([18, 30, 18, 30, 40]);
+  };
+
   const onCraft = (recipe: MiningRecipe) => {
-    const result = tryCraft(mining, recipe);
+    const chosenId = fuelChoice[recipe.id];
+    const fuel =
+      recipe.fuelOptions && chosenId
+        ? recipe.fuelOptions.find((f) => f.material === chosenId)
+        : undefined;
+    const result = tryCraft(mining, recipe, fuel ? { fuel } : undefined);
     if (result.error) {
       showToast(result.error);
       return;
@@ -421,6 +478,27 @@ export function MiningScreen({
         <div style={{ marginTop: 6, fontSize: 12, fontWeight: 800, color: theme.accent.primary }}>
           {nextGoal}
         </div>
+        {mining.tickets < 1 && (
+          <div style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            borderRadius: 10,
+            backgroundColor: `${theme.category.orange}18`,
+            fontSize: 13,
+            fontWeight: 800,
+            color: theme.text.primary,
+            lineHeight: 1.45,
+          }}>
+            チケットは親のハンコでもらえるよ。もどってタスクをクリアしよう！
+            <button
+              type="button"
+              onClick={onBack}
+              style={{ ...btnGhost, marginTop: 6, fontWeight: 900, borderColor: theme.category.orange }}
+            >
+              タスクにもどる
+            </button>
+          </div>
+        )}
         {netheriteFullComplete(mining) && (
           <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: theme.category.green }}>
             ネザライトそろい特典ON
@@ -428,82 +506,85 @@ export function MiningScreen({
         )}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ ...card, padding: 10 }}>
         <button
           type="button"
-          onClick={() => { setOverlay("party"); setPartySlotEdit(0); }}
-          style={{ ...card, textAlign: "left", cursor: "pointer", width: "100%", padding: 12 }}
+          onClick={() => { if (earlyGame) setSupportOpen((v) => !v); }}
+          style={{
+            width: "100%", border: "none", background: "transparent", padding: 0,
+            cursor: earlyGame ? "pointer" : "default", textAlign: "left", color: theme.text.primary,
+          }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary }}>
-              パーティ（ベッド {slots}/{MAX_BEDS}）
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: theme.text.secondary }}>
+              パーティ・そうび
+              {earlyGame && !supportOpen && <span style={{ marginLeft: 8, fontWeight: 700 }}>（あとでひらく）</span>}
             </div>
-            <span style={{ fontSize: 12, fontWeight: 800, color: theme.text.tertiary }}>›</span>
+            {earlyGame && (
+              <span style={{ fontSize: 12, fontWeight: 800, color: theme.text.tertiary }}>{supportOpen ? "▲" : "▼"}</span>
+            )}
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            {Array.from({ length: slots }, (_, i) => {
-              const id = mining.partyIds[i];
-              const item = id ? REWARD_LOOKUP[id] : null;
-              const lv = id ? getBuddyEntry(buddyProgress, id).level : 1;
-              const match = !!(item && specialtyOfCategory(item.category) === wantSpec);
-              return (
-                <div
-                  key={i}
-                  style={{
-                    width: 56, height: 64, borderRadius: 10,
-                    border: `1.5px ${match ? "solid" : "dashed"} ${match ? theme.category.green : theme.stroke.primary}`,
-                    background: match ? `${theme.category.green}14` : theme.fill.quaternary,
-                    padding: 3, display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                >
-                  {item ? <StickerThumb item={item} level={lv} size={48} /> : (
-                    <span style={{ fontSize: 11, color: theme.text.tertiary }}>空</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {slots < MAX_BEDS && (
-            <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: theme.text.secondary }}>
-              ベッドをクラフトすると枠が1つ増えるよ
-            </div>
-          )}
         </button>
-
-        <button
-          type="button"
-          onClick={() => setOverlay("equip")}
-          style={{ ...card, textAlign: "left", cursor: "pointer", width: "100%", padding: 12 }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary }}>そうび</div>
-            <span style={{ fontSize: 12, fontWeight: 800, color: theme.text.tertiary }}>›</span>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {([
-              mining.equipped.tool,
-              mining.equipped.helmet,
-              mining.equipped.chest,
-              mining.equipped.leggings,
-              mining.equipped.boots,
-            ] as const).map((gearId, idx) => (
-              <div
-                key={idx}
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  border: `1px solid ${theme.stroke.tertiary}`,
-                  background: theme.fill.secondary,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
-                title={gearId ? gearLabel(gearId) : "なし"}
-              >
-                {gearId ? <MiningItemIcon gear={gearId} size={28} alt="" /> : (
-                  <span style={{ fontSize: 11, color: theme.text.tertiary }}>·</span>
-                )}
+        {supportExpanded && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>緑わく＝いまの場所向き</div>
+            <button type="button" onClick={() => { setOverlay("party"); setPartySlotEdit(0); }} style={{ ...btnGhost, textAlign: "left", padding: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontWeight: 800, fontSize: 13 }}>パーティ（{slots}/{MAX_BEDS}）</span>
+                <span style={{ color: theme.text.tertiary }}>›</span>
               </div>
-            ))}
+              <div style={{ display: "flex", gap: 6 }}>
+                {Array.from({ length: slots }, (_, i) => {
+                  const id = mining.partyIds[i];
+                  const item = id ? REWARD_LOOKUP[id] : null;
+                  const lv = id ? getBuddyEntry(buddyProgress, id).level : 1;
+                  const match = !!(item && specialtyOfCategory(item.category) === wantSpec);
+                  return (
+                    <div key={i} style={{
+                      width: 48, height: 52, borderRadius: 10,
+                      border: `1.5px ${match ? "solid" : "dashed"} ${match ? theme.category.green : theme.stroke.primary}`,
+                      background: match ? `${theme.category.green}14` : theme.fill.quaternary,
+                      padding: 2, display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {item ? <StickerThumb item={item} level={lv} size={42} /> : (
+                        <span style={{ fontSize: 11, color: theme.text.tertiary }}>空</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </button>
+            <button type="button" onClick={() => setOverlay("equip")} style={{ ...btnGhost, textAlign: "left", padding: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontWeight: 800, fontSize: 13 }}>そうび</span>
+                <span style={{ color: theme.text.tertiary }}>›</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {([
+                  { id: mining.equipped.tool, label: "どうぐ" },
+                  { id: mining.equipped.helmet, label: "あたま" },
+                  { id: mining.equipped.chest, label: "むね" },
+                  { id: mining.equipped.leggings, label: "あし" },
+                  { id: mining.equipped.boots, label: "くつ" },
+                ] as const).map((slot) => (
+                  <div key={slot.label} style={{ textAlign: "center" }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: 10,
+                      border: `1px ${slot.id ? "solid" : "dashed"} ${theme.stroke.tertiary}`,
+                      background: theme.bg.editor,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }} title={slot.id ? gearLabel(slot.id) : "なし"}>
+                      {slot.id ? <MiningItemIcon gear={slot.id} size={28} alt="" /> : (
+                        <span style={{ fontSize: 12, color: theme.text.tertiary }}>?</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: theme.text.tertiary, marginTop: 2 }}>{slot.label}</div>
+                  </div>
+                ))}
+              </div>
+            </button>
           </div>
-        </button>
+        )}
       </div>
 
       {!overlay && (
@@ -518,6 +599,7 @@ export function MiningScreen({
               padding: "10px 8px",
               fontSize: 13,
               minWidth: 0,
+              fontWeight: 900,
               backgroundColor: tab === t.id ? `${theme.accent.primary}18` : theme.fill.secondary,
               borderColor: tab === t.id ? theme.accent.primary : theme.stroke.secondary,
               color: tab === t.id ? theme.accent.primary : theme.text.primary,
@@ -543,22 +625,14 @@ export function MiningScreen({
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 10 }}>どこをほる？</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {GACHA_ORDER.map((gid) => {
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {GACHA_ORDER.filter((gid) => mining.unlockedGachas.includes(gid)).map((gid) => {
                 const meta = GACHA_META[gid];
-                const unlocked = mining.unlockedGachas.includes(gid);
                 const isLucky = lucky === gid;
-                const lockHint =
-                  gid === "stone" ? "木の剣・斧・ツルハシで解放"
-                    : gid === "iron" || gid === "gold" || gid === "coal" ? "石の剣・斧・ツルハシで解放"
-                      : gid === "diamond" ? "鉄フル（どうぐ3＋防具4）で解放"
-                        : gid === "nether" ? "ダイヤの剣・斧・ツルハシで解放"
-                          : "ロック";
                 return (
                   <button
                     key={gid}
                     type="button"
-                    disabled={!unlocked}
                     onClick={() => {
                       setSelectedGacha(gid);
                       selectToolKind(recommendToolKind(gid));
@@ -566,23 +640,60 @@ export function MiningScreen({
                     style={{
                       ...btnGhost,
                       textAlign: "left",
-                      opacity: unlocked ? 1 : 0.4,
+                      padding: 12,
+                      minHeight: 72,
                       borderColor: selectedGacha === gid ? theme.accent.primary : theme.stroke.secondary,
-                      backgroundColor: selectedGacha === gid ? `${theme.accent.primary}14` : theme.fill.secondary,
+                      backgroundColor: selectedGacha === gid ? GACHA_SURFACE[gid] : theme.fill.secondary,
+                      borderWidth: selectedGacha === gid ? 2 : 1,
                     }}
                   >
-                    <span style={{ fontWeight: 900 }}>{meta.emoji} {meta.label}</span>
-                    {unlocked && gid === "coal" && (
-                      <span style={{ marginLeft: 8, fontSize: 12, color: theme.text.secondary }}>石炭がとれる</span>
+                    <div style={{ fontWeight: 900, fontSize: 15 }}>{meta.emoji} {meta.label}</div>
+                    {gid === "coal" && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.secondary, marginTop: 4 }}>石炭がとれる</div>
                     )}
-                    {!unlocked && <span style={{ marginLeft: 8, fontSize: 12 }}>{lockHint}</span>}
-                    {isLucky && unlocked && (
-                      <span style={{ marginLeft: 8, color: theme.category.orange, fontWeight: 800 }}>★あたり日</span>
+                    {gid === "gold" && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: theme.category.orange, marginTop: 4 }}>おまけルート</div>
+                    )}
+                    {isLucky && (
+                      <div style={{ marginTop: 4, color: theme.category.orange, fontWeight: 800, fontSize: 12 }}>★あたり日</div>
                     )}
                   </button>
                 );
               })}
             </div>
+            {GACHA_ORDER.some((gid) => !mining.unlockedGachas.includes(gid)) && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: theme.text.tertiary, marginBottom: 6 }}>まだの場所</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {GACHA_ORDER.filter((gid) => !mining.unlockedGachas.includes(gid)).map((gid) => {
+                    const meta = GACHA_META[gid];
+                    const lockHint =
+                      gid === "stone" ? "木の剣・斧・ツルハシで解放"
+                        : gid === "iron" || gid === "gold" || gid === "coal" ? "石の剣・斧・ツルハシで解放"
+                          : gid === "diamond" ? "鉄の剣・斧・ツルハシで解放"
+                            : gid === "nether" ? "ダイヤの剣・斧・ツルハシで解放"
+                              : "ロック";
+                    return (
+                      <div
+                        key={gid}
+                        style={{
+                          ...btnGhost,
+                          opacity: 0.75,
+                          cursor: "default",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          padding: "8px 10px",
+                        }}
+                      >
+                        <span style={{ fontWeight: 800 }}>🔒 {meta.emoji} {meta.label}</span>
+                        <span style={{ fontSize: 11, color: theme.text.tertiary }}>{lockHint}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={card}>
@@ -604,8 +715,8 @@ export function MiningScreen({
                     style={{
                       ...btnGhost,
                       opacity: best ? 1 : 0.4,
-                      borderColor: selected ? theme.category.green : theme.stroke.secondary,
-                      backgroundColor: selected ? `${theme.category.green}18` : theme.fill.secondary,
+                      borderColor: selected ? theme.accent.primary : theme.stroke.secondary,
+                      backgroundColor: selected ? `${theme.accent.primary}18` : theme.fill.secondary,
                       textAlign: "left",
                       padding: "10px 12px",
                     }}
@@ -617,7 +728,7 @@ export function MiningScreen({
                         <span style={{ color: theme.category.orange, fontWeight: 800 }}>おすすめ</span>
                       )}
                       {selected && best && (
-                        <span style={{ color: theme.category.green, fontWeight: 800 }}>つかう</span>
+                        <span style={{ color: theme.accent.primary, fontWeight: 800 }}>つかう</span>
                       )}
                     </div>
                     {best && (
@@ -634,11 +745,6 @@ export function MiningScreen({
                     }}>
                       {toolEffectForGacha(kind, selectedGacha)}
                     </div>
-                    {selected && (
-                      <div style={{ marginTop: 4, fontSize: 11, color: theme.text.tertiary, lineHeight: 1.4 }}>
-                        {TOOL_EFFECT_BLURB[kind]}
-                      </div>
-                    )}
                   </button>
                 );
               })}
@@ -660,8 +766,23 @@ export function MiningScreen({
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                 <div style={{ fontWeight: 800 }}>いまのつよさ</div>
-                <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>
-                  {strength.label} {boostDetailOpen ? "▲" : "▼"}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 3 }}>
+                    {[1, 2, 3].map((n) => (
+                      <span
+                        key={n}
+                        style={{
+                          width: 10,
+                          height: 14,
+                          borderRadius: 3,
+                          backgroundColor: n <= strength.pips ? strength.color : theme.stroke.tertiary,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>
+                    {strength.label} {boostDetailOpen ? "▲" : "▼"}
+                  </div>
                 </div>
               </div>
               <div style={{ marginTop: 4, fontSize: 12, color: theme.text.secondary }}>
@@ -893,9 +1014,15 @@ export function MiningScreen({
             const renderRecipe = (a: typeof annotated[number]) => {
               const { recipe, upgradeFrom, hasUpgradeBase, owned, ok } = a;
               const progress = recipeProgress(recipe.costs, have);
-              const fuelPicked = recipe.fuelOptions
-                ? recipe.fuelOptions.find((f) => have(f.material) >= f.amount) ?? null
-                : null;
+              const fuelPicked = (() => {
+                if (!recipe.fuelOptions?.length) return null;
+                const chosen = fuelChoice[recipe.id];
+                if (chosen) {
+                  const opt = recipe.fuelOptions.find((f) => f.material === chosen);
+                  if (opt && have(opt.material) >= opt.amount) return opt;
+                }
+                return recipe.fuelOptions.find((f) => have(f.material) >= f.amount) ?? null;
+              })();
               return (
                 <div key={recipe.id} style={card}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
@@ -946,40 +1073,83 @@ export function MiningScreen({
                             </span>
                             {" "}{p.have}/{p.cost.amount}
                             {!p.ok && <span style={{ marginLeft: 6, color: theme.category.orange }}>あと{p.need}</span>}
+                            {!p.ok && (() => {
+                              const g = gachaForMaterial(p.cost.material);
+                              if (!g || !mining.unlockedGachas.includes(g)) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  style={{ ...btnGhost, marginLeft: 8, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}
+                                  onClick={() => {
+                                    setOverlay(null);
+                                    setTab("mine");
+                                    setSelectedGacha(g);
+                                    selectToolKind(recommendToolKind(g));
+                                  }}
+                                >
+                                  ここでほる
+                                </button>
+                              );
+                            })()}
                           </div>
                         ))}
                         {recipe.fuelOptions && (
                           <div style={{ marginTop: 4 }}>
                             <div style={{ fontSize: 12, fontWeight: 800, color: theme.text.secondary, marginBottom: 4 }}>
-                              燃料（どれか1つ）{recipe.needsFurnace ? "・かまど必要" : ""}
+                              燃料をえらぶ（どれか1つ）{recipe.needsFurnace ? "・かまど必要" : ""}
                             </div>
                             <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 6, lineHeight: 1.45 }}>
-                              石炭は「せきたんのやま」でほれるよ。板材・原木でも代用できるよ。
-                            </div>
-                            {recipe.fuelOptions.map((f) => {
-                              const h = have(f.material);
-                              const fOk = h >= f.amount;
-                              const using = fuelPicked?.material === f.material;
-                              return (
-                                <div
-                                  key={f.material}
-                                  style={{
-                                    fontSize: 13,
-                                    fontWeight: 700,
-                                    color: fOk ? theme.category.green : theme.text.secondary,
-                                    marginBottom: 2,
+                              石炭は「せきたんのやま」でほれるよ。タップして選んでね。
+                              {mining.unlockedGachas.includes("coal") && (
+                                <button
+                                  type="button"
+                                  style={{ ...btnGhost, marginLeft: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}
+                                  onClick={() => {
+                                    setOverlay(null);
+                                    setTab("mine");
+                                    setSelectedGacha("coal");
+                                    selectToolKind(recommendToolKind("coal"));
                                   }}
                                 >
-                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                  せきたんへ
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {recipe.fuelOptions.map((f) => {
+                                const h = have(f.material);
+                                const fOk = h >= f.amount;
+                                const using = fuelPicked?.material === f.material;
+                                return (
+                                  <button
+                                    key={f.material}
+                                    type="button"
+                                    disabled={!fOk}
+                                    onClick={() => {
+                                      if (!fOk) return;
+                                      setFuelChoice((prev) => ({ ...prev, [recipe.id]: f.material }));
+                                    }}
+                                    style={{
+                                      ...btnGhost,
+                                      opacity: fOk ? 1 : 0.45,
+                                      borderColor: using ? theme.accent.primary : theme.stroke.secondary,
+                                      backgroundColor: using ? `${theme.accent.primary}18` : theme.fill.secondary,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      padding: "8px 10px",
+                                    }}
+                                  >
                                     <MiningItemIcon material={f.material} size={18} alt="" />
-                                    {MATERIAL_META[f.material].label}
-                                  </span>
-                                  {" "}{h}/{f.amount}
-                                  {using && <span style={{ marginLeft: 6, color: theme.accent.primary }}>←つかう</span>}
-                                  {!fOk && <span style={{ marginLeft: 6, color: theme.category.orange }}>あと{f.amount - h}</span>}
-                                </div>
-                              );
-                            })}
+                                    <span style={{ fontWeight: 800, fontSize: 12 }}>
+                                      {MATERIAL_META[f.material].label}×{f.amount}
+                                    </span>
+                                    <span style={{ fontSize: 11, color: theme.text.secondary }}>{h}個</span>
+                                    {using && <span style={{ color: theme.accent.primary, fontWeight: 900 }}>選択中</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1332,24 +1502,30 @@ export function MiningScreen({
           style={{
             position: "fixed",
             left: 16,
-            right: 72,
+            right: 16,
             bottom: "max(env(safe-area-inset-bottom, 16px), 16px)",
             zIndex: 35,
           }}
         >
           <button
             type="button"
-            onClick={onDig}
-            disabled={digDisabled}
+            onClick={() => {
+              if (mining.tickets < 1) { onBack(); return; }
+              onDig();
+            }}
+            disabled={digBusy || (mining.tickets >= 1 && !mining.unlockedGachas.includes(selectedGacha))}
             style={{
               ...btnPrimary,
               width: "100%",
               fontSize: 16,
               padding: "14px 16px",
-              opacity: digDisabled ? 0.45 : 1,
+              opacity: digBusy ? 0.45 : 1,
+              backgroundColor: mining.tickets < 1 ? theme.category.orange : undefined,
             }}
           >
-            🎫{mining.tickets}枚 · 1枚でほる
+            {mining.tickets < 1
+              ? "🎫をもらおう（タスクにもどる）"
+              : `🎫${mining.tickets}枚 · 1枚でほる`}
           </button>
         </div>
       )}
@@ -1358,6 +1534,12 @@ export function MiningScreen({
         phase={digFx}
         gacha={selectedGacha}
         result={lastDig}
+        canDigAgain={
+          digFx === "reveal"
+          && mining.tickets >= 1
+          && mining.unlockedGachas.includes(selectedGacha)
+        }
+        onDigAgain={digAgainFromFx}
         onClose={closeDigFx}
       />
 

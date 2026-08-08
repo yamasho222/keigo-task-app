@@ -90,8 +90,8 @@ export const MATERIAL_META: Record<
   gold_ore: { label: "金の原石", emoji: "✨", image: "/mining/Raw_Gold.webp" },
   gold_ingot: { label: "金インゴット", emoji: "🥇", image: "/mining/Gold_Ingot.png" },
   coal: { label: "石炭", emoji: "⬛", image: "/mining/Coal.png" },
-  diamond_shard: { label: "ダイヤの欠片", emoji: "💎", image: "/mining/Diamond.png" },
-  diamond: { label: "ダイヤモンド", emoji: "💠", image: "/mining/Diamond.png" },
+  diamond_shard: { label: "ダイヤの欠片", emoji: "💠", image: "/mining/Diamond_Nugget.png" },
+  diamond: { label: "ダイヤモンド", emoji: "💎", image: "/mining/Diamond.png" },
   ancient_debris: { label: "古代の残骸", emoji: "🌑", image: "/mining/Ancient_Debris.png" },
   nether_quartz: { label: "ネザークォーツ", emoji: "⬜", image: "/mining/Nether_Quartz.png" },
   netherite_scrap: { label: "ネザライトの欠片", emoji: "📎", image: "/mining/Netherite_Scrap.webp" },
@@ -177,9 +177,9 @@ export const TOOL_KIND_LABEL: Record<ToolKind, string> = {
 
 /** ほるどうぐ（剣・斧・ツルハシ）の効果説明 */
 export const TOOL_EFFECT_BLURB: Record<ToolKind, string> = {
-  axe: "もりで 素材が+1しやすい（量アップ）",
-  sword: "たまに素材+3（斧・ツルハシの+1より出にくい）。鉄・金はインゴット直、ダイヤはダイヤ直も",
-  pickaxe: "こうざんで 素材が+1しやすい。ネザーは古代の残骸が出やすい（強いツルハシほど出やすい）",
+  axe: "もりで量アップ",
+  sword: "たまに素材+3／レア直（+1より弱め）",
+  pickaxe: "こうざんで量アップ／ネザーは残骸向き",
 };
 
 export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
@@ -192,21 +192,18 @@ export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
 /** いま掘る場所に対して、そのほるどうぐが効くか一言 */
 export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (kind === "axe") {
-    return gacha === "wood"
-      ? "いまのもりで 素材+1 が出やすい"
-      : "もりのときだけ量アップ（いまの場所では効かない）";
+    return gacha === "wood" ? "いま効く：量アップ" : "もりのときだけ効く";
   }
   if (kind === "pickaxe") {
-    if (gacha === "wood") return "こうざんのときだけ量アップ（いまの場所では効かない）";
-    if (gacha === "nether") return "いまのネザーで 古代の残骸が出やすい";
-    if (gacha === "coal") return "いまのせきたんのやまで 石炭+1 が出やすい";
-    return "いまのこうざんで 素材+1 が出やすい";
+    if (gacha === "wood") return "こうざんのときだけ効く";
+    if (gacha === "nether") return "いま効く：残骸が出やすい";
+    if (gacha === "coal") return "いま効く：石炭+1";
+    return "いま効く：量アップ";
   }
-  // sword: 3個率は上がるが、斧・ツルハシの+1より低い
-  if (gacha === "iron" || gacha === "gold") return "たまに素材+3＋インゴット直（+1より弱め）";
-  if (gacha === "diamond") return "たまに素材+3＋ダイヤ直（+1より弱め）";
-  if (gacha === "nether") return "たまに素材+3（+1より弱め）。残骸はツルハシ向き";
-  return "たまに素材+3（斧・ツルハシの+1より出にくい）";
+  if (gacha === "iron" || gacha === "gold") return "たまに+3／インゴット直";
+  if (gacha === "diamond") return "たまに+3／ダイヤ直";
+  if (gacha === "nether") return "たまに+3（残骸はツルハシ向き）";
+  return "たまに素材+3（+1より弱め）";
 }
 
 export const GEAR_TIER_LABEL: Record<GearTier, string> = {

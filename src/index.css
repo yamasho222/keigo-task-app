@@ -820,11 +820,25 @@ button {
   color: #444;
   margin-bottom: 4px;
 }
+.mining-dig-hit-reasons-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 900;
+  color: #555;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
 .mining-dig-hit-reason {
   font-size: 13px;
   font-weight: 800;
   color: #333;
   line-height: 1.45;
+}
+.mining-dig-drop.is-great-pop {
+  animation: miningDropInHighlight 0.55s ease-out both;
+  transform: scale(1.05);
 }
 .mining-dig-sub {
   margin-top: 4px;
@@ -883,10 +897,33 @@ button {
   background: #5b8eff;
   color: #fff;
 }
+.mining-dig-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.mining-dig-again {
+  border: none;
+  border-radius: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  font-weight: 900;
+  font-size: 15px;
+  cursor: pointer;
+  background: #ff9500;
+  color: #fff;
+}
 .mining-dig-card.is-hit-great .mining-dig-close {
+  background: #5b8eff;
+}
+.mining-dig-card.is-hit-great .mining-dig-again {
   background: #ff9500;
 }
 .mining-dig-card.is-hit-good .mining-dig-close {
+  background: #5b8eff;
+}
+.mining-dig-card.is-hit-good .mining-dig-again {
   background: #34c759;
 }
 @keyframes miningDigPop {
