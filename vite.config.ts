@@ -7,7 +7,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      injectRegister: null, // main.tsx で明示登録（iOS PWA の更新漏れ対策）
       includeAssets: ["icon-192.png", "icon-512.png", "apple-touch-icon.png"],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
       manifest: {
         name: "やることリスト",
         short_name: "やることリスト",
