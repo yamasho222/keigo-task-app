@@ -5142,35 +5142,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             buddyProgress={buddyProgress}
             dateKey={todayKey()}
             onChange={setMining}
-            onEnsureStickers={(ids) => {
-              setStickerAlbum((prev) => {
-                const next = [...prev];
-                let changed = false;
-                for (const id of ids) {
-                  if (!next.includes(id) && REWARD_LOOKUP[id]) {
-                    next.push(id);
-                    changed = true;
-                  }
-                }
-                if (!changed) return prev;
-                stickerAlbumRef.current = next;
-                saveStickerAlbum(next, storageChildId);
-                return next;
-              });
-              setBuddyProgress((prev) => {
-                let next = { ...prev };
-                let changed = false;
-                for (const id of ids) {
-                  if (!prev[id]) {
-                    next = { ...next, [id]: { level: 1, xp: 0 } };
-                    changed = true;
-                  }
-                }
-                if (!changed) return prev;
-                buddyProgressRef.current = next;
-                return next;
-              });
-            }}
             onBack={goHome}
           />
         )}

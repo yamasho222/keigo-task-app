@@ -4,7 +4,7 @@ import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { StickerFrameWithBadge, StickerImg } from "./Rewards";
 import { BuddyFrame } from "./BuddyFrame";
 import { getBuddyEntry, type BuddyProgressMap } from "./buddyProgress";
-import { REWARD_LOOKUP, STICKER_CATEGORIES, STICKER_REWARDS, type RewardCategory, type RewardLookupEntry } from "./stickerRewards";
+import { REWARD_LOOKUP, STICKER_CATEGORIES, type RewardCategory, type RewardLookupEntry } from "./stickerRewards";
 import { playGachaAmbient, playMiningSfx, unlockAudio } from "./alarm";
 import {
   EXCHANGE_LOG_COST,
@@ -87,8 +87,6 @@ interface Props {
   buddyProgress: BuddyProgressMap;
   dateKey: string;
   onChange: (next: MiningState) => void;
-  /** パーティ候補に出すため、未所持シールをアルバムへ足す */
-  onEnsureStickers?: (ids: string[]) => void;
   onBack: () => void;
 }
 
@@ -749,7 +747,6 @@ export function MiningScreen({
   buddyProgress,
   dateKey,
   onChange,
-  onEnsureStickers,
   onBack,
 }: Props) {
   const [tab, setTab] = useState<TabId>("mine");
@@ -1194,14 +1191,9 @@ export function MiningScreen({
     .filter((id) => !!REWARD_LOOKUP[id])
     .map((id) => ({ id, ...REWARD_LOOKUP[id]! }));
 
-  const partyCandidates = (() => {
-    if (partyCategoryFilter) {
-      return STICKER_REWARDS
-        .filter((reward) => reward.category === partyCategoryFilter)
-        .map((reward) => ({ id: reward.id, ...REWARD_LOOKUP[reward.id]! }));
-    }
-    return ownedStickers;
-  })();
+  const partyCandidates = partyCategoryFilter
+    ? ownedStickers.filter((reward) => reward.category === partyCategoryFilter)
+    : ownedStickers;
 
   const slots = partySlotCount(mining);
 
@@ -2385,7 +2377,7 @@ export function MiningScreen({
                       key={item.id}
                       type="button"
                       onClick={() => {
-                        onEnsureStickers?.([item.id]);
+                        if (!stickerAlbum.includes(item.id)) return;
                         onChange(setPartySlot(mining, partySlotEdit, item.id));
                         showToast(`${item.label} Lv${lv} を入れた！`);
                         setPartySlotEdit(null);
@@ -2399,11 +2391,6 @@ export function MiningScreen({
                       <div style={{ fontSize: 10, fontWeight: 800, color: theme.accent.primary, lineHeight: 1.3, marginTop: 2 }}>
                         Lv{lv} · {blurb}
                       </div>
-                      {!stickerAlbum.includes(item.id) && (
-                        <div style={{ fontSize: 10, fontWeight: 800, color: theme.category.orange, marginTop: 2 }}>
-                          まだない→入れると手に入る
-                        </div>
-                      )}
                     </button>
                   );
                 })}
