@@ -86,6 +86,10 @@ export const RARITY_LABELS: Record<RewardRarity, string> = Object.fromEntries(
 
 const STICKER_ALBUM_KEY = "keigo-sticker-album-v1";
 
+function stickerAlbumKey(childId?: string | null): string {
+  return childId ? `${STICKER_ALBUM_KEY}:${childId}` : STICKER_ALBUM_KEY;
+}
+
 /** 日次ごほうび・ノーマル（絵文字8種） */
 export const DAILY_EMOJI_REWARDS: EmojiReward[] = [
   { kind: "emoji", id: "star", emoji: "⭐", label: "スター", message: "きょうも星みたいにかがやいた！", category: "daily", rarity: "normal" },
@@ -355,9 +359,9 @@ export function dedupeStickerIds(ids: string[]): string[] {
   return result;
 }
 
-export function loadStickerAlbum(): string[] {
+export function loadStickerAlbum(childId?: string | null): string[] {
   try {
-    const raw = localStorage.getItem(STICKER_ALBUM_KEY);
+    const raw = localStorage.getItem(stickerAlbumKey(childId));
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) return dedupeStickerIds(parsed as string[]);
@@ -366,9 +370,9 @@ export function loadStickerAlbum(): string[] {
   return [];
 }
 
-export function saveStickerAlbum(ids: string[]): void {
+export function saveStickerAlbum(ids: string[], childId?: string | null): void {
   const deduped = dedupeStickerIds(ids);
-  localStorage.setItem(STICKER_ALBUM_KEY, JSON.stringify(deduped));
+  localStorage.setItem(stickerAlbumKey(childId), JSON.stringify(deduped));
 }
 
 export function mergeStickerAlbums(...sources: string[][]): string[] {

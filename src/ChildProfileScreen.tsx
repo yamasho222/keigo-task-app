@@ -6,7 +6,10 @@ interface ChildProfileScreenProps {
   profiles: ChildProfile[];
   loading: boolean;
   error?: string;
-  localImportAvailable: boolean;
+  /** レガシー共有スロットに未割当データがあるか（画面上部の説明用） */
+  legacyImportAvailable: boolean;
+  /** その子に初回「つなぐ」を出してよいか */
+  canImportToChild: (childId: string) => boolean;
   userLabel: string;
   onCreate: (name: string, avatarEmoji: string) => void;
   onOpen: (profile: ChildProfile, mode: "cloud" | "importLocal") => void;
@@ -28,7 +31,8 @@ export function ChildProfileScreen({
   profiles,
   loading,
   error,
-  localImportAvailable,
+  legacyImportAvailable,
+  canImportToChild,
   userLabel,
   onCreate,
   onOpen,
@@ -45,6 +49,9 @@ export function ChildProfileScreen({
     setName("");
     setEmoji("🙂");
   };
+
+  const showLegacyImportHelp =
+    legacyImportAvailable && profiles.some((profile) => canImportToChild(profile.id));
 
   return (
     <div style={{
@@ -68,9 +75,9 @@ export function ChildProfileScreen({
             だれのデータで使う？
           </div>
           <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.6, color: theme.text.secondary }}>
-            子どもの名前を選ぶと、その子専用のデータで使えます。兄弟のデータは混ざりません。
+            子どもの名前を選ぶと、その子専用のデータで使えます。兄弟のデータは端末の中でも分かれています。
           </div>
-          {localImportAvailable ? (
+          {showLegacyImportHelp ? (
             <div style={{
               marginTop: 12,
               borderRadius: 12,
@@ -80,13 +87,13 @@ export function ChildProfileScreen({
               fontSize: 12,
               lineHeight: 1.6,
             }}>
-              このスマホには、すでにやること・シールなどの記録が残っています。
+              このスマホには、まだどの子にもつないでない古い記録があります。
               <br />
               <strong style={{ color: theme.text.primary }}>
-                はじめてつなぐときは、正しい子どもの「このスマホの記録を、この子につなぐ」を押してください。
+                初回だけ、正しい子どもの「このスマホの記録を、この子につなぐ」を押してください。
               </strong>
               <br />
-              間違った子を選ぶと、別の子の記録に混ざるので注意してください。
+              一度つないだあとは、このボタンは出なくなります。
             </div>
           ) : (
             <div style={{
@@ -98,8 +105,8 @@ export function ChildProfileScreen({
               fontSize: 12,
               lineHeight: 1.6,
             }}>
-              出張中に使うスマホなど、すでに記録がある子の続きを開くときは「別のスマホの続きを開く」を使います。
-              はじめてつなぐ作業はお父さんがやります。
+              ふだんは「この子の記録を開く」だけで大丈夫です。
+              けんご／けいごを切り替えても、もう片方の記録は消えません。
             </div>
           )}
         </div>
@@ -116,72 +123,75 @@ export function ChildProfileScreen({
           </div>
         )}
 
-        {profiles.map((profile) => (
-          <div
-            key={profile.id}
-            style={{
-              borderRadius: 18,
-              padding: 14,
-              backgroundColor: theme.bg.editor,
-              border: `1.5px solid ${theme.stroke.secondary}`,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 28 }}>{profile.avatarEmoji}</span>
-              <span style={{ flex: 1, fontSize: 18, fontWeight: 900, color: theme.text.primary }}>
-                {profile.name}
-              </span>
-            </div>
-            {localImportAvailable ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onOpen(profile, "importLocal")}
-                  disabled={loading}
-                  style={{ ...buttonBase, backgroundColor: theme.category.orange, color: "#fff" }}
-                >
-                  このスマホの記録を、この子につなぐ（はじめて・安全）
-                </button>
+        {profiles.map((profile) => {
+          const showImport = canImportToChild(profile.id);
+          return (
+            <div
+              key={profile.id}
+              style={{
+                borderRadius: 18,
+                padding: 14,
+                backgroundColor: theme.bg.editor,
+                border: `1.5px solid ${theme.stroke.secondary}`,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 28 }}>{profile.avatarEmoji}</span>
+                <span style={{ flex: 1, fontSize: 18, fontWeight: 900, color: theme.text.primary }}>
+                  {profile.name}
+                </span>
+              </div>
+              {showImport ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(profile, "importLocal")}
+                    disabled={loading}
+                    style={{ ...buttonBase, backgroundColor: theme.category.orange, color: "#fff" }}
+                  >
+                    このスマホの記録を、この子につなぐ（はじめてだけ）
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(profile, "cloud")}
+                    disabled={loading}
+                    style={{ ...buttonBase, backgroundColor: theme.fill.secondary, color: theme.text.secondary }}
+                  >
+                    クラウドの記録を開く（つなぐのは上のボタン）
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
                   onClick={() => onOpen(profile, "cloud")}
                   disabled={loading}
-                  style={{ ...buttonBase, backgroundColor: theme.fill.secondary, color: theme.text.secondary }}
+                  style={{ ...buttonBase, backgroundColor: theme.accent.primary, color: "#fff" }}
                 >
-                  別のスマホの続きを開く（このスマホの記録は消える）
+                  この子の記録を開く
                 </button>
-              </>
-            ) : (
+              )}
               <button
                 type="button"
-                onClick={() => onOpen(profile, "cloud")}
+                onClick={() => onDelete(profile)}
                 disabled={loading}
-                style={{ ...buttonBase, backgroundColor: theme.accent.primary, color: "#fff" }}
+                style={{
+                  border: "none",
+                  backgroundColor: "transparent",
+                  color: theme.text.tertiary,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  alignSelf: "flex-end",
+                }}
               >
-                この子の記録を開く
+                プロフィール削除
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onDelete(profile)}
-              disabled={loading}
-              style={{
-                border: "none",
-                backgroundColor: "transparent",
-                color: theme.text.tertiary,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-                alignSelf: "flex-end",
-              }}
-            >
-              プロフィール削除
-            </button>
-          </div>
-        ))}
+            </div>
+          );
+        })}
 
         <div style={{
           borderRadius: 18,

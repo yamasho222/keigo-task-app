@@ -23,6 +23,7 @@ import {
   NewRecordOverlay, TreatOverlay, StickerFrameWithBadge, StickerImg,
   type NewRecordCelebration, type TreatMode,
 } from "./Rewards";
+import { appStateStorageKey } from "./appStateStorage";
 import {
   loadStickerAlbum, mergeStickerAlbums, saveStickerAlbum, getStickersByCategory,
   PITY_DUPLICATE_THRESHOLD, PITY_UNCOLLECTED_CHANCE,
@@ -327,8 +328,6 @@ const FLOAT_COLORS = [
 ];
 
 // ── localStorage ──────────────────────────────────────
-
-const STORAGE_KEY = "keigo-app-v1";
 
 interface StoredState {
   date: string;
@@ -707,9 +706,9 @@ function hydrateStoredState(data: StoredState): StoredState {
   };
 }
 
-function loadStoredState(): StoredState {
+function loadStoredState(childId?: string): StoredState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(appStateStorageKey(childId));
     if (raw) {
       const data: StoredState = JSON.parse(raw);
       if (data.date === taskDayKey()) {
@@ -1434,7 +1433,8 @@ function rememberCustomTaskEmoji(prev: string[], emoji: string): string[] {
 }
 
 export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) {
-  const stored = loadStoredState();
+  const storageChildId = cloud?.childId;
+  const stored = loadStoredState(storageChildId);
 
   const [screen,         setScreen]         = useState<ScreenId>(getInitialScreen());
   const [morningTasks,   setMorningTasks]   = useState<Task[]>(stored.morningTasks ?? MORNING_TASKS_DEFAULT);
@@ -1549,8 +1549,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [pendingTreat, setPendingTreat] = useState<PendingTreat | null>(null);
   const [treatQueue, setTreatQueue] = useState<PendingTreat[]>([]);
   const [stickerAlbum, setStickerAlbum] = useState<string[]>(() => {
-    const merged = mergeStickerAlbums(loadStickerAlbum(), stored.stickerAlbum ?? []);
-    if (merged.length > 0) saveStickerAlbum(merged);
+    const merged = mergeStickerAlbums(loadStickerAlbum(storageChildId), stored.stickerAlbum ?? []);
+    if (merged.length > 0) saveStickerAlbum(merged, storageChildId);
     return merged;
   });
   const [duplicateStreak, setDuplicateStreak] = useState(stored.duplicateStreak ?? 0);
@@ -1946,10 +1946,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       buddyXpStampedSessions,
       mining,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    saveStickerAlbum(stickerAlbum);
+    localStorage.setItem(appStateStorageKey(storageChildId), JSON.stringify(state));
+    saveStickerAlbum(stickerAlbum, storageChildId);
     cloud?.saveState(state, stickerAlbum);
   }, [
+    storageChildId,
     cloud?.saveState,
     morningDone, daytimeDone, eveningDone, homeDone,
     morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
@@ -2764,7 +2765,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     miningRef.current = seed.mining;
     setStickerAlbum(seed.stickerAlbum);
     stickerAlbumRef.current = seed.stickerAlbum;
-    saveStickerAlbum(seed.stickerAlbum);
+    saveStickerAlbum(seed.stickerAlbum, storageChildId);
     setBuddyProgress(seed.buddyProgress);
     buddyProgressRef.current = seed.buddyProgress;
     setBuddyId(seed.buddyId);
@@ -2949,7 +2950,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const collectSticker = (rewardId: string) => {
     setStickerAlbum((prev) => {
       const next = mergeStickerAlbums(prev, [rewardId]);
-      saveStickerAlbum(next);
+      saveStickerAlbum(next, storageChildId);
       return next;
     });
   };
@@ -5153,7 +5154,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 }
                 if (!changed) return prev;
                 stickerAlbumRef.current = next;
-                saveStickerAlbum(next);
+                saveStickerAlbum(next, storageChildId);
                 return next;
               });
               setBuddyProgress((prev) => {

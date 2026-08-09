@@ -3,14 +3,18 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AuthScreen } from "./AuthScreen";
 import { ChildProfileScreen } from "./ChildProfileScreen";
 import {
+  canImportLegacyToChild,
   clearSelectedChildId,
+  hasLegacyUnscopedLocalData,
   hasLocalAppState,
   hasLocalImportSeen,
+  loadLegacyUnscopedSnapshot,
   loadLocalAppStateSnapshot,
   loadSelectedChildId,
   markLocalImportSeen,
   saveSelectedChildId,
   writeLocalAppStateSnapshot,
+  type LocalAppStateSnapshot,
 } from "./appStateStorage";
 import {
   createChildProfile,
@@ -39,7 +43,7 @@ interface CloudAppShellProps {
 
 type OpenMode = "cloud" | "importLocal";
 
-function isMeaningfulSnapshot(snapshot: ReturnType<typeof loadLocalAppStateSnapshot> | null): boolean {
+function isMeaningfulSnapshot(snapshot: LocalAppStateSnapshot | null): boolean {
   return snapshot !== null && hasLocalAppState(snapshot);
 }
 
@@ -53,17 +57,47 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [syncStatus, setSyncStatus] = useState("未同期");
-  const initialLocalSnapshotRef = useRef(loadLocalAppStateSnapshot());
   const saveTimerRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef<{
+    userId: string;
+    childId: string;
+    state: unknown;
+    stickerAlbum: string[];
+  } | null>(null);
   /** 同一プロフィールの openProfile 重複実行を防ぐ（auth の多重発火対策） */
   const openingChildIdRef = useRef<string | null>(null);
   const openedChildIdRef = useRef<string | null>(null);
   const deviceId = useMemo(() => createDeviceId(), []);
+  /** レガシー共有データの有無（プロフィール選択画面の再表示用） */
+  const [legacyImportAvailable, setLegacyImportAvailable] = useState(hasLegacyUnscopedLocalData);
 
-  const applyLocalSnapshot = useCallback((snapshot: ReturnType<typeof loadLocalAppStateSnapshot>) => {
-    writeLocalAppStateSnapshot(snapshot);
-    initialLocalSnapshotRef.current = snapshot;
+  const applyChildSnapshot = useCallback((childId: string, snapshot: LocalAppStateSnapshot) => {
+    writeLocalAppStateSnapshot(snapshot, childId);
   }, []);
+
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    pendingSaveRef.current = null;
+    try {
+      await saveCloudAppState(
+        pending.userId,
+        pending.childId,
+        { state: pending.state, stickerAlbum: pending.stickerAlbum },
+        deviceId,
+      );
+      writeLocalAppStateSnapshot(
+        { state: pending.state, stickerAlbum: pending.stickerAlbum },
+        pending.childId,
+      );
+    } catch {
+      // 切替時のフラッシュ失敗は握りつぶし（次回同期に任せる）
+    }
+  }, [deviceId]);
 
   const refreshProfiles = useCallback(async (currentUser = user) => {
     if (!currentUser) return;
@@ -83,57 +117,68 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
     setLoading(true);
     setError(undefined);
     try {
-      const localSnapshot = initialLocalSnapshotRef.current;
-      const localMeaningful = isMeaningfulSnapshot(localSnapshot);
+      await flushPendingSave();
+
+      const childLocal = loadLocalAppStateSnapshot(profile.id);
+      const childLocalMeaningful = isMeaningfulSnapshot(childLocal);
+      const legacySnapshot = loadLegacyUnscopedSnapshot();
+      const legacyMeaningful = isMeaningfulSnapshot(legacySnapshot);
 
       if (mode === "importLocal") {
-        if (!localMeaningful) {
+        if (!canImportLegacyToChild(profile.id)) {
+          setError(
+            hasLocalImportSeen(profile.id)
+              ? `「${profile.name}」は、このスマホですでにつないであります。まちがって上書きしないよう、つなぐ操作はできません。`
+              : "この端末に取り込める（まだどの子にもつないでない）記録がありません。",
+          );
+          return;
+        }
+        if (!legacyMeaningful) {
           setError("この端末に取り込める既存データがありません。");
           return;
         }
         const existingCloud = await loadCloudAppState(currentUser.uid, profile.id);
         if (isMeaningfulSnapshot(existingCloud)) {
           if (!window.confirm(
-            `「${profile.name}」には、すでに別のスマホの記録があります。\nこのスマホの記録で上書きしてつなぎますか？\n（このスマホの記録はそのまま残ります）`,
+            `「${profile.name}」には、すでにクラウドの記録があります。\nこのスマホの古い記録で上書きしてつなぎますか？\n（ふだんは「この子の記録を開く」を使ってください）`,
           )) {
             return;
           }
         } else if (!window.confirm(
-          `このスマホの記録を「${profile.name}」につなぎます。\nこのスマホの記録は消えません。よろしいですか？`,
+          `このスマホの古い記録を「${profile.name}」につなぎます。\nよろしいですか？`,
         )) {
           return;
         }
-        await saveCloudAppState(currentUser.uid, profile.id, localSnapshot, deviceId);
+        await saveCloudAppState(currentUser.uid, profile.id, legacySnapshot, deviceId);
+        applyChildSnapshot(profile.id, legacySnapshot);
         markLocalImportSeen(profile.id);
-        applyLocalSnapshot(localSnapshot);
+        setLegacyImportAvailable(hasLegacyUnscopedLocalData());
       } else {
         const cloudState = await loadCloudAppState(currentUser.uid, profile.id);
         const cloudMeaningful = isMeaningfulSnapshot(cloudState);
 
         if (cloudMeaningful) {
-          if (localMeaningful && !hasLocalImportSeen(profile.id)) {
-            if (!window.confirm(
-              `「${profile.name}」の別スマホの記録で、このスマホを上書きします。\nこのスマホの未つなぎの記録は消えます。\nはじめてならキャンセルして「このスマホの記録を、この子につなぐ」を使ってください。\n上書きして開きますか？`,
-            )) {
-              return;
-            }
-            // OKした時点で「未つなぎ衝突」は解決済み。次回起動で再表示しない
-            markLocalImportSeen(profile.id);
-          }
-          applyLocalSnapshot(cloudState!);
-        } else if (localMeaningful) {
+          // クラウドを正とし、その子専用の端末キャッシュへ書く（他の子の領域は触らない）
+          applyChildSnapshot(profile.id, cloudState!);
+          markLocalImportSeen(profile.id);
+        } else if (childLocalMeaningful) {
+          // クラウド空・子専用キャッシュあり → その子のデータをクラウドへ上げる
           if (!window.confirm(
-            `「${profile.name}」には、まだつなげた記録がありません。\nこのスマホの記録をつなぎますか？\n（キャンセルしてもこのスマホの記録は消えません）`,
+            `「${profile.name}」のクラウドにはまだ記録がありません。\nこのスマホに残っている「${profile.name}」の記録をつなぎますか？`,
           )) {
             return;
           }
-          await saveCloudAppState(currentUser.uid, profile.id, localSnapshot, deviceId);
+          await saveCloudAppState(currentUser.uid, profile.id, childLocal, deviceId);
+          applyChildSnapshot(profile.id, childLocal);
           markLocalImportSeen(profile.id);
-          applyLocalSnapshot(localSnapshot);
+        } else if (legacyMeaningful && !hasLocalImportSeen(profile.id)) {
+          setError(
+            `「${profile.name}」にはまだクラウドの記録がありません。\n初回は「このスマホの記録を、この子につなぐ」を使ってください。`,
+          );
+          return;
         } else {
-          // 端末もクラウドも空: 空プロフィールとして開く（消すものがない）
           const empty = { state: null, stickerAlbum: [] as string[] };
-          applyLocalSnapshot(empty);
+          applyChildSnapshot(profile.id, empty);
           await saveCloudAppState(currentUser.uid, profile.id, empty, deviceId);
           markLocalImportSeen(profile.id);
         }
@@ -150,7 +195,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
       if (openingChildIdRef.current === profile.id) openingChildIdRef.current = null;
       setLoading(false);
     }
-  }, [applyLocalSnapshot, deviceId]);
+  }, [applyChildSnapshot, deviceId, flushPendingSave]);
 
   const openProfileRef = useRef(openProfile);
   openProfileRef.current = openProfile;
@@ -188,6 +233,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         const nextProfiles = await listChildProfiles(nextUser.uid);
         if (cancelled) return;
         setProfiles(nextProfiles);
+        setLegacyImportAvailable(hasLegacyUnscopedLocalData());
         const selectedId = loadSelectedChildId();
         const selected = nextProfiles.find((profile) => profile.id === selectedId);
         if (selected) await openProfileRef.current(nextUser, selected, "cloud");
@@ -216,11 +262,25 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
 
   const saveState = useCallback((state: unknown, stickerAlbum: string[]) => {
     if (!user || !activeProfile) return;
+    const childId = activeProfile.id;
+    writeLocalAppStateSnapshot({ state, stickerAlbum }, childId);
+    pendingSaveRef.current = {
+      userId: user.uid,
+      childId,
+      state,
+      stickerAlbum,
+    };
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     setSyncStatus("保存待ち");
     saveTimerRef.current = window.setTimeout(() => {
+      const pending = pendingSaveRef.current;
+      if (!pending || pending.childId !== childId) return;
+      pendingSaveRef.current = null;
       setSyncStatus("保存中...");
-      saveCloudAppState(user.uid, activeProfile.id, { state, stickerAlbum }, deviceId)
+      saveCloudAppState(pending.userId, pending.childId, {
+        state: pending.state,
+        stickerAlbum: pending.stickerAlbum,
+      }, deviceId)
         .then(() => setSyncStatus("同期済み"))
         .catch((err) => setSyncStatus(err instanceof Error ? `同期エラー: ${err.message}` : "同期エラー"));
     }, 800);
@@ -228,18 +288,22 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
 
   const onSwitchProfile = useCallback(() => {
     if (!window.confirm("プロフィール選択画面に戻りますか？未同期の変更がある場合は少し待ってから切り替えてください。")) return;
-    openedChildIdRef.current = null;
-    setActiveProfile(null);
-    clearSelectedChildId();
-    setAppKey("profile-select");
-  }, []);
+    void flushPendingSave().finally(() => {
+      openedChildIdRef.current = null;
+      setActiveProfile(null);
+      clearSelectedChildId();
+      setLegacyImportAvailable(hasLegacyUnscopedLocalData());
+      setAppKey("profile-select");
+    });
+  }, [flushPendingSave]);
 
   const onSignOut = useCallback(async () => {
+    await flushPendingSave();
     openedChildIdRef.current = null;
     setActiveProfile(null);
     clearSelectedChildId();
     await signOutFirebase();
-  }, []);
+  }, [flushPendingSave]);
 
   const activeContext: ActiveChildContext | undefined = useMemo(() => {
     if (!user || !activeProfile) return undefined;
@@ -284,13 +348,13 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
   }
 
   if (!activeProfile) {
-    const importAvailable = hasLocalAppState(initialLocalSnapshotRef.current);
     return (
       <ChildProfileScreen
         profiles={profiles}
         loading={loading}
         error={error}
-        localImportAvailable={importAvailable}
+        legacyImportAvailable={legacyImportAvailable}
+        canImportToChild={(childId) => canImportLegacyToChild(childId)}
         userLabel={user.email ?? user.displayName ?? "親アカウント"}
         onCreate={async (name, avatarEmoji) => {
           setLoading(true);
@@ -319,6 +383,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
           }
         }}
         onSignOut={async () => {
+          await flushPendingSave();
           openedChildIdRef.current = null;
           clearSelectedChildId();
           await signOutFirebase();
