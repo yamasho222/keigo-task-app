@@ -4,6 +4,7 @@ import { AuthScreen } from "./AuthScreen";
 import { ChildProfileScreen } from "./ChildProfileScreen";
 import {
   canImportLegacyToChild,
+  clearLegacyUnscopedSnapshot,
   clearSelectedChildId,
   hasLegacyUnscopedLocalData,
   hasLocalAppState,
@@ -69,7 +70,9 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
   const openedChildIdRef = useRef<string | null>(null);
   const deviceId = useMemo(() => createDeviceId(), []);
   /** レガシー共有データの有無（プロフィール選択画面の再表示用） */
-  const [legacyImportAvailable, setLegacyImportAvailable] = useState(hasLegacyUnscopedLocalData);
+  const [legacyImportAvailable, setLegacyImportAvailable] = useState(false);
+  /** 初回「つなぐ」を出してよい childId（クラウド未作成の子だけ） */
+  const [importableChildIds, setImportableChildIds] = useState<string[]>([]);
 
   const applyChildSnapshot = useCallback((childId: string, snapshot: LocalAppStateSnapshot) => {
     writeLocalAppStateSnapshot(snapshot, childId);
@@ -99,11 +102,35 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
     }
   }, [deviceId]);
 
+  /** クラウド済みの子は「つなぐ」対象外にし、不要な共有スロットも片付ける */
+  const reconcileImportEligibility = useCallback(async (
+    userId: string,
+    nextProfiles: ChildProfile[],
+  ) => {
+    const importable: string[] = [];
+    for (const profile of nextProfiles) {
+      if (!canImportLegacyToChild(profile.id)) continue;
+      const cloudState = await loadCloudAppState(userId, profile.id);
+      if (isMeaningfulSnapshot(cloudState)) {
+        markLocalImportSeen(profile.id);
+        continue;
+      }
+      importable.push(profile.id);
+    }
+    // どの子にも「つなぐ」必要がなければ、古い共有スロットは誤操作の元なので消す
+    if (importable.length === 0 && hasLegacyUnscopedLocalData()) {
+      clearLegacyUnscopedSnapshot();
+    }
+    setImportableChildIds(importable);
+    setLegacyImportAvailable(importable.length > 0);
+  }, []);
+
   const refreshProfiles = useCallback(async (currentUser = user) => {
     if (!currentUser) return;
     const nextProfiles = await listChildProfiles(currentUser.uid);
     setProfiles(nextProfiles);
-  }, [user]);
+    await reconcileImportEligibility(currentUser.uid, nextProfiles);
+  }, [reconcileImportEligibility, user]);
 
   const openProfile = useCallback(async (
     currentUser: FirebaseUser,
@@ -139,20 +166,25 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         }
         const existingCloud = await loadCloudAppState(currentUser.uid, profile.id);
         if (isMeaningfulSnapshot(existingCloud)) {
-          if (!window.confirm(
-            `「${profile.name}」には、すでにクラウドの記録があります。\nこのスマホの古い記録で上書きしてつなぎますか？\n（ふだんは「この子の記録を開く」を使ってください）`,
-          )) {
-            return;
-          }
-        } else if (!window.confirm(
-          `このスマホの古い記録を「${profile.name}」につなぎます。\nよろしいですか？`,
+          markLocalImportSeen(profile.id);
+          setError(
+            `「${profile.name}」にはすでにクラウドの記録があります。\n上書きつなぎはできません。「この子の記録を開く」を使ってください。`,
+          );
+          await reconcileImportEligibility(currentUser.uid, await listChildProfiles(currentUser.uid));
+          return;
+        }
+        if (!window.confirm(
+          `このスマホの古い記録を「${profile.name}」につなぎます。\n（この記録は1回だけ使えます。他の子にはつなげません）\nよろしいですか？`,
         )) {
           return;
         }
         await saveCloudAppState(currentUser.uid, profile.id, legacySnapshot, deviceId);
         applyChildSnapshot(profile.id, legacySnapshot);
         markLocalImportSeen(profile.id);
-        setLegacyImportAvailable(hasLegacyUnscopedLocalData());
+        // 共有スロットは使い切り。別の子へ同じデータをつなぐ事故を防ぐ
+        clearLegacyUnscopedSnapshot();
+        setImportableChildIds([]);
+        setLegacyImportAvailable(false);
       } else {
         const cloudState = await loadCloudAppState(currentUser.uid, profile.id);
         const cloudMeaningful = isMeaningfulSnapshot(cloudState);
@@ -195,7 +227,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
       if (openingChildIdRef.current === profile.id) openingChildIdRef.current = null;
       setLoading(false);
     }
-  }, [applyChildSnapshot, deviceId, flushPendingSave]);
+  }, [applyChildSnapshot, deviceId, flushPendingSave, reconcileImportEligibility]);
 
   const openProfileRef = useRef(openProfile);
   openProfileRef.current = openProfile;
@@ -233,7 +265,8 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         const nextProfiles = await listChildProfiles(nextUser.uid);
         if (cancelled) return;
         setProfiles(nextProfiles);
-        setLegacyImportAvailable(hasLegacyUnscopedLocalData());
+        await reconcileImportEligibility(nextUser.uid, nextProfiles);
+        if (cancelled) return;
         const selectedId = loadSelectedChildId();
         const selected = nextProfiles.find((profile) => profile.id === selectedId);
         if (selected) await openProfileRef.current(nextUser, selected, "cloud");
@@ -292,10 +325,18 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
       openedChildIdRef.current = null;
       setActiveProfile(null);
       clearSelectedChildId();
-      setLegacyImportAvailable(hasLegacyUnscopedLocalData());
       setAppKey("profile-select");
+      if (user) {
+        void listChildProfiles(user.uid).then((nextProfiles) => {
+          setProfiles(nextProfiles);
+          return reconcileImportEligibility(user.uid, nextProfiles);
+        });
+      } else {
+        setImportableChildIds([]);
+        setLegacyImportAvailable(false);
+      }
     });
-  }, [flushPendingSave]);
+  }, [flushPendingSave, reconcileImportEligibility, user]);
 
   const onSignOut = useCallback(async () => {
     await flushPendingSave();
@@ -354,7 +395,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         loading={loading}
         error={error}
         legacyImportAvailable={legacyImportAvailable}
-        canImportToChild={(childId) => canImportLegacyToChild(childId)}
+        canImportToChild={(childId) => importableChildIds.includes(childId)}
         userLabel={user.email ?? user.displayName ?? "親アカウント"}
         onCreate={async (name, avatarEmoji) => {
           setLoading(true);

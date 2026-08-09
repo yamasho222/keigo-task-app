@@ -84,9 +84,21 @@ export function hasLocalImportSeen(childId: string): boolean {
   return loadLocalImportSeen().includes(childId);
 }
 
-/** この端末で、その子にまだ初回「つなぐ」していない＆レガシー共有データがあるときだけ true */
+/**
+ * 初回「つなぐ」候補か（同期判定の前段）。
+ * クラウドに既にある子は別途 markLocalImportSeen して除外する。
+ */
 export function canImportLegacyToChild(childId: string): boolean {
-  return hasLegacyUnscopedLocalData() && !hasLocalImportSeen(childId);
+  return (
+    hasLegacyUnscopedLocalData() &&
+    !hasLocalImportSeen(childId) &&
+    !hasLocalAppState(loadLocalAppStateSnapshot(childId))
+  );
+}
+
+/** 古い共有スロットを消す（誤って別の子へつなぐのを防ぐ） */
+export function clearLegacyUnscopedSnapshot(): void {
+  clearLocalAppStateSnapshot(null);
 }
 
 function loadLocalImportSeen(): string[] {
