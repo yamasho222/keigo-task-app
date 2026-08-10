@@ -72,6 +72,10 @@ export interface MiningState {
   fullDayTicketClaimed: Record<string, boolean>;
   /** 4連ストリーク票を付与済みのストリーク値 */
   streakTicketClaimed: Record<number, boolean>;
+  /** 早ねボーナス権利（キー: 宣言した夜の日付） */
+  bedtimeTicketEligibleNight: Record<string, boolean>;
+  /** 早ねボーナス付与済み（キー: 宣言した夜の日付） */
+  bedtimeTicketClaimed: Record<string, boolean>;
   /** ヘルメットのあたり日おまけを使った日付 */
   luckyBonusClaimedDate?: string | null;
 }
@@ -299,8 +303,19 @@ export function emptyMiningState(): MiningState {
     ticketStampedSessions: {},
     fullDayTicketClaimed: {},
     streakTicketClaimed: {},
+    bedtimeTicketEligibleNight: {},
+    bedtimeTicketClaimed: {},
     luckyBonusClaimedDate: null,
   };
+}
+
+function normalizeBoolRecord(raw: unknown): Record<string, boolean> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v) out[k] = true;
+  }
+  return out;
 }
 
 export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningState {
@@ -366,18 +381,14 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
       leggings: eq.leggings ?? null,
       boots: eq.boots ?? null,
     },
-    ticketStampedSessions:
-      raw.ticketStampedSessions && typeof raw.ticketStampedSessions === "object"
-        ? { ...raw.ticketStampedSessions }
-        : {},
-    fullDayTicketClaimed:
-      raw.fullDayTicketClaimed && typeof raw.fullDayTicketClaimed === "object"
-        ? { ...raw.fullDayTicketClaimed }
-        : {},
+    ticketStampedSessions: normalizeBoolRecord(raw.ticketStampedSessions),
+    fullDayTicketClaimed: normalizeBoolRecord(raw.fullDayTicketClaimed),
     streakTicketClaimed:
       raw.streakTicketClaimed && typeof raw.streakTicketClaimed === "object"
         ? { ...raw.streakTicketClaimed }
         : {},
+    bedtimeTicketEligibleNight: normalizeBoolRecord(raw.bedtimeTicketEligibleNight),
+    bedtimeTicketClaimed: normalizeBoolRecord(raw.bedtimeTicketClaimed),
     luckyBonusClaimedDate:
       typeof raw.luckyBonusClaimedDate === "string" ? raw.luckyBonusClaimedDate : null,
   };

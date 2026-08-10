@@ -39,6 +39,12 @@ import {
 } from "./buddyProgress";
 import { normalizeMiningState, type MiningState } from "./miningTypes";
 import { addMiningPoints, addTickets } from "./miningProgress";
+import {
+  claimDueBedtimeTickets,
+  declareBedtime,
+  getBedtimePanelStatus,
+  type BedtimePanelStatus,
+} from "./bedtimeTicket";
 import { MiningScreen } from "./MiningScreen";
 import {
   MiningHamburgerCoachmark,
@@ -1625,6 +1631,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [showTokenShop, setShowTokenShop] = useState(false);
   const [showBuddyPrompt, setShowBuddyPrompt] = useState(false);
   const [showPendingRewardsSheet, setShowPendingRewardsSheet] = useState(false);
+  /** もらえるごほうびシートから開いたごほうびを閉じたら、残りがあればシートに戻す */
+  const returnToPendingRewardsRef = useRef(false);
   const [deferHintVisible, setDeferHintVisible] = useState(false);
   const [taskListSession, setTaskListSession] = useState<SessionId>(getSessionScreen());
   const [parentSession, setParentSession] = useState<SessionId>("morning");
@@ -2096,6 +2104,54 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
+
+  const showBedtimeTicketToast = (amount: number) => {
+    setBuddyXpToast(`早ねボーナス 🎫+${amount}`);
+    setBuddyXpToastNav("mining");
+    navigator.vibrate?.([18, 30, 24]);
+    window.setTimeout(() => {
+      setBuddyXpToast(null);
+      setBuddyXpToastNav(null);
+    }, 2800);
+  };
+
+  /** 早ねボーナス: 翌日5:00以降に未受け取り分を自動付与 */
+  const tryClaimBedtimeTickets = () => {
+    if (activeCatchUpDate) return;
+    const { nextState, granted } = claimDueBedtimeTickets(miningRef.current, new Date());
+    if (granted <= 0) return;
+    setMining(nextState);
+    miningRef.current = nextState;
+    showBedtimeTicketToast(granted);
+  };
+
+  useEffect(() => {
+    tryClaimBedtimeTickets();
+    const id = setInterval(tryClaimBedtimeTickets, 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tryClaimBedtimeTickets();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [activeCatchUpDate]);
+
+  const handleDeclareBedtime = () => {
+    if (activeCatchUpDate) return;
+    const nightDate = todayKey();
+    const allSessions = getAllSessionTasks();
+    const eveningAllResolved = isAllResolved("evening", allSessions);
+    const next = declareBedtime(miningRef.current, nightDate, { eveningAllResolved });
+    if (!next) return;
+    setMining(next);
+    miningRef.current = next;
+    setBuddyXpToast("早ねできた！ 朝5時にチケット1枚");
+    setBuddyXpToastNav(null);
+    navigator.vibrate?.([12, 20, 12]);
+    window.setTimeout(() => setBuddyXpToast(null), 2200);
+  };
 
   const pauseWorkTimer = () => {
     if (workTimerStartRef.current) {
@@ -3485,6 +3541,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const claimPendingReward = (item: PendingRewardItem) => {
+    returnToPendingRewardsRef.current = true;
     setShowPendingRewardsSheet(false);
     switch (item.kind) {
       case "daily":
@@ -3519,6 +3576,16 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         break;
     }
   };
+
+  // シート起点のごほうびを引き終わったら、残りがあればもらえるごほうびに戻す
+  useEffect(() => {
+    if (!returnToPendingRewardsRef.current) return;
+    if (pendingTreat !== null || treatQueue.length > 0) return;
+    returnToPendingRewardsRef.current = false;
+    if (pendingRewardItems.length > 0) {
+      setShowPendingRewardsSheet(true);
+    }
+  }, [pendingTreat, treatQueue.length, pendingRewardItems]);
 
   useEffect(() => {
     if (!deferHintVisible) return;
@@ -4605,6 +4672,72 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setMining((m) => addTickets(m, 10));
                   setShowMenu(false);
                 } },
+                { icon: "🛏️", label: "早ねUIを見せる（夜全完了）", action: () => {
+                  const nightDate = todayKey();
+                  // 当日の権利／受け取り済みを消して ready 状態を再現
+                  setMining((m) => {
+                    const eligible = { ...m.bedtimeTicketEligibleNight };
+                    const claimed = { ...m.bedtimeTicketClaimed };
+                    delete eligible[nightDate];
+                    delete claimed[nightDate];
+                    const next = {
+                      ...m,
+                      bedtimeTicketEligibleNight: eligible,
+                      bedtimeTicketClaimed: claimed,
+                    };
+                    miningRef.current = next;
+                    return next;
+                  });
+                  const visible = tasksForProgress(
+                    visibleTasksForSession("evening", getAllSessionTasks()),
+                  );
+                  setEveningDone(new Set(visible.map((t) => t.id)));
+                  setEveningSkipped(new Set());
+                  setScreen("evening");
+                  setShowMenu(false);
+                } },
+                { icon: "🛏️", label: "早ね宣言をいま記録（テスト）", action: () => {
+                  const nightDate = todayKey();
+                  setMining((m) => {
+                    const next = {
+                      ...m,
+                      bedtimeTicketEligibleNight: {
+                        ...m.bedtimeTicketEligibleNight,
+                        [nightDate]: true,
+                      },
+                    };
+                    miningRef.current = next;
+                    return next;
+                  });
+                  setBuddyXpToast("早ね宣言を記録（テスト）");
+                  setTimeout(() => setBuddyXpToast(null), 1800);
+                  setShowMenu(false);
+                } },
+                { icon: "🛏️", label: "早ねボーナスを朝5時扱いで受け取る（テスト）", action: () => {
+                  const nightDate = todayKey();
+                  const forced = new Date();
+                  forced.setDate(forced.getDate() + 1);
+                  forced.setHours(5, 0, 0, 0);
+                  let state = miningRef.current;
+                  if (!state.bedtimeTicketEligibleNight[nightDate]) {
+                    state = {
+                      ...state,
+                      bedtimeTicketEligibleNight: {
+                        ...state.bedtimeTicketEligibleNight,
+                        [nightDate]: true,
+                      },
+                    };
+                  }
+                  const { nextState, granted } = claimDueBedtimeTickets(state, forced);
+                  setMining(nextState);
+                  miningRef.current = nextState;
+                  if (granted > 0) showBedtimeTicketToast(granted);
+                  else {
+                    setBuddyXpToast("受け取り済みか条件未達");
+                    setTimeout(() => setBuddyXpToast(null), 1800);
+                  }
+                  setShowMenu(false);
+                } },
                 { icon: "🪵", label: "原木+20（テスト）", action: () => {
                   setMining((m) => ({
                     ...m,
@@ -5031,6 +5164,16 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 sessionApproved={getContextApproved(sid)}
                 onSickSkip={!inCatchUp ? () => applySickSkip(sid) : undefined}
                 onCancelSickSkip={!inCatchUp ? () => cancelSickSkip(sid) : undefined}
+                bedtimePanelStatus={
+                  !inCatchUp && sid === "evening"
+                    ? getBedtimePanelStatus({
+                      nightDate: todayKey(),
+                      state: mining,
+                      eveningAllResolved: isAllResolved("evening", getContextAllSessionTasks()),
+                    })
+                    : "hidden"
+                }
+                onDeclareBedtime={!inCatchUp && sid === "evening" ? handleDeclareBedtime : undefined}
               />
             ))}
           </SessionPhaseSwipe>
@@ -6673,6 +6816,9 @@ interface TaskScreenProps {
   sessionApproved?: boolean;
   onSickSkip?: () => void;
   onCancelSickSkip?: () => void;
+  /** 早ねボーナス（夜のみ） */
+  bedtimePanelStatus?: BedtimePanelStatus;
+  onDeclareBedtime?: () => void;
 }
 
 function TaskScreen({
@@ -6697,6 +6843,8 @@ function TaskScreen({
   buddyProgress,
   canChangeBuddy = false,
   onOpenBuddySelect,
+  bedtimePanelStatus = "hidden",
+  onDeclareBedtime,
   duplicateTokens = 0,
   onTrainBuddy,
   sickSkipActive = false,
@@ -7072,6 +7220,60 @@ function TaskScreen({
           </div>
         </SortableContext>
       </DndContext>
+
+      {session === "evening" && bedtimePanelStatus !== "hidden" && !catchUpMode && (
+        <div style={{
+          borderRadius: 14,
+          border: `1.5px solid ${theme.category.blue}55`,
+          backgroundColor: `${theme.category.blue}12`,
+          padding: "13px 14px",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: theme.category.blue, marginBottom: 6 }}>
+            早ねボーナス
+          </div>
+          {bedtimePanelStatus === "ready" && (
+            <>
+              <div style={{ fontSize: 13, color: theme.text.secondary, marginBottom: 12, lineHeight: 1.45 }}>
+                21時までにベッドへ入ると、朝5時に 🎫1枚
+              </div>
+              <button
+                type="button"
+                onClick={onDeclareBedtime}
+                disabled={interactionLocked || !onDeclareBedtime}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "none",
+                  backgroundColor: theme.category.blue,
+                  color: "#fff",
+                  fontSize: 16,
+                  fontWeight: 800,
+                  cursor: interactionLocked ? "default" : "pointer",
+                  opacity: interactionLocked ? 0.6 : 1,
+                }}
+              >
+                ベッドに入る
+              </button>
+            </>
+          )}
+          {bedtimePanelStatus === "declared" && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.primary, lineHeight: 1.45 }}>
+              早ねできた！ 朝5時にこうざんチケット1枚
+            </div>
+          )}
+          {bedtimePanelStatus === "missed" && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
+              きょうの早ねボーナスはおしまい
+            </div>
+          )}
+          {bedtimePanelStatus === "claimed" && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
+              早ねボーナス受け取りずみ
+            </div>
+          )}
+        </div>
+      )}
 
       {todayMission && missionCardStatus && !catchUpMode && (
         <MissionCard
