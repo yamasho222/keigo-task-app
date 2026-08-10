@@ -73,9 +73,7 @@ const DEV_CRAFTED: CraftedGearId[] = [
 ];
 
 /** 開発用: 全シールを所持扱いにしてカテゴリ絞り込みで全部選べるようにする */
-const DEV_STICKER_IDS = ALL_REWARDS
-  .filter((reward) => reward.kind === "sticker")
-  .map((reward) => reward.id);
+const DEV_STICKER_IDS = ALL_REWARDS.map((reward) => reward.id);
 
 function firstRewardId(category: string): string | null {
   return ALL_REWARDS.find((reward) => reward.category === category)?.id ?? null;

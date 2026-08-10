@@ -24,7 +24,7 @@ export const RARITY_META: Record<StickerRarity, {
   legendary: { label: "レジェンドレア", compact: "LR", color: theme.category.yellow, rank: 4, tease: true, upgradeCutin: true },
 };
 
-/** 日次シール抽選（絵文字30%の後） */
+/** 日次シール抽選 */
 export const TIER_WEIGHTS_DAILY: Record<StickerRarity, number> = {
   normal: 0.357,
   rare: 0.443,

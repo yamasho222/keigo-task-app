@@ -76,7 +76,6 @@ export function BuddySelectPrompt({
           {groups.map((group) => {
             const renderBuddyCell = (item: (typeof group.rewards)[number]) => {
               const entry = getBuddyEntry(buddyProgress, item.id);
-              const isEmoji = item.kind === "emoji";
               const isCurrent = currentBuddyId === item.id;
               return (
                 <button
@@ -103,19 +102,14 @@ export function BuddySelectPrompt({
                         style={{
                           width: "100%", height: "100%",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: isEmoji ? 28 : undefined,
                         }}
                       >
-                        {isEmoji ? (
-                          item.emoji
-                        ) : (
-                          <StickerImg
-                            src={item.image}
-                            alt={item.label}
-                            padding={5}
-                            objectFit={item.imageFit ?? "contain"}
-                          />
-                        )}
+                        <StickerImg
+                          src={item.image}
+                          alt={item.label}
+                          padding={5}
+                          objectFit={item.imageFit ?? "contain"}
+                        />
                       </StickerFrameWithBadge>
                     </BuddyFrame>
                   </div>

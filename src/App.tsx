@@ -6885,19 +6885,14 @@ function TaskScreen({
                 style={{
                   width: "100%", height: "100%",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: buddyItem.emoji ? 22 : undefined,
                 }}
               >
-                {buddyItem.emoji ? (
-                  buddyItem.emoji
-                ) : (
-                  <StickerImg
-                    src={buddyItem.image!}
-                    alt={buddyItem.label}
-                    padding={4}
-                    objectFit={buddyItem.imageFit ?? "contain"}
-                  />
-                )}
+                <StickerImg
+                  src={buddyItem.image}
+                  alt={buddyItem.label}
+                  padding={4}
+                  objectFit={buddyItem.imageFit ?? "contain"}
+                />
               </StickerFrameWithBadge>
             </BuddyFrame>
           </div>

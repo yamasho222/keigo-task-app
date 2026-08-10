@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
-import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, DUPLICATE_TOKEN_LABEL, getDuplicateTokensForRarity, type EmojiReward, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type StreakRewardPick, type TreatMode } from "./stickerRewards";
+import { pickTreatReward, pickStickerByTier, pickDecoyNormalReward, pickDecoyUltraRareReward, getStickerById, RARITY_LABELS, DUPLICATE_TOKEN_LABEL, getDuplicateTokensForRarity, type RewardItem, type RewardRarity, type StickerRarity, type StickerReward, type StreakRewardPick, type TreatMode } from "./stickerRewards";
 import { pickLegendaryRevealMode, pickSrUrRevealMode, type LegendaryRevealMode, type SrUrRevealMode } from "./rarityMeta";
 import { specialRewardFloorLabel, type SpecialRewardFloor } from "./sharedTasks";
 import {
@@ -16,7 +16,7 @@ import {
 } from "./treatCutin";
 export type { RewardItem, StickerReward, TreatMode, RewardRarity };
 export {
-  REWARD_LOOKUP, STICKER_REWARDS, DAILY_EMOJI_REWARDS, ALL_REWARDS, TOTAL_REWARD_COUNT, RARITY_LABELS,
+  REWARD_LOOKUP, STICKER_REWARDS, ALL_REWARDS, TOTAL_REWARD_COUNT, RARITY_LABELS,
   pickStickerReward, pickDailyReward, pickWeeklyReward, pickTreatReward, pickStickerByTier,
 } from "./stickerRewards";
 
@@ -297,19 +297,6 @@ function StickerImage({ reward, size = 160, borderGlow, glowPulse = false }: {
 function RewardReveal({ reward, size = 160, borderGlow, glowPulse = false }: {
   reward: RewardItem; size?: number; borderGlow: string; glowPulse?: boolean;
 }) {
-  if (reward.kind === "emoji") {
-    return (
-      <div style={{
-        width: size, height: size, borderRadius: 16,
-        backgroundColor: `${borderGlow}14`,
-        border: `3px solid ${borderGlow}55`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: size * 0.45,
-      }}>
-        {reward.emoji}
-      </div>
-    );
-  }
   return <StickerImage reward={reward} size={size} borderGlow={borderGlow} glowPulse={glowPulse} />;
 }
 
@@ -589,7 +576,7 @@ function TreatOverlay({
   const [reward, setReward] = useState<RewardItem | null>(null);
   /** 抽選確定時点で新規シールだったか（onCollect後にcollectedIdsが更新されるため保持しておく） */
   const [rewardWasNew, setRewardWasNew] = useState(true);
-  const [decoy, setDecoy] = useState<EmojiReward | null>(null);
+  const [decoy, setDecoy] = useState<StickerReward | null>(null);
   const [fakeUrDecoy, setFakeUrDecoy] = useState<StickerReward | null>(null);
   const [activeTease, setActiveTease] = useState<TeaseVariant | null>(null);
   const teaseTimerRef = useRef<number | null>(null);
@@ -875,7 +862,12 @@ function TreatOverlay({
         <div className="lr-whiteout-legendary" style={{ position: "fixed", inset: 0, zIndex: 3, pointerEvents: "none" }} />
       )}
       {phase === "upgrading" && upgradeStep === "fakeNormalCrush" && decoy && (
-        <LrNormalToUrBridge key="lr-normal-ur-bridge" decoyEmoji={decoy.emoji} />
+        <LrNormalToUrBridge
+          key="lr-normal-ur-bridge"
+          decoyImage={decoy.image}
+          decoyImageFit={decoy.imageFit}
+          decoyLabel={decoy.label}
+        />
       )}
       {phase === "upgrading" && upgradeStep === "fakeUltraRare" && (
         <div className="lr-fake-ur-bg-glow" style={{
@@ -886,7 +878,9 @@ function TreatOverlay({
         <UpgradeCutinScene
           key={`cutin-${reward.id}`}
           tier={reward.rarity}
-          decoyEmoji={decoy.emoji}
+          decoyImage={decoy.image}
+          decoyImageFit={decoy.imageFit}
+          decoyLabel={decoy.label}
         />
       )}
       {phase === "upgrading" && reward && shouldPlayLegendaryUpgrade(reward.rarity)

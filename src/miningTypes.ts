@@ -247,7 +247,6 @@ export const ARMOR_KIND_LABEL: Record<ArmorKind, string> = {
 
 /** カテゴリ → 採掘得意（ユーザー確定） */
 export const CATEGORY_SPECIALTY: Record<string, MiningSpecialty> = {
-  daily: "wood",
   pokemon: "wood",
   prefecture: "wood",
   doraemon: "cobble",

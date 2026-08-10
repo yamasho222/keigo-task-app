@@ -499,16 +499,12 @@ export function RecordScreen({
                     showBadge={false}
                     style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
-                    {activeBuddyItem.emoji ? (
-                      <span style={{ fontSize: 32 }}>{activeBuddyItem.emoji}</span>
-                    ) : (
-                      <StickerImg
-                        src={activeBuddyItem.image!}
-                        alt={activeBuddyItem.label}
-                        padding={6}
-                        objectFit={activeBuddyItem.imageFit ?? "contain"}
-                      />
-                    )}
+                    <StickerImg
+                      src={activeBuddyItem.image}
+                      alt={activeBuddyItem.label}
+                      padding={6}
+                      objectFit={activeBuddyItem.imageFit ?? "contain"}
+                    />
                   </StickerFrameWithBadge>
                 </BuddyFrame>
               </div>
@@ -626,14 +622,9 @@ export function RecordScreen({
                         style={{
                           width: "100%", height: "100%",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: item.emoji ? 26 : undefined,
                         }}
                       >
-                        {item.emoji ? (
-                          item.emoji
-                        ) : (
-                          <StickerImg src={item.image!} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
-                        )}
+                        <StickerImg src={item.image} alt={item.label} padding={5} objectFit={item.imageFit ?? "contain"} />
                       </StickerFrameWithBadge>
                     </BuddyFrame>
                   </button>
@@ -793,15 +784,9 @@ export function RecordScreen({
                     width: "100%", height: "100%",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     overflow: "hidden",
-                    fontSize: previewItem.emoji ? 100 : undefined,
-                    backgroundColor: previewItem.emoji ? `${theme.category.green}14` : "transparent",
                   }}
                 >
-                  {previewItem.emoji ? (
-                    previewItem.emoji
-                  ) : (
-                    <StickerImg src={previewItem.image!} alt={previewItem.label} padding={16} objectFit={previewItem.imageFit ?? "contain"} />
-                  )}
+                  <StickerImg src={previewItem.image} alt={previewItem.label} padding={16} objectFit={previewItem.imageFit ?? "contain"} />
                 </StickerFrameWithBadge>
               </BuddyFrame>
             </div>

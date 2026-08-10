@@ -62,15 +62,9 @@ export function BuddyDetailModal({
                 width: "100%", height: "100%",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 overflow: "hidden",
-                fontSize: item.emoji ? 100 : undefined,
-                backgroundColor: item.emoji ? `${theme.category.green}14` : "transparent",
               }}
             >
-              {item.emoji ? (
-                item.emoji
-              ) : (
-                <StickerImg src={item.image!} alt={item.label} padding={16} objectFit={item.imageFit ?? "contain"} />
-              )}
+              <StickerImg src={item.image} alt={item.label} padding={16} objectFit={item.imageFit ?? "contain"} />
             </StickerFrameWithBadge>
           </BuddyFrame>
         </div>

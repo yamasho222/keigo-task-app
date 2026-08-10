@@ -183,21 +183,14 @@ function StickerThumb({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: item.emoji ? size * 0.45 : undefined,
           }}
         >
-          {item.emoji ? (
-            item.emoji
-          ) : item.image ? (
-            <StickerImg
-              src={item.image}
-              alt={item.label}
-              padding={4}
-              objectFit={item.imageFit ?? "contain"}
-            />
-          ) : (
-            "?"
-          )}
+          <StickerImg
+            src={item.image}
+            alt={item.label}
+            padding={4}
+            objectFit={item.imageFit ?? "contain"}
+          />
         </StickerFrameWithBadge>
       </BuddyFrame>
     </div>
@@ -213,13 +206,7 @@ function PartySilhouette({
 }) {
   return (
     <div className="mining-dig-party-sil" style={{ width: size, height: size }}>
-      {item.emoji ? (
-        <span style={{ fontSize: size * 0.55 }}>{item.emoji}</span>
-      ) : item.image ? (
-        <StickerImg src={item.image} alt="" padding={2} objectFit={item.imageFit ?? "contain"} />
-      ) : (
-        "?"
-      )}
+      <StickerImg src={item.image} alt="" padding={2} objectFit={item.imageFit ?? "contain"} />
     </div>
   );
 }

@@ -17,7 +17,7 @@ import type { SpecialRewardFloor } from "./sharedTasks";
 export type { StickerRarity, RewardRarity } from "./rarityMeta";
 
 export type StickerCategory = "sumanai" | "youtube" | "kimitsu" | "doraemon" | "brainrot" | "saikyoou" | "minecraft" | "pokemon" | "prefecture";
-export type RewardCategory = "daily" | StickerCategory;
+export type RewardCategory = StickerCategory;
 
 /** 都道府県シールの地方サブカテゴリ */
 export type PrefectureRegion =
@@ -41,16 +41,6 @@ export const PREFECTURE_SUBCATEGORIES: { id: PrefectureRegion; label: string }[]
   { id: "kyushu-okinawa", label: "九州・沖縄地方" },
 ];
 
-export interface EmojiReward {
-  kind: "emoji";
-  id: string;
-  emoji: string;
-  label: string;
-  message: string;
-  category: "daily";
-  rarity: "normal";
-}
-
 export interface StickerReward {
   kind: "sticker";
   id: string;
@@ -65,10 +55,9 @@ export interface StickerReward {
   subcategory?: PrefectureRegion;
 }
 
-export type RewardItem = EmojiReward | StickerReward;
+export type RewardItem = StickerReward;
 
 export const STICKER_CATEGORIES: { id: RewardCategory; label: string }[] = [
-  { id: "daily", label: "ノーマル" },
   { id: "sumanai", label: "すまない先生" },
   { id: "youtube", label: "YouTube" },
   { id: "kimitsu", label: "鬼滅の刃" },
@@ -90,19 +79,7 @@ function stickerAlbumKey(childId?: string | null): string {
   return childId ? `${STICKER_ALBUM_KEY}:${childId}` : STICKER_ALBUM_KEY;
 }
 
-/** 日次ごほうび・ノーマル（絵文字8種） */
-export const DAILY_EMOJI_REWARDS: EmojiReward[] = [
-  { kind: "emoji", id: "star", emoji: "⭐", label: "スター", message: "きょうも星みたいにかがやいた！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "cat", emoji: "🐱", label: "ねこ", message: "にゃー！ごほうびゲット！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "dog", emoji: "🐶", label: "いぬ", message: "わん！よくがんばったね！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "cake", emoji: "🎂", label: "ケーキ", message: "おいしそうなケーキのごほうび！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "gift", emoji: "🎁", label: "プレゼント", message: "サプライズプレゼント！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "party", emoji: "🎉", label: "パーティー", message: "パーティーじかん！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "rainbow", emoji: "🌈", label: "にじ", message: "にじ色のごほうび！", category: "daily", rarity: "normal" },
-  { kind: "emoji", id: "fire", emoji: "🔥", label: "ファイヤー", message: "メラメラパワー全開！", category: "daily", rarity: "normal" },
-];
-
-/** ごほうびシール（129枚） */
+/** ごほうびシール */
 export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "warrior-baby", label: "ミスター赤ちゃん", message: "ミスター赤ちゃんゲット！", image: "/stickers/warrior-baby.png", category: "sumanai", rarity: "rare" },
   { kind: "sticker", id: "blue-fist", label: "ミスター・ブルー", message: "ミスター・ブルー登場！", image: "/stickers/blue-fist.png", category: "sumanai", rarity: "rare" },
@@ -271,11 +248,8 @@ export const STICKER_REWARDS: StickerReward[] = [
   { kind: "sticker", id: "pref-okinawa", label: "沖縄", message: "沖縄ゲット！", image: "/stickers/47_okinawa_LR_kyushu-okinawa.png", category: "prefecture", subcategory: "kyushu-okinawa", rarity: "legendary" },
 ];
 
-export const ALL_REWARDS: RewardItem[] = [...DAILY_EMOJI_REWARDS, ...STICKER_REWARDS];
+export const ALL_REWARDS: RewardItem[] = STICKER_REWARDS;
 export const TOTAL_REWARD_COUNT = ALL_REWARDS.length;
-
-/** 日次：ノーマル30% / シール70% */
-export const DAILY_NORMAL_WEIGHT = 0.30;
 
 /** @deprecated TIER_WEIGHTS_DAILY を参照 */
 export const STICKER_TIER_WEIGHTS = TIER_WEIGHTS_DAILY;
@@ -309,17 +283,14 @@ export interface RewardLookupEntry {
   label: string;
   category: RewardCategory;
   rarity: RewardRarity;
-  emoji?: string;
-  image?: string;
+  image: string;
   imageFit?: "contain" | "cover";
 }
 
 export const REWARD_LOOKUP: Record<string, RewardLookupEntry> = Object.fromEntries(
   ALL_REWARDS.map((r) => [
     r.id,
-    r.kind === "emoji"
-      ? { label: r.label, category: r.category, rarity: r.rarity, emoji: r.emoji }
-      : { label: r.label, category: r.category, rarity: r.rarity, image: r.image, imageFit: r.imageFit },
+    { label: r.label, category: r.category, rarity: r.rarity, image: r.image, imageFit: r.imageFit },
   ]),
 );
 
@@ -460,10 +431,7 @@ export function pickStickerReward(_collectedIds?: string[]): StickerReward {
   return pickRandom(STICKER_REWARDS);
 }
 
-export function pickDailyReward(collectedIds: string[]): RewardItem {
-  if (Math.random() < DAILY_NORMAL_WEIGHT) {
-    return pickRandom(DAILY_EMOJI_REWARDS);
-  }
+export function pickDailyReward(collectedIds: string[]): StickerReward {
   return pickFromStickerTiers(collectedIds, TIER_WEIGHTS_DAILY);
 }
 
@@ -614,9 +582,10 @@ export function getStickersByCategory(category: StickerCategory): StickerReward[
   return STICKER_REWARDS.filter((r) => r.category === category);
 }
 
-/** カットイン昇格演出用の偽ノーマル絵文字 */
-export function pickDecoyNormalReward(): EmojiReward {
-  return pickRandom(DAILY_EMOJI_REWARDS);
+/** カットイン昇格演出用の偽ノーマルシール */
+export function pickDecoyNormalReward(): StickerReward {
+  const pool = STICKER_REWARDS.filter((r) => r.rarity === "normal");
+  return pickRandom(pool.length > 0 ? pool : STICKER_REWARDS);
 }
 
 /** LR カットイン用の偽 UR シール */

@@ -85,7 +85,11 @@ function SpeedLines({ colors, count = 24 }: { colors: string[]; count?: number }
   );
 }
 
-function DecoyCrush({ emoji }: { emoji: string }) {
+function DecoyCrush({ image, imageFit = "contain", label }: {
+  image: string;
+  imageFit?: "contain" | "cover";
+  label: string;
+}) {
   return (
     <div style={{
       position: "absolute", left: "50%", top: "50%",
@@ -96,15 +100,23 @@ function DecoyCrush({ emoji }: { emoji: string }) {
         backgroundColor: `${theme.category.green}14`,
         border: `3px solid ${theme.category.green}55`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 64,
+        overflow: "hidden", padding: 12, boxSizing: "border-box",
       }}>
-        {emoji}
+        <img
+          src={image}
+          alt={label}
+          style={{ width: "100%", height: "100%", objectFit: imageFit, display: "block" }}
+        />
       </div>
     </div>
   );
 }
 
-function SrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
+function SrUpgradeCutin({ decoyImage, decoyImageFit, decoyLabel }: {
+  decoyImage: string;
+  decoyImageFit?: "contain" | "cover";
+  decoyLabel: string;
+}) {
   return (
     <CutinStage shake>
       <div className="cutin-tier-burst" style={{
@@ -112,7 +124,7 @@ function SrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
         background: `radial-gradient(circle at 50% 50%, ${srPurple}66 0%, ${srPink}22 38%, transparent 68%)`,
       }} />
       <SpeedLines colors={[srPurple, srPink, srBlue, "#ffffff"]} count={28} />
-      <DecoyCrush emoji={decoyEmoji} />
+      <DecoyCrush image={decoyImage} imageFit={decoyImageFit} label={decoyLabel} />
       <div className="cutin-text-slam" style={{
         position: "absolute", left: "50%", top: "34%",
         transform: "translateX(-50%)",
@@ -131,7 +143,11 @@ function SrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
   );
 }
 
-function UrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
+function UrUpgradeCutin({ decoyImage, decoyImageFit, decoyLabel }: {
+  decoyImage: string;
+  decoyImageFit?: "contain" | "cover";
+  decoyLabel: string;
+}) {
   const rings = [0, 0.12];
   return (
     <CutinStage shake>
@@ -150,7 +166,7 @@ function UrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
         }} />
       ))}
       <SpeedLines colors={[urGold, urOrange, "#ffffff", urGold]} count={32} />
-      <DecoyCrush emoji={decoyEmoji} />
+      <DecoyCrush image={decoyImage} imageFit={decoyImageFit} label={decoyLabel} />
       <div className="cutin-text-slam-ur" style={{
         position: "absolute", left: "50%", top: "32%",
         transform: "translateX(-50%)",
@@ -170,17 +186,27 @@ function UrUpgradeCutin({ decoyEmoji }: { decoyEmoji: string }) {
 }
 
 export function UpgradeCutinScene({
-  tier, decoyEmoji,
+  tier, decoyImage, decoyImageFit, decoyLabel,
 }: {
   tier: "superRare" | "ultraRare";
-  decoyEmoji: string;
+  decoyImage: string;
+  decoyImageFit?: "contain" | "cover";
+  decoyLabel: string;
 }) {
-  if (tier === "superRare") return <SrUpgradeCutin decoyEmoji={decoyEmoji} />;
-  return <UrUpgradeCutin decoyEmoji={decoyEmoji} />;
+  if (tier === "superRare") {
+    return <SrUpgradeCutin decoyImage={decoyImage} decoyImageFit={decoyImageFit} decoyLabel={decoyLabel} />;
+  }
+  return <UrUpgradeCutin decoyImage={decoyImage} decoyImageFit={decoyImageFit} decoyLabel={decoyLabel} />;
 }
 
 /** LR二段演出: 偽ノーマル → 偽UR の遷移ブリッジ（テキストなし） */
-export function LrNormalToUrBridge({ decoyEmoji }: { decoyEmoji: string }) {
+export function LrNormalToUrBridge({
+  decoyImage, decoyImageFit, decoyLabel,
+}: {
+  decoyImage: string;
+  decoyImageFit?: "contain" | "cover";
+  decoyLabel: string;
+}) {
   const urGold = theme.category.yellow;
   const urOrange = theme.category.orange;
   return (
@@ -191,7 +217,7 @@ export function LrNormalToUrBridge({ decoyEmoji }: { decoyEmoji: string }) {
         background: `radial-gradient(circle at 50% 50%, ${urOrange}66 0%, ${urGold}33 38%, transparent 72%)`,
       }} />
       <SpeedLines colors={[urGold, urOrange, "#ffffff", urGold]} count={36} />
-      <DecoyCrush emoji={decoyEmoji} />
+      <DecoyCrush image={decoyImage} imageFit={decoyImageFit} label={decoyLabel} />
       {[0, 0.14, 0.28].map((delay, i) => (
         <div key={i} className="cutin-shock-ring" style={{
           position: "absolute", left: "50%", top: "50%",
