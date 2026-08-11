@@ -5,9 +5,22 @@ import "./index.css";
 import App from "./App.tsx";
 import { CloudAppShell } from "./CloudAppShell.tsx";
 
-// iOS ホーム画面PWAは更新が残りやすいので、起動時・復帰時に SW 更新を取りにいく
-registerSW({
+// iOS ホーム画面PWAは更新が残りやすい。
+// injectRegister: null のため、新SW検知時のリロードはここで明示する（取らないと古い画面のまま）。
+let refreshing = false;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+}
+
+const updateSW = registerSW({
   immediate: true,
+  onNeedRefresh() {
+    void updateSW(true);
+  },
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
     const check = () => {
@@ -18,6 +31,8 @@ registerSW({
     });
     window.addEventListener("focus", check);
     window.setInterval(check, 30 * 60 * 1000);
+    // 起動直後にも一度取りにいく（バックグラウンド起動対策）
+    check();
   },
 });
 
