@@ -1742,6 +1742,70 @@ button {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+
+/* ほる行き先ボトムシート */
+.mining-dig-dest-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.mining-dig-dest-sheet {
+  width: min(100%, 520px);
+  max-height: min(78vh, 640px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 10px 16px max(16px, env(safe-area-inset-bottom, 0px));
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.22);
+  animation: mining-dig-dest-up 0.22s ease-out;
+}
+@keyframes mining-dig-dest-up {
+  from { transform: translateY(18px); opacity: 0.85; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.mining-dig-dest-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d0d0d0;
+  margin: 2px auto 10px;
+}
+.mining-dig-dest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mining-dig-dest-title {
+  font-weight: 900;
+  font-size: 17px;
+  color: #222;
+}
+.mining-dig-dest-close {
+  border: 1.5px solid #ddd;
+  background: #f5f5f5;
+  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  color: #444;
+}
+.mining-dig-dest-hint {
+  font-size: 12px;
+  font-weight: 800;
+  color: #666;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
 .mining-dig-cta.is-ready {
   background-color: #5B8EFF !important;
   color: #fff !important;

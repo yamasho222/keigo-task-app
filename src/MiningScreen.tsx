@@ -91,7 +91,7 @@ interface Props {
 }
 
 type TabId = "mine" | "craft" | "bag";
-type OverlayId = "party" | "equip" | null;
+type OverlayId = "party" | "equip" | "digDestination" | null;
 type DigFxPhase = "idle" | "crack" | "break" | "reveal";
 type ArmorSlot = "helmet" | "chest" | "leggings" | "boots";
 type ToastKind = "normal" | "progress";
@@ -738,8 +738,16 @@ export function MiningScreen({
 }: Props) {
   const [tab, setTab] = useState<TabId>("mine");
   const [overlay, setOverlay] = useState<OverlayId>(null);
-  const [selectedGacha, setSelectedGacha] = useState<GachaId>("wood");
-  const [toolKind, setToolKind] = useState<ToolKind>("axe");
+  const [selectedGacha, setSelectedGacha] = useState<GachaId>(() => {
+    const last = mining.lastSelectedGacha;
+    if (last && mining.unlockedGachas.includes(last)) return last;
+    return "wood";
+  });
+  const [toolKind, setToolKind] = useState<ToolKind>(() => {
+    const last = mining.lastSelectedGacha;
+    const gacha = last && mining.unlockedGachas.includes(last) ? last : "wood";
+    return recommendToolKind(gacha);
+  });
   const [lastDig, setLastDig] = useState<DigResult | null>(null);
   const [digFx, setDigFx] = useState<DigFxPhase>("idle");
   const [crackStage, setCrackStage] = useState(0);
@@ -929,6 +937,19 @@ export function MiningScreen({
     if (best) onChange(equipTool(mining, best));
   };
 
+  /** 行き先を選び、おすすめどうぐを装備し、前回行き先を保存する */
+  const chooseGacha = (gid: GachaId) => {
+    setSelectedGacha(gid);
+    const kind = recommendToolKind(gid);
+    setToolKind(kind);
+    void unlockAudio();
+    playGachaAmbient(gid);
+    let next: MiningState = { ...mining, lastSelectedGacha: gid };
+    const best = bestOwnedTool(next, kind);
+    if (best) next = equipTool(next, best);
+    onChange(next);
+  };
+
   const beginDigFx = (result: DigResult) => {
     const before = mining;
     const beforeUnlocks = new Set(mining.unlockedGachas);
@@ -963,16 +984,27 @@ export function MiningScreen({
     if (next >= MAX_CRACK_STAGE) finishCrackToBreak();
   };
 
-  const onDig = () => {
+  /** 行き先を確定して即掘る（シート用。gacha を明示して stale state を避ける） */
+  const digAt = (gacha: GachaId) => {
     if (digBusy) return;
+    const kind = recommendToolKind(gacha);
+    setSelectedGacha(gacha);
+    setToolKind(kind);
+    setOverlay(null);
+    void unlockAudio();
+    playGachaAmbient(gacha);
+    let stateForDig: MiningState = { ...mining, lastSelectedGacha: gacha };
+    const best = bestOwnedTool(stateForDig, kind);
+    if (best) stateForDig = equipTool(stateForDig, best);
     const result = resolveDig({
-      state: mining,
-      gacha: selectedGacha,
-      toolKind,
+      state: stateForDig,
+      gacha,
+      toolKind: kind,
       buddyProgress,
       dateKey,
     });
     if ("error" in result) {
+      onChange(stateForDig);
       showToast(result.error);
       return;
     }
@@ -1101,20 +1133,15 @@ export function MiningScreen({
       setOverlay(null);
       setTab("mine");
       if (nudge.id === "wood-tools-done" && mining.unlockedGachas.includes("stone")) {
-        setSelectedGacha("stone");
-        selectToolKind(recommendToolKind("stone"));
+        chooseGacha("stone");
       } else if (nudge.id === "stone-tools-done" && mining.unlockedGachas.includes("coal")) {
-        setSelectedGacha("coal");
-        selectToolKind(recommendToolKind("coal"));
+        chooseGacha("coal");
       } else if (nudge.id === "iron-tools-done" && mining.unlockedGachas.includes("diamond")) {
-        setSelectedGacha("diamond");
-        selectToolKind(recommendToolKind("diamond"));
+        chooseGacha("diamond");
       } else if (nudge.id === "diamond-tools-done" && mining.unlockedGachas.includes("nether")) {
-        setSelectedGacha("nether");
-        selectToolKind(recommendToolKind("nether"));
+        chooseGacha("nether");
       } else if (nudge.id === "after-furnace" && mining.unlockedGachas.includes("iron")) {
-        setSelectedGacha("iron");
-        selectToolKind(recommendToolKind("iron"));
+        chooseGacha("iron");
       }
     }
     setProgressNudge(null);
@@ -1203,14 +1230,12 @@ export function MiningScreen({
   const ironRoute = showIronRouteGuide(mining);
   const strength = boostStrengthLabel(boost.expectedExtra);
   const wantSpec = specialtyForGacha(selectedGacha);
-  const digDisabled = digBusy || mining.tickets < 1 || !mining.unlockedGachas.includes(selectedGacha);
-  const digReady = !digBusy && mining.tickets >= 1 && mining.unlockedGachas.includes(selectedGacha);
   const digNeedsTickets = mining.tickets < 1;
+  const digSheetReady = !digBusy && mining.tickets >= 1;
 
   const jumpFromHero = () => {
     if (nextHero.preferredGacha && mining.unlockedGachas.includes(nextHero.preferredGacha)) {
-      setSelectedGacha(nextHero.preferredGacha);
-      selectToolKind(recommendToolKind(nextHero.preferredGacha));
+      chooseGacha(nextHero.preferredGacha);
     }
     if (nextHero.jumpTab === "mine") {
       setOverlay(null);
@@ -1221,9 +1246,13 @@ export function MiningScreen({
     setTab("craft");
   };
 
+  /** party / equip は全画面置換。digDestination はボトムシートなので本体UIを残す */
+  const blockingOverlay = overlay === "party" || overlay === "equip";
+  const selectedMeta = GACHA_META[selectedGacha];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: tab === "mine" ? 120 : 72 }}>
-      {!overlay && (
+      {!blockingOverlay && (
         <>
           {/* フロー内スペーサー: fixed ヘッダーのうち、AppScroll padding より下の分だけ確保 */}
           <div style={{ height: chromeSpacerHeight, flexShrink: 0 }} aria-hidden />
@@ -1277,7 +1306,7 @@ export function MiningScreen({
         </>
       )}
 
-      {overlay && (
+      {blockingOverlay && (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <ScrollSafeBackButton onBack={() => setOverlay(null)} />
           <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>
@@ -1286,7 +1315,7 @@ export function MiningScreen({
         </div>
       )}
 
-      {!overlay && (
+      {!blockingOverlay && (
       <>
       <div style={{ ...card, padding: "10px 12px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
@@ -1360,7 +1389,7 @@ export function MiningScreen({
         )}
       </div>
 
-      {progressNudge && !overlay && (
+      {progressNudge && !blockingOverlay && (
         <div style={{
           ...card,
           padding: 12,
@@ -1480,7 +1509,7 @@ export function MiningScreen({
       </>
       )}
 
-      {!overlay && tab === "mine" && (
+      {!blockingOverlay && tab === "mine" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 10 }}>どこをほる？</div>
@@ -1491,11 +1520,7 @@ export function MiningScreen({
                   <button
                     type="button"
                     className="mining-route-guide-step"
-                    onClick={() => {
-                      setSelectedGacha("coal");
-                      selectToolKind(recommendToolKind("coal"));
-                      void playGachaAmbient("coal");
-                    }}
+                    onClick={() => chooseGacha("coal")}
                   >
                     ①せきたん
                   </button>
@@ -1511,11 +1536,7 @@ export function MiningScreen({
                   <button
                     type="button"
                     className="mining-route-guide-step"
-                    onClick={() => {
-                      setSelectedGacha("iron");
-                      selectToolKind(recommendToolKind("iron"));
-                      void playGachaAmbient("iron");
-                    }}
+                    onClick={() => chooseGacha("iron")}
                   >
                     ③てつ
                   </button>
@@ -1534,12 +1555,7 @@ export function MiningScreen({
                     key={gid}
                     type="button"
                     className={`mining-biome-card${selected ? " is-selected" : ""}${hasOtherSelected ? " is-dim" : ""}`}
-                    onClick={() => {
-                      setSelectedGacha(gid);
-                      selectToolKind(recommendToolKind(gid));
-                      void unlockAudio();
-                      playGachaAmbient(gid);
-                    }}
+                    onClick={() => chooseGacha(gid)}
                   >
                     <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
                     <div className="mining-biome-card-shade" />
@@ -1871,7 +1887,7 @@ export function MiningScreen({
         </div>
       )}
 
-      {!overlay && tab === "craft" && (
+      {!blockingOverlay && tab === "craft" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {(() => {
             const guide = craftTutorialBanner(mining);
@@ -2097,8 +2113,7 @@ export function MiningScreen({
                                 onClick={() => {
                                   setOverlay(null);
                                   setTab("mine");
-                                  setSelectedGacha(g);
-                                  selectToolKind(recommendToolKind(g));
+                                  chooseGacha(g);
                                 }}
                               >
                                 {MATERIAL_META[p.cost.material].label}をほる
@@ -2120,8 +2135,7 @@ export function MiningScreen({
                                   onClick={() => {
                                     setOverlay(null);
                                     setTab("mine");
-                                    setSelectedGacha("coal");
-                                    selectToolKind(recommendToolKind("coal"));
+                                    chooseGacha("coal");
                                   }}
                                 >
                                   せきたんへ
@@ -2388,7 +2402,7 @@ export function MiningScreen({
         </div>
       )}
 
-      {!overlay && tab === "bag" && (
+      {!blockingOverlay && tab === "bag" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>こうかん所</div>
@@ -2520,7 +2534,7 @@ export function MiningScreen({
         </div>
       )}
 
-      {!overlay && tab === "mine" && (
+      {!blockingOverlay && tab === "mine" && (
         <div
           className="mining-dig-cta-bar"
           style={{
@@ -2538,34 +2552,107 @@ export function MiningScreen({
         >
           <button
             type="button"
-            className={digReady ? "mining-dig-cta is-ready" : "mining-dig-cta"}
+            className={digSheetReady ? "mining-dig-cta is-ready" : "mining-dig-cta"}
             onClick={() => {
               if (mining.tickets < 1) { onBack(); return; }
-              onDig();
+              if (digBusy) return;
+              setOverlay("digDestination");
             }}
-            disabled={digDisabled && !digNeedsTickets}
+            disabled={digBusy}
             style={{
               ...btnPrimary,
               width: "100%",
               fontSize: 16,
               padding: "14px 16px",
               opacity: digBusy ? 0.55 : 1,
-              cursor: digReady || digNeedsTickets ? "pointer" : "not-allowed",
+              cursor: digBusy ? "not-allowed" : "pointer",
               /* undefined だとブラウザ既定のグレーに見えることがあるので、常に色を明示する */
               backgroundColor: digNeedsTickets
                 ? theme.category.orange
-                : digReady
+                : digSheetReady
                   ? theme.accent.primary
                   : theme.fill.secondary,
-              color: digNeedsTickets || digReady ? "#fff" : theme.text.tertiary,
-              boxShadow: digReady ? "0 4px 16px rgba(91, 142, 255, 0.55)" : "none",
-              border: digReady ? "none" : `1.5px solid ${theme.stroke.secondary}`,
+              color: digNeedsTickets || digSheetReady ? "#fff" : theme.text.tertiary,
+              boxShadow: digSheetReady ? "0 4px 16px rgba(91, 142, 255, 0.55)" : "none",
+              border: digSheetReady ? "none" : `1.5px solid ${theme.stroke.secondary}`,
             }}
           >
             {mining.tickets < 1
               ? "🎫をもらおう（タスクにもどる）"
-              : `🎫${mining.tickets}枚 · 1枚でほる`}
+              : `${selectedMeta.emoji} ${selectedMeta.label}をほる · 🎫${mining.tickets}`}
           </button>
+        </div>
+      )}
+
+      {overlay === "digDestination" && (
+        <div
+          className="mining-dig-dest-backdrop"
+          onClick={() => setOverlay(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOverlay(null);
+          }}
+          role="presentation"
+        >
+          <div
+            className="mining-dig-dest-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="どこをほる？"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mining-dig-dest-handle" aria-hidden />
+            <div className="mining-dig-dest-head">
+              <div className="mining-dig-dest-title">どこをほる？</div>
+              <button
+                type="button"
+                className="mining-dig-dest-close"
+                onClick={() => setOverlay(null)}
+                aria-label="とじる"
+              >
+                ×
+              </button>
+            </div>
+            {ironRoute && (
+              <div className="mining-dig-dest-hint">おすすめ: せきたん → かまど → てつ</div>
+            )}
+            <div className="mining-biome-grid">
+              {GACHA_ORDER.filter((gid) => mining.unlockedGachas.includes(gid)).map((gid) => {
+                const meta = GACHA_META[gid];
+                const isLucky = lucky === gid;
+                const selected = selectedGacha === gid;
+                const hasOtherSelected = selectedGacha !== gid;
+                return (
+                  <button
+                    key={gid}
+                    type="button"
+                    className={`mining-biome-card${selected ? " is-selected" : ""}${hasOtherSelected ? " is-dim" : ""}`}
+                    onClick={() => digAt(gid)}
+                  >
+                    <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
+                    <div className="mining-biome-card-shade" />
+                    <div className="mining-biome-card-body">
+                      <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
+                      {gid === "coal" && (
+                        <div className="mining-biome-card-badge">石炭がとれる</div>
+                      )}
+                      {gid === "gold" && (
+                        <div className="mining-biome-card-badge is-optional">あとでOK</div>
+                      )}
+                      {gid === "diamond" && (
+                        <div className="mining-biome-card-badge">ダイヤのかけら</div>
+                      )}
+                      {isLucky && (
+                        <div className="mining-biome-card-badge is-lucky">★こううん日</div>
+                      )}
+                      {selected && (
+                        <div className="mining-biome-card-badge">いまここ · タップでほる</div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

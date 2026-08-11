@@ -78,6 +78,8 @@ export interface MiningState {
   bedtimeTicketClaimed: Record<string, boolean>;
   /** ヘルメットのあたり日おまけを使った日付 */
   luckyBonusClaimedDate?: string | null;
+  /** 前回選んだ／掘った行き先（再入場の初期表示用） */
+  lastSelectedGacha?: GachaId | null;
 }
 
 export const MATERIAL_META: Record<
@@ -306,7 +308,20 @@ export function emptyMiningState(): MiningState {
     bedtimeTicketEligibleNight: {},
     bedtimeTicketClaimed: {},
     luckyBonusClaimedDate: null,
+    lastSelectedGacha: null,
   };
+}
+
+function isGachaId(id: unknown): id is GachaId {
+  return (
+    id === "wood"
+    || id === "stone"
+    || id === "iron"
+    || id === "coal"
+    || id === "gold"
+    || id === "diamond"
+    || id === "nether"
+  );
 }
 
 function normalizeBoolRecord(raw: unknown): Record<string, boolean> {
@@ -338,12 +353,16 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
   }
 
   const unlocked: GachaId[] = Array.isArray(raw.unlockedGachas)
-    ? raw.unlockedGachas.filter((id): id is GachaId =>
-        id === "wood" || id === "stone" || id === "iron" || id === "coal" || id === "gold" || id === "diamond" || id === "nether",
-      )
+    ? raw.unlockedGachas.filter((id): id is GachaId => isGachaId(id))
     : ["wood"];
   if (!unlocked.includes("wood")) unlocked.unshift("wood");
   const unlockedGachas: GachaId[] = [...new Set(unlocked)];
+
+  const lastSelectedRaw = raw.lastSelectedGacha;
+  const lastSelectedGacha =
+    isGachaId(lastSelectedRaw) && unlockedGachas.includes(lastSelectedRaw)
+      ? lastSelectedRaw
+      : null;
 
   const partyIds: (string | null)[] = [null, null, null];
   if (Array.isArray(raw.partyIds)) {
@@ -391,6 +410,7 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
     bedtimeTicketClaimed: normalizeBoolRecord(raw.bedtimeTicketClaimed),
     luckyBonusClaimedDate:
       typeof raw.luckyBonusClaimedDate === "string" ? raw.luckyBonusClaimedDate : null,
+    lastSelectedGacha,
   };
 }
 
