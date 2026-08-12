@@ -65,6 +65,54 @@ export function declareBedtime(
   };
 }
 
+/** 未付与の宣言だけ取り消せる（チケット回収はしない） */
+export function canRevokeBedtimeDeclaration(opts: {
+  state: MiningState;
+  nightDate: string;
+}): boolean {
+  if (!opts.state.bedtimeTicketEligibleNight[opts.nightDate]) return false;
+  if (opts.state.bedtimeTicketClaimed[opts.nightDate]) return false;
+  return true;
+}
+
+export function revokeBedtimeDeclaration(
+  state: MiningState,
+  nightDate: string,
+): MiningState | null {
+  if (!canRevokeBedtimeDeclaration({ state, nightDate })) return null;
+  const eligible = { ...state.bedtimeTicketEligibleNight };
+  delete eligible[nightDate];
+  return {
+    ...state,
+    bedtimeTicketEligibleNight: eligible,
+  };
+}
+
+/**
+ * 夜パネルに使う nightDate。
+ * 今日の宣言／宣言待ちを優先し、日付またぎでまだ 5:00 前の未付与があれば昨夜を返す。
+ */
+export function getBedtimePanelNightDate(opts: {
+  now?: Date;
+  state: MiningState;
+}): string {
+  const now = opts.now ?? new Date();
+  const today = localDateKey(now);
+  const yesterday = addCalendarDays(today, -1);
+
+  if (opts.state.bedtimeTicketClaimed[today] || opts.state.bedtimeTicketEligibleNight[today]) {
+    return today;
+  }
+  if (
+    opts.state.bedtimeTicketEligibleNight[yesterday]
+    && !opts.state.bedtimeTicketClaimed[yesterday]
+    && !isBedtimeTicketClaimable(yesterday, now)
+  ) {
+    return yesterday;
+  }
+  return today;
+}
+
 /** 付与可能か（翌日 5:00 以降） */
 export function isBedtimeTicketClaimable(nightDate: string, now: Date): boolean {
   const claimDay = addCalendarDays(nightDate, 1);
@@ -112,9 +160,9 @@ export function getBedtimePanelStatus(opts: {
   eveningAllResolved: boolean;
 }): BedtimePanelStatus {
   const now = opts.now ?? new Date();
-  if (!opts.eveningAllResolved) return "hidden";
   if (opts.state.bedtimeTicketClaimed[opts.nightDate]) return "claimed";
   if (opts.state.bedtimeTicketEligibleNight[opts.nightDate]) return "declared";
+  if (!opts.eveningAllResolved) return "hidden";
   if (localDateKey(now) !== opts.nightDate) {
     // 日付が変わったあとでも、未宣言の夜は missed として見せない（hidden）
     return "hidden";

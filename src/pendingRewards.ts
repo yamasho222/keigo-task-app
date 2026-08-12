@@ -1,6 +1,13 @@
 import type { DailyMission } from "./missions";
 import type { SpecialRewardFloor } from "./sharedTasks";
 import { SESSION_IDS, type SessionId } from "./sharedTasks";
+import {
+  ownedRewardTicketKinds,
+  rewardTicketLabel,
+  totalRewardTickets,
+  type RewardTicketInventory,
+  type RewardTicketKind,
+} from "./rewardTickets";
 
 export type PendingRewardKind =
   | "daily"
@@ -11,7 +18,8 @@ export type PendingRewardKind =
   | "thirtyDay"
   | "specialMission"
   | "oneOffSpecial"
-  | "fullDayBonus";
+  | "fullDayBonus"
+  | "voucher";
 
 export interface PendingRewardItem {
   id: string;
@@ -19,6 +27,8 @@ export interface PendingRewardItem {
   label: string;
   session?: SessionId;
   claimKey?: string;
+  /** ごほうびチケット開封用 */
+  voucherKind?: RewardTicketKind;
 }
 
 export interface PendingRewardsContext {
@@ -48,6 +58,7 @@ export interface PendingRewardsContext {
   missionApprovedSessions?: SessionId[];
   missionRewardClaimedToday: boolean;
   oneOffLabels?: Record<string, string>;
+  rewardTickets?: RewardTicketInventory;
 }
 
 const SESSION_DAILY_LABELS: Record<SessionId, string> = {
@@ -162,9 +173,25 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
     });
   }
 
+  const tickets = ctx.rewardTickets;
+  if (tickets) {
+    for (const kind of ownedRewardTicketKinds(tickets)) {
+      const n = tickets[kind];
+      items.push({
+        id: `voucher:${kind}`,
+        kind: "voucher",
+        label: n > 1 ? `${rewardTicketLabel(kind)} ×${n}` : rewardTicketLabel(kind),
+        voucherKind: kind,
+      });
+    }
+  }
+
   return items;
 }
 
 export function pendingRewardCount(ctx: PendingRewardsContext): number {
-  return getPendingRewardItems(ctx).length;
+  const base = getPendingRewardItems(ctx).filter((i) => i.kind !== "voucher").length;
+  const tickets = ctx.rewardTickets;
+  if (!tickets) return base;
+  return base + totalRewardTickets(tickets);
 }

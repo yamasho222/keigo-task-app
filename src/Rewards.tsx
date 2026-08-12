@@ -548,7 +548,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 
 function TreatOverlay({
   mode, collectedIds, onClose, onCollect, onDefer, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
-  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem, streakPick,
+  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem, streakPick, voucherFloor,
 }: {
   mode: TreatMode;
   collectedIds: string[];
@@ -567,6 +567,7 @@ function TreatOverlay({
   pityAttempt?: boolean;
   tokenRedeem?: boolean;
   streakPick?: StreakRewardPick;
+  voucherFloor?: StickerRarity;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
   type UpgradeStep = "fakeNormal" | "fakeNormalCrush" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
@@ -589,6 +590,7 @@ function TreatOverlay({
   const isFullDayBonus = mode === "fullDayBonus";
   const isSpecialMission = mode === "specialMission";
   const isOneOffSpecial = mode === "oneOffSpecial";
+  const isVoucher = mode === "voucher";
   const isMissionStyle = isSpecialMission || isOneOffSpecial;
   const isLongStreak = isFifteenDayStreak || isThirtyDayStreak;
 
@@ -732,6 +734,7 @@ function TreatOverlay({
           rewardFloor,
           forceUncollectedChance,
           streakPick,
+          voucherFloor,
         }));
     if (!picked) return;
 
@@ -779,12 +782,20 @@ function TreatOverlay({
     : isFullDayBonus ? 96
     : isMissionStyle ? 88
     : 80;
+  const voucherFloorLabel = !voucherFloor || voucherFloor === "normal"
+    ? "通常のごほうび抽選！"
+    : voucherFloor === "legendary"
+      ? "レジェンドレア確定！"
+      : `${getRarityBadgeStyle(voucherFloor).label}以上確定！`;
+
   const title = isThirtyDayStreak
     ? "👑 30日連続 特別ごほうび！ 👑"
     : isFifteenDayStreak
       ? "🏅 15日連続 ごほうび！ 🏅"
     : isWeekly
     ? "🎊 7日連続 特別ごほうび！ 🎊"
+    : isVoucher
+      ? "🎫 ごほうびチケット！ 🎫"
     : tokenRedeem
       ? "🪙 ダブりコイン交換！ 🪙"
     : isThreeDayStreak
@@ -807,6 +818,10 @@ function TreatOverlay({
       ? "15日連続クリア！レジェンドレア確定！"
     : isWeekly
     ? "7日連続ですべてクリア！ウルトラレア以上確定！"
+    : isVoucher
+      ? missionTitle
+        ? `${missionTitle} — ${voucherFloorLabel}`
+        : `チケットで開封！${voucherFloorLabel}`
     : tokenRedeem
       ? "たまったダブりコインで新しいシールゲット！"
     : pityAttempt
@@ -833,6 +848,8 @@ function TreatOverlay({
 
   const titleColor = isThirtyDayStreak || isFifteenDayStreak || isWeekly
     ? theme.category.purple
+    : isVoucher
+      ? theme.category.orange
     : isThreeDayStreak
       ? theme.category.blue
       : isDeadline

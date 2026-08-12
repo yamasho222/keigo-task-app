@@ -27,6 +27,7 @@ import {
   enchantTargetOfGear,
   gearLabel,
   getMaterialCount,
+  MATERIAL_META,
   parseToolId,
   partySlotCount,
   tierRank,
@@ -49,22 +50,20 @@ const TIER_PLUS1: Record<GearTier, number> = {
   netherite: 0.3,
 };
 
-const TIER_LEGGINGS: Record<GearTier, number> = {
-  wood: 0.08,
-  stone: 0.1,
-  iron: 0.12,
+const TIER_LEGGINGS_BYPRODUCT: Record<"iron" | "gold" | "diamond" | "netherite", number> = {
+  iron: 0.09,
   gold: 0.13,
-  diamond: 0.14,
-  netherite: 0.15,
+  diamond: 0.17,
+  netherite: 0.21,
 };
 
 const TIER_BOOTS: Record<GearTier, number> = {
   wood: 0,
   stone: 0,
   iron: 0.05,
-  gold: 0.06,
-  diamond: 0.08,
-  netherite: 0.1,
+  gold: 0.08,
+  diamond: 0.11,
+  netherite: 0.15,
 };
 
 const TIER_JACKPOT: Record<GearTier, number> = {
@@ -279,12 +278,97 @@ export function toolPlus1Chance(toolId: CraftedGearId | null, gacha: GachaId): n
   return 0;
 }
 
-export function leggingsPlus1Chance(state: MiningState): number {
-  const id = state.equipped.leggings;
-  if (!id) return 0;
-  const m = /^leggings_(iron|gold|diamond|netherite)$/.exec(id);
-  if (!m) return 0;
-  return TIER_LEGGINGS[m[1] as GearTier];
+export function equippedArmorTier(
+  state: MiningState,
+  slot: ArmorKind,
+): "iron" | "gold" | "diamond" | "netherite" | null {
+  const id = state.equipped[slot];
+  if (!id || !state.crafted[id]) return null;
+  const m = new RegExp(`^${slot}_(iron|gold|diamond|netherite)$`).exec(id);
+  if (!m) return null;
+  return m[1] as "iron" | "gold" | "diamond" | "netherite";
+}
+
+/** @deprecated レギンスは副産物へ。互換のため常に0 */
+export function leggingsPlus1Chance(_state: MiningState): number {
+  return 0;
+}
+
+export function leggingsByproductChance(state: MiningState): number {
+  const tier = equippedArmorTier(state, "leggings");
+  if (!tier) return 0;
+  return TIER_LEGGINGS_BYPRODUCT[tier];
+}
+
+const LEGGINGS_BYPRODUCT_BASIC: Partial<Record<GachaId, MaterialId>> = {
+  wood: "stick",
+  farm: "leather",
+  stone: "coal",
+  river: "paper",
+  iron: "cobble",
+  coal: "cobble",
+  gold: "coal",
+  diamond: "coal",
+  lapis_cave: "cobble",
+  nether: "gold_ore",
+};
+
+const LEGGINGS_BYPRODUCT_BETTER: Partial<Record<GachaId, MaterialId>> = {
+  wood: "plank",
+  farm: "leather",
+  stone: "coal",
+  river: "paper",
+  iron: "coal",
+  coal: "cobble",
+  gold: "iron_ore",
+  diamond: "lapis",
+  lapis_cave: "coal",
+  nether: "gold_ore",
+};
+
+export function rollLeggingsByproduct(
+  state: MiningState,
+  gacha: GachaId,
+  rand: () => number = Math.random,
+): { material: MaterialId; amount: number } | null {
+  const tier = equippedArmorTier(state, "leggings");
+  if (!tier) return null;
+  if (rand() >= TIER_LEGGINGS_BYPRODUCT[tier]) return null;
+  let material = LEGGINGS_BYPRODUCT_BASIC[gacha];
+  if (!material) return null;
+  if (tier === "diamond" || tier === "netherite") {
+    const better = LEGGINGS_BYPRODUCT_BETTER[gacha];
+    const betterChance = tier === "netherite" ? 0.55 : 0.35;
+    if (better && rand() < betterChance) material = better;
+  }
+  let amount = 1;
+  if ((tier === "gold" || tier === "netherite") && rand() < 0.25) amount = 2;
+  return { material, amount };
+}
+
+export type HelmetRockHint =
+  | { kind: "none" }
+  | { kind: "miss"; index: number }
+  | { kind: "hit"; index: number };
+
+/** ヘルメット材質に応じた岩ヒント（鉄=なし／金=たまにはずれ1／ダイヤ=はずれ1／ネザ=あたり） */
+export function resolveHelmetRockHint(
+  state: MiningState,
+  luckyIndex: number,
+  rand: () => number = Math.random,
+): HelmetRockHint {
+  const tier = equippedArmorTier(state, "helmet");
+  if (!tier) return { kind: "none" };
+  if (tier === "iron") return { kind: "none" };
+  if (tier === "netherite") {
+    return { kind: "hit", index: Math.max(0, Math.min(2, luckyIndex)) };
+  }
+  const missPool = [0, 1, 2].filter((i) => i !== luckyIndex);
+  const missIndex = missPool[Math.floor(rand() * missPool.length)] ?? 0;
+  if (tier === "diamond") return { kind: "miss", index: missIndex };
+  // gold: たまに
+  if (rand() < 0.4) return { kind: "miss", index: missIndex };
+  return { kind: "none" };
 }
 
 export function swordJackpotRate(toolId: CraftedGearId | null): number {
@@ -353,10 +437,9 @@ export function previewDigBoost(params: {
   const toolPlus1Rate = toolPlus1Chance(usedTool, params.gacha);
   const enchantPlus1 = Math.min(
     0.35,
-    leggingsPlus1Chance(params.state)
-      + sumEnchantBonus(params.state, "efficiency", efficiencyBonus, params.toolKind),
+    sumEnchantBonus(params.state, "efficiency", efficiencyBonus, params.toolKind),
   );
-  const leggingsPlus1Rate = enchantPlus1;
+  const leggingsByproductRate = leggingsByproductChance(params.state);
   const party = partySpecialtyBonus(params.state, params.buddyProgress, params.gacha);
   const bootsRefundRate = Math.min(
     0.25,
@@ -370,7 +453,7 @@ export function previewDigBoost(params: {
     && hasHelmet
     && params.state.luckyBonusClaimedDate !== params.dateKey;
   const expectedExtra =
-    toolPlus1Rate + leggingsPlus1Rate + party.bonusChance + (luckyToday ? 1 : 0);
+    toolPlus1Rate + enchantPlus1 + party.bonusChance + (luckyToday ? 1 : 0);
   const pct = (n: number) => `${Math.round(n * 100)}%`;
   const twoRate = DIG_TWO_RATE;
   const oneRate = Math.max(0, 1 - jackpotRate - twoRate);
@@ -394,10 +477,10 @@ export function previewDigBoost(params: {
       active: party.bonusChance > 0,
     },
     {
-      label: "レギンス +1",
-      value: leggingsPlus1Rate > 0 ? pct(leggingsPlus1Rate) : "なし",
-      hint: "鉄のぼうぐから",
-      active: leggingsPlus1Rate > 0,
+      label: "レギンスおまけ",
+      value: leggingsByproductRate > 0 ? pct(leggingsByproductRate) : "なし",
+      hint: "べつの素材がころがることがある",
+      active: leggingsByproductRate > 0,
     },
     {
       label: "きょうのこううん日",
@@ -417,7 +500,7 @@ export function previewDigBoost(params: {
     jackpotRate,
     twoRate,
     toolPlus1Rate,
-    leggingsPlus1Rate,
+    leggingsPlus1Rate: enchantPlus1,
     partyPlus1Rate: party.bonusChance,
     partyDetail: party.detail,
     bootsRefundRate,
@@ -568,11 +651,11 @@ export function resolveDig(params: {
 
   const plus1Pool = Math.min(
     0.35,
-    leggingsPlus1Chance(state) + sumEnchantBonus(state, "efficiency", efficiencyBonus, digKind),
+    sumEnchantBonus(state, "efficiency", efficiencyBonus, digKind),
   );
   if (plus1Pool > 0 && rand() < plus1Pool) {
     bonus += 1;
-    breakdown.push("まほう・レギンス +1");
+    breakdown.push("まほう +1");
   }
 
   const party = partySpecialtyBonus(state, params.buddyProgress, params.gacha);
@@ -625,10 +708,6 @@ export function resolveDig(params: {
     drops.push({ material: "lapis", amount: lapisAmt });
   } else if (params.gacha === "farm") {
     drops.push({ material: "wool", amount: primaryAmount });
-    if (rand() < 0.45) {
-      drops.push({ material: "leather", amount: 1 });
-      breakdown.push("皮ゲット");
-    }
   } else if (params.gacha === "nether") {
     drops.push({ material: "nether_quartz", amount: primaryAmount });
     const setBonus = netheriteFullComplete(state);
@@ -671,21 +750,37 @@ export function resolveDig(params: {
     drops.push({ material: primary, amount: primaryAmount });
   }
 
-  if (params.gacha === "wood" && rand() < 0.25) {
-    drops.push({ material: "stick", amount: 1 });
-    breakdown.push("おまけ 棒");
-  }
-  if (params.gacha === "stone" && rand() < 0.2) {
-    drops.push({ material: "log", amount: 1 });
-    breakdown.push("おまけ 原木");
-  }
-  if (params.gacha === "coal" && rand() < 0.15) {
-    drops.push({ material: "cobble", amount: 1 });
-    breakdown.push("おまけ 丸石");
-  }
-  if ((params.gacha === "iron" || params.gacha === "gold") && rand() < 0.05) {
-    drops.push({ material: "coal", amount: 1 });
-    breakdown.push("おまけ 石炭");
+  const hasLeggings = !!equippedArmorTier(state, "leggings");
+  // レギンスなしのときだけ弱い場所おまけ。ありのときはレギンス副産物に寄せる
+  if (!hasLeggings) {
+    if (params.gacha === "wood" && rand() < 0.12) {
+      drops.push({ material: "stick", amount: 1 });
+      breakdown.push("おまけ 棒");
+    }
+    if (params.gacha === "stone" && rand() < 0.1) {
+      drops.push({ material: "log", amount: 1 });
+      breakdown.push("おまけ 原木");
+    }
+    if (params.gacha === "coal" && rand() < 0.08) {
+      drops.push({ material: "cobble", amount: 1 });
+      breakdown.push("おまけ 丸石");
+    }
+    if ((params.gacha === "iron" || params.gacha === "gold") && rand() < 0.03) {
+      drops.push({ material: "coal", amount: 1 });
+      breakdown.push("おまけ 石炭");
+    }
+    if (params.gacha === "farm" && rand() < 0.2) {
+      drops.push({ material: "leather", amount: 1 });
+      breakdown.push("皮ゲット");
+    }
+  } else {
+    const side = rollLeggingsByproduct(state, params.gacha, rand);
+    if (side) {
+      drops.push(side);
+      breakdown.push(
+        `レギンスおまけ ${MATERIAL_META[side.material].label}${side.amount > 1 ? `×${side.amount}` : ""}`,
+      );
+    }
   }
 
   const starChance = Math.min(0.25, sumEnchantBonus(state, "bonus_star", bonusStarChance, digKind));
@@ -869,6 +964,12 @@ export function recipesForState(state: MiningState): MiningRecipe[] {
 
 export function addTickets(state: MiningState, n: number): MiningState {
   return { ...state, tickets: state.tickets + Math.max(0, Math.floor(n)) };
+}
+
+export function adjustTickets(state: MiningState, delta: number): MiningState {
+  const d = Math.floor(delta);
+  if (!Number.isFinite(d) || d === 0) return state;
+  return { ...state, tickets: Math.max(0, state.tickets + d) };
 }
 
 export function addMiningPoints(state: MiningState, n: number): MiningState {

@@ -11,7 +11,7 @@ import {
 } from "./miningTypes";
 
 export const ENCHANT_APPLY_COST = 3;
-export const ENCHANT_LEVEL_UP_COST: Record<2 | 3, number> = { 2: 6, 3: 12 };
+export const ENCHANT_LEVEL_UP_COST: Record<2 | 3, number> = { 2: 9, 3: 18 };
 
 const ALL_IDS = Object.keys(ENCHANT_META) as EnchantId[];
 
@@ -193,7 +193,7 @@ export function demoDigLines(id: EnchantId): { title: string; lines: string[]; h
     case "efficiency":
       return {
         title: "デモほり：こうりつ",
-        lines: ["きほん 1", "まほう・レギンス +1"],
+        lines: ["きほん 1", "まほう +1"],
         highlight: "こうりつで素材がもう1こ！",
       };
     case "fortune":

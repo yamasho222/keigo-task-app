@@ -1,9 +1,10 @@
-/** 掘り3択「どの岩をほる？」 */
+/** 掘り3択「どの岩をほる？」（シート外ダイアログ用・ヘルメットヒント対応） */
+
+import type { HelmetRockHint } from "./miningProgress";
 
 type Props = {
   placeLabel: string;
-  /** こううんほりばでヒント表示 */
-  hintLucky: boolean;
+  rockHint?: HelmetRockHint;
   luckyIndex: number;
   onPick: (luckyRock: boolean) => void;
   onCancel: () => void;
@@ -11,7 +12,7 @@ type Props = {
 
 export function MiningRockPick({
   placeLabel,
-  hintLucky,
+  rockHint = { kind: "none" },
   luckyIndex,
   onPick,
   onCancel,
@@ -21,24 +22,30 @@ export function MiningRockPick({
       <div className="mining-rock-pick-sheet">
         <div className="mining-rock-pick-title">どの岩をほる？</div>
         <div className="mining-rock-pick-sub">{placeLabel}</div>
-        {hintLucky && (
-          <div className="mining-rock-pick-hint">こううんの日！キラッと光る岩があたりだよ</div>
+        {rockHint.kind === "hit" && (
+          <div className="mining-rock-pick-hint">ヘルメットのヒント：キラッと光る岩があたりだよ</div>
+        )}
+        {rockHint.kind === "miss" && (
+          <div className="mining-rock-pick-hint">ヘルメットのヒント：うすい岩ははずれだよ</div>
         )}
         <div className="mining-rock-pick-row">
           {[0, 1, 2].map((i) => {
             const isLucky = i === luckyIndex;
-            const glow = hintLucky && isLucky;
+            const isHitHint = rockHint.kind === "hit" && rockHint.index === i;
+            const isMissHint = rockHint.kind === "miss" && rockHint.index === i;
             return (
               <button
                 key={i}
                 type="button"
-                className={`mining-rock-card${glow ? " is-glow" : ""}`}
+                className={`mining-rock-card${isHitHint ? " is-glow" : ""}${isMissHint ? " is-miss-hint" : ""}`}
                 onClick={() => onPick(isLucky)}
               >
                 <span className="mining-rock-emoji" aria-hidden>
                   🪨
                 </span>
                 <span className="mining-rock-label">いわ {i + 1}</span>
+                {isMissHint && <span className="mining-rock-tile-badge is-miss">はずれ</span>}
+                {isHitHint && <span className="mining-rock-tile-badge is-hit">あたり</span>}
               </button>
             );
           })}

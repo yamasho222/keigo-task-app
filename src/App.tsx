@@ -38,13 +38,26 @@ import {
   type BuddyProgressMap,
 } from "./buddyProgress";
 import { normalizeMiningState, type MiningState } from "./miningTypes";
-import { addMiningPoints, addTickets } from "./miningProgress";
+import { addMiningPoints, addTickets, adjustTickets } from "./miningProgress";
+import {
+  adjustRewardTicket,
+  normalizeRewardTickets,
+  rewardTicketLabel,
+  type RewardTicketInventory,
+} from "./rewardTickets";
+import { ParentRescuePanel } from "./ParentRescuePanel";
 import {
   claimDueBedtimeTickets,
   declareBedtime,
+  getBedtimePanelNightDate,
   getBedtimePanelStatus,
+  revokeBedtimeDeclaration,
   type BedtimePanelStatus,
 } from "./bedtimeTicket";
+import {
+  normalizeParentRescuePassword,
+  resolveParentRescuePassword,
+} from "./parentRescueAuth";
 import { MiningScreen } from "./MiningScreen";
 import {
   MiningHamburgerCoachmark,
@@ -408,6 +421,10 @@ interface StoredState {
   buddyXpStampedSessions?: Record<string, boolean>;
   /** マイクラ風採掘・クラフト */
   mining?: MiningState;
+  /** ごほうびチケット（親救済配布） */
+  rewardTickets?: RewardTicketInventory;
+  /** 親の救済メニュー合言葉（未設定時はデフォルト） */
+  parentRescuePassword?: string;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -446,6 +463,8 @@ interface PendingTreat {
   pityAttempt?: boolean;
   /** ダブりコイン交換の開封（コイン加算・天井カウント対象外） */
   tokenRedeem?: boolean;
+  /** ごほうびチケット開封のレア下限 */
+  voucherFloor?: import("./stickerRewards").StickerRarity;
 }
 
 interface OneOffSpecialPending {
@@ -709,6 +728,8 @@ function hydrateStoredState(data: StoredState): StoredState {
       data.oneOffSpecialTreatPending as Record<string, unknown> | undefined,
       (claimKey) => resolveOneOffFloorFromTaskLists(lists, claimKey),
     ),
+    rewardTickets: normalizeRewardTickets(data.rewardTickets),
+    parentRescuePassword: normalizeParentRescuePassword(data.parentRescuePassword),
   };
 }
 
@@ -1570,6 +1591,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [mining, setMining] = useState<MiningState>(() => normalizeMiningState(stored.mining));
   const miningRef = useRef(mining);
   useEffect(() => { miningRef.current = mining; }, [mining]);
+  const [rewardTickets, setRewardTickets] = useState<RewardTicketInventory>(() =>
+    normalizeRewardTickets(stored.rewardTickets),
+  );
+  const [parentRescuePassword, setParentRescuePassword] = useState<string | undefined>(() =>
+    normalizeParentRescuePassword(stored.parentRescuePassword),
+  );
+  const [showParentRescue, setShowParentRescue] = useState(false);
   const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
   const [buddyXpToastNav, setBuddyXpToastNav] = useState<"mining" | null>(null);
   const [buddyLevelUp, setBuddyLevelUp] = useState<{ name: string; level: number } | null>(null);
@@ -1953,6 +1981,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       buddyXpEarnedToday,
       buddyXpStampedSessions,
       mining,
+      rewardTickets,
+      parentRescuePassword,
     };
     localStorage.setItem(appStateStorageKey(storageChildId), JSON.stringify(state));
     saveStickerAlbum(stickerAlbum, storageChildId);
@@ -1977,6 +2007,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     duplicateStreak, pityArmed, duplicateTokens,
     buddyId, buddyProgress, buddyXpDate, buddyXpEarnedToday, buddyXpStampedSessions,
     mining,
+    rewardTickets,
+    parentRescuePassword,
   ]);
 
   useEffect(() => {
@@ -2150,6 +2182,19 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setBuddyXpToast("早ねできた！ 朝5時にチケット1枚");
     setBuddyXpToastNav(null);
     navigator.vibrate?.([12, 20, 12]);
+    window.setTimeout(() => setBuddyXpToast(null), 2200);
+  };
+
+  const handleRevokeBedtime = () => {
+    if (activeCatchUpDate) return;
+    const nightDate = getBedtimePanelNightDate({ state: miningRef.current });
+    const next = revokeBedtimeDeclaration(miningRef.current, nightDate);
+    if (!next) return;
+    setMining(next);
+    miningRef.current = next;
+    setBuddyXpToast("早ねボーナスを取り消したよ");
+    setBuddyXpToastNav(null);
+    navigator.vibrate?.([10, 16, 10]);
     window.setTimeout(() => setBuddyXpToast(null), 2200);
   };
 
@@ -3523,6 +3568,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     currentTaskDay,
     missionRewardClaimedToday,
     oneOffLabels: oneOffPendingLabels,
+    rewardTickets,
   };
 
   const pendingRewardItems = getPendingRewardItems(pendingRewardsCtx);
@@ -3574,6 +3620,18 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           if (info) openOneOffSpecialReward(info);
         }
         break;
+      case "voucher": {
+        const kind = item.voucherKind;
+        if (!kind || rewardTickets[kind] <= 0) break;
+        setRewardTickets((prev) => adjustRewardTicket(prev, kind, -1));
+        openTreatQueue([{
+          mode: "voucher",
+          voucherFloor: kind,
+          tokenRedeem: true,
+          missionTitle: rewardTicketLabel(kind),
+        }]);
+        break;
+      }
     }
   };
 
@@ -4297,7 +4355,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.streakPick ?? ""}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.streakPick ?? ""}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.voucherFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           streakPick={pendingTreat.streakPick}
           devForceTier={pendingTreat.devForceTier}
@@ -4307,6 +4365,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           devForceLegendaryMode={pendingTreat.devForceLegendaryMode}
           devForceSrUrMode={pendingTreat.devForceSrUrMode}
           rewardFloor={pendingTreat.rewardFloor}
+          voucherFloor={pendingTreat.voucherFloor}
           missionTitle={pendingTreat.missionTitle}
           forceUncollectedChance={pendingTreat.forceUncollectedChance}
           pityAttempt={pendingTreat.pityAttempt}
@@ -4412,6 +4471,22 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             redeemDuplicateToken(tier);
           }}
           onClose={() => setShowTokenShop(false)}
+        />
+      )}
+
+      {showParentRescue && (
+        <ParentRescuePanel
+          password={resolveParentRescuePassword(parentRescuePassword)}
+          miningTickets={mining.tickets}
+          rewardTickets={rewardTickets}
+          onAdjustMiningTickets={(delta) => setMining((m) => adjustTickets(m, delta))}
+          onAdjustRewardTicket={(kind, delta) =>
+            setRewardTickets((prev) => adjustRewardTicket(prev, kind, delta))
+          }
+          onChangePassword={(next) => {
+            setParentRescuePassword(normalizeParentRescuePassword(next));
+          }}
+          onClose={() => setShowParentRescue(false)}
         />
       )}
 
@@ -4553,6 +4628,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               } },
               { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
                 setShowTokenShop(true);
+                setShowMenu(false);
+              } },
+              { icon: "🛟", label: "親の救済メニュー", action: () => {
+                setShowParentRescue(true);
                 setShowMenu(false);
               } },
               ...(cloud ? [
@@ -5167,13 +5246,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 bedtimePanelStatus={
                   !inCatchUp && sid === "evening"
                     ? getBedtimePanelStatus({
-                      nightDate: todayKey(),
+                      nightDate: getBedtimePanelNightDate({ state: mining }),
                       state: mining,
                       eveningAllResolved: isAllResolved("evening", getContextAllSessionTasks()),
                     })
                     : "hidden"
                 }
                 onDeclareBedtime={!inCatchUp && sid === "evening" ? handleDeclareBedtime : undefined}
+                onRevokeBedtime={!inCatchUp && sid === "evening" ? handleRevokeBedtime : undefined}
               />
             ))}
           </SessionPhaseSwipe>
@@ -6819,6 +6899,7 @@ interface TaskScreenProps {
   /** 早ねボーナス（夜のみ） */
   bedtimePanelStatus?: BedtimePanelStatus;
   onDeclareBedtime?: () => void;
+  onRevokeBedtime?: () => void;
 }
 
 function TaskScreen({
@@ -6845,6 +6926,7 @@ function TaskScreen({
   onOpenBuddySelect,
   bedtimePanelStatus = "hidden",
   onDeclareBedtime,
+  onRevokeBedtime,
   duplicateTokens = 0,
   onTrainBuddy,
   sickSkipActive = false,
@@ -7258,9 +7340,30 @@ function TaskScreen({
             </>
           )}
           {bedtimePanelStatus === "declared" && (
-            <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.primary, lineHeight: 1.45 }}>
-              早ねできた！ 朝5時にこうざんチケット1枚
-            </div>
+            <>
+              <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.primary, lineHeight: 1.45, marginBottom: 12 }}>
+                早ねできた！ 朝5時にこうざんチケット1枚
+              </div>
+              <button
+                type="button"
+                onClick={onRevokeBedtime}
+                disabled={interactionLocked || !onRevokeBedtime}
+                style={{
+                  width: "100%",
+                  padding: "11px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${theme.stroke.secondary}`,
+                  backgroundColor: theme.fill.secondary,
+                  color: theme.text.secondary,
+                  fontSize: 14,
+                  fontWeight: 800,
+                  cursor: interactionLocked || !onRevokeBedtime ? "default" : "pointer",
+                  opacity: interactionLocked || !onRevokeBedtime ? 0.6 : 1,
+                }}
+              >
+                やっぱりやめる
+              </button>
+            </>
           )}
           {bedtimePanelStatus === "missed" && (
             <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>

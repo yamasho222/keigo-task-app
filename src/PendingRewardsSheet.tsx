@@ -11,6 +11,7 @@ const KIND_EMOJI: Record<PendingRewardItem["kind"], string> = {
   specialMission: "⭐",
   oneOffSpecial: "🎯",
   fullDayBonus: "🌟",
+  voucher: "🎫",
 };
 
 interface Props {

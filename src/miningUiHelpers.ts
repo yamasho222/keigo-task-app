@@ -10,10 +10,13 @@ import {
   stoneToolsComplete,
   woodToolsComplete,
 } from "./miningProgress";
-import type { MiningRecipe, RecipeId } from "./miningRecipes";
+import { MINING_RECIPES, canAffordRecipe, type MiningRecipe, type RecipeId } from "./miningRecipes";
 import type { ArmorKind, CraftedGearId, GachaId, MaterialId, MiningState } from "./miningTypes";
 import {
   ARMOR_EFFECT_SHORT,
+  armorTierEffectCopy,
+  armorTierFromGearId,
+  MATERIAL_META,
   getMaterialCount,
   parseToolId,
   partySlotCount,
@@ -40,6 +43,8 @@ export interface NextHeroToolReq {
   done: boolean;
 }
 
+export type NextHighlightKind = "recipe" | "gacha" | "rocks" | "equip" | "none";
+
 export interface NextHero {
   kind: NextHeroKind;
   title: string;
@@ -49,6 +54,12 @@ export interface NextHero {
   totalCount?: number;
   jumpTab?: "craft" | "mine";
   preferredGacha?: GachaId;
+  /** 到着先ハイライト */
+  highlightKind?: NextHighlightKind;
+  highlightRecipeId?: RecipeId;
+  ctaLabel?: string;
+  /** 同一提案フォールバック用キー */
+  trustKey?: string;
 }
 
 function toolTrio(
@@ -242,6 +253,80 @@ export function miningNextHero(mining: MiningState): NextHero {
 }
 
 /**
+ * つぎやること（信頼ルール付き）。
+ * 材料不足なら掘りへ誘導。おすすめレシピと同一ソース。
+ */
+export function buildNextHero(
+  mining: MiningState,
+  opts?: { repeatCount?: number },
+): NextHero {
+  const repeatCount = opts?.repeatCount ?? 0;
+  if (repeatCount >= 3) {
+    return {
+      kind: "done",
+      title: "じゆうにほってもいいよ",
+      subtitle: "すきな岩をえらんでね",
+      jumpTab: "mine",
+      highlightKind: "rocks",
+      ctaLabel: "ほりにいく",
+      trustKey: "free_dig",
+    };
+  }
+
+  const base = miningNextHero(mining);
+  const recIds = recommendedCraftRecipeIds(mining);
+  const have = (id: MaterialId) => getMaterialCount(mining, id);
+
+  if (base.jumpTab === "craft" && recIds.length > 0) {
+    const recipe = MINING_RECIPES.find((r) => r.id === recIds[0]);
+    if (recipe) {
+      if (!canAffordRecipe(recipe.costs, have, recipe.fuelOptions)) {
+        const missing = recipe.costs.find((c) => have(c.material) < c.amount);
+        if (missing) {
+          const need = missing.amount - have(missing.material);
+          const gacha = gachaForMaterial(missing.material);
+          const unlocked =
+            gacha && mining.unlockedGachas.includes(gacha) ? gacha : base.preferredGacha;
+          return {
+            kind: "unlock",
+            title: `${MATERIAL_META[missing.material].label}をあつめよう`,
+            subtitle: `あと${need}こ（${recipe.label}用）`,
+            jumpTab: "mine",
+            preferredGacha: unlocked ?? undefined,
+            highlightKind: unlocked ? "gacha" : "rocks",
+            ctaLabel: "ほりにいく",
+            trustKey: `need:${missing.material}:${need}`,
+          };
+        }
+      }
+      return {
+        ...base,
+        highlightKind: "recipe",
+        highlightRecipeId: recipe.id,
+        ctaLabel: "クラフトへ",
+        trustKey: `craft:${recipe.id}`,
+      };
+    }
+  }
+
+  if (base.jumpTab === "mine") {
+    return {
+      ...base,
+      highlightKind: base.preferredGacha ? "gacha" : "rocks",
+      ctaLabel: "ほりにいく",
+      trustKey: `mine:${base.preferredGacha ?? "any"}:${base.title}`,
+    };
+  }
+
+  return {
+    ...base,
+    highlightKind: "none",
+    ctaLabel: base.jumpTab === "craft" ? "クラフトへ" : "つぎへ",
+    trustKey: `other:${base.title}`,
+  };
+}
+
+/**
  * クラフトタブ「おすすめ」に出すレシピID（進行順）。
  * いまの目標に直結するものを先頭にする（ベッドを常時先頭にしない）。
  */
@@ -396,7 +481,10 @@ export function recipeEffectLine(recipe: MiningRecipe): string | null {
     const tool = parseToolId(recipe.craftFlag);
     if (tool) return TOOL_EFFECT_BLURB[tool.kind];
     const armor = parseArmorKind(recipe.craftFlag);
-    if (armor) return ARMOR_EFFECT_SHORT[armor];
+    if (armor) {
+      const tier = armorTierFromGearId(recipe.craftFlag);
+      return tier ? armorTierEffectCopy(armor, tier) : ARMOR_EFFECT_SHORT[armor];
+    }
   }
   return null;
 }

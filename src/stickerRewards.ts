@@ -604,6 +604,7 @@ export function pickTreatReward(
     rewardFloor?: SpecialRewardFloor;
     forceUncollectedChance?: number;
     streakPick?: StreakRewardPick;
+    voucherFloor?: StickerRarity;
   },
 ): RewardItem {
   const chance = options?.forceUncollectedChance ?? 0;
@@ -622,7 +623,26 @@ export function pickTreatReward(
   }
   if (mode === "specialMission") return pickSpecialMissionReward(collectedIds, options?.rewardFloor ?? "rare");
   if (mode === "oneOffSpecial") return pickOneOffSpecialReward(collectedIds, options?.rewardFloor ?? "rare");
+  if (mode === "voucher") {
+    return pickVoucherReward(collectedIds, options?.voucherFloor ?? "normal");
+  }
   return pickDailyReward(collectedIds);
+}
+
+/** ごほうびチケット開封 — floor 以上（LRはLR確定） */
+export function pickVoucherReward(
+  collectedIds: string[],
+  floor: StickerRarity = "normal",
+): StickerReward {
+  if (floor === "normal") return pickDailyReward(collectedIds);
+  if (floor === "legendary") return pickFifteenDayReward(collectedIds);
+  if (floor === "ultraRare") {
+    return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_DEADLINE_UR_PLUS));
+  }
+  if (floor === "superRare") {
+    return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_DEADLINE_SR_PLUS));
+  }
+  return pickFromStickerTier(collectedIds, rollWeightedTier(TIER_WEIGHTS_DEADLINE_RARE_PLUS));
 }
 
 export type TreatMode =
@@ -634,4 +654,5 @@ export type TreatMode =
   | "specialMission"
   | "oneOffSpecial"
   | "fifteenDayStreak"
-  | "thirtyDayStreak";
+  | "thirtyDayStreak"
+  | "voucher";

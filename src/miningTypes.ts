@@ -298,19 +298,56 @@ export const TOOL_EFFECT_BLURB: Record<ToolKind, string> = {
 
 /** 装備画面のデフォルト一言（子ども向け） */
 export const ARMOR_EFFECT_SHORT: Record<ArmorKind, string> = {
-  helmet: "きょうのラッキー場所がわかる",
+  helmet: "きょうのこううん場所がわかる",
   chest: "こうかんがお得",
-  leggings: "たまに素材+1",
+  leggings: "たまにべつの素材がころがる",
   boots: "まれに🎫もどる",
 };
 
 /** 折りたたみ用のくわしい説明 */
 export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
-  helmet: "きょうのこううん日がわかる。最初の1回は+1かくてい",
-  chest: "こうかん⭐でのこうかんが少しお得",
-  leggings: "こううんで素材が+1しやすい",
+  helmet: "こううん場所がわかる。つよいほど岩のヒントが分かりやすい",
+  chest: "こうかん⭐でのこうかんがお得",
+  leggings: "メインとはべつの素材が、たまにころがる",
   boots: "まれにチケットがもどる",
 };
+
+const ARMOR_TIER_EFFECT: Record<ArmorKind, Partial<Record<GearTier, string>>> = {
+  helmet: {
+    iron: "こううんの場所がわかる",
+    gold: "たまに はずれ岩が1つわかる",
+    diamond: "はずれ岩が1つわかる",
+    netherite: "あたり岩がわかる",
+  },
+  chest: {
+    iron: "こうかんが少しお得",
+    gold: "こうかんがもう少しお得",
+    diamond: "こうかんがかなりお得",
+    netherite: "こうかんがいちばんお得",
+  },
+  leggings: {
+    iron: "たまに べつの素材がころがる",
+    gold: "べつの素材が 出やすい",
+    diamond: "ちょっとよい おまけが 出やすい",
+    netherite: "よいおまけが いちばん出やすい",
+  },
+  boots: {
+    iron: "まれに🎫もどる",
+    gold: "たまに🎫もどる",
+    diamond: "🎫がもどりやすい",
+    netherite: "🎫がいちばんもどりやすい",
+  },
+};
+
+/** そうび候補の右に出す効果文（材質名は出さない） */
+export function armorTierEffectCopy(slot: ArmorKind, tier: GearTier): string {
+  return ARMOR_TIER_EFFECT[slot][tier] ?? ARMOR_EFFECT_SHORT[slot];
+}
+
+export function armorTierFromGearId(id: CraftedGearId): GearTier | null {
+  const m = /_(wood|stone|iron|gold|diamond|netherite)$/.exec(id);
+  return m ? (m[1] as GearTier) : null;
+}
 
 /** いま掘る場所に対して、そのほるどうぐが効くか一言 */
 export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {

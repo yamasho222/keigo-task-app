@@ -33,33 +33,32 @@ import {
   recipesForState,
   resolveBucketFill,
   resolveDig,
+  resolveHelmetRockHint,
   digHitTier,
   isDigHighlightDrop,
   setPartySlot,
-  specialtyForGacha,
   tryCraft,
   type DigResult,
+  type HelmetRockHint,
   type MiningRecipe,
 } from "./miningProgress";
 import { NETHERITE_UPGRADE_REQUIRES, craftGridForRecipe, recipeProgress } from "./miningRecipes";
 import { MiningItemIcon } from "./MiningItemIcon";
-import { MiningRockPick } from "./MiningRockPick";
 import { MiningEnchantPanel } from "./MiningEnchantPanel";
 import {
   bargainStars,
   demoDigLines,
   listActiveEnchants,
-  prospectBonus,
   sumEnchantBonus,
 } from "./miningEnchant";
 import {
   boostStrengthLabel,
+  buildNextHero,
   craftTutorialBanner,
   detectChapterMoments,
   detectProgressNudge,
   digRevealTitle,
   gachaForMaterial,
-  miningNextHero,
   nextGachaUnlock,
   recipeEffectLine,
   recommendedCraftRecipeIds,
@@ -71,6 +70,8 @@ import {
   ARMOR_KIND_LABEL,
   ARMOR_EFFECT_SHORT,
   ARMOR_EFFECT_BLURB,
+  armorTierEffectCopy,
+  armorTierFromGearId,
   DIG_BLOCK_IMAGE,
   ENCHANT_META,
   ENCHANT_TARGET_LABEL,
@@ -80,7 +81,6 @@ import {
   MAX_BEDS,
   TOOL_KIND_LABEL,
   TOOL_EFFECT_BLURB,
-  toolEffectForGacha,
   SPECIALTY_META,
   specialtyBlurb,
   specialtyOfCategory,
@@ -106,7 +106,7 @@ interface Props {
 }
 
 type TabId = "mine" | "craft" | "bag";
-type OverlayId = "party" | "equip" | "digDestination" | null;
+type OverlayId = "party" | "equip" | "enchant" | "digDestination" | null;
 type DigFxPhase = "idle" | "crack" | "break" | "reveal";
 type ArmorSlot = "helmet" | "chest" | "leggings" | "boots";
 type ToastKind = "normal" | "progress";
@@ -780,31 +780,36 @@ export function MiningScreen({
   const [portalFx, setPortalFx] = useState(false);
   const [partySlotEdit, setPartySlotEdit] = useState<number | null>(null);
   const [partyCategoryFilter, setPartyCategoryFilter] = useState<RewardCategory | null>(null);
+  const [partyStep, setPartyStep] = useState<"slots" | "category" | "pick">("slots");
   const [digBusy, setDigBusy] = useState(false);
-  const [boostDetailOpen, setBoostDetailOpen] = useState(false);
   const [craftShowAll, setCraftShowAll] = useState(false);
-  const [supportOpen, setSupportOpen] = useState(false);
   const [progressNudge, setProgressNudge] = useState<ProgressNudge | null>(null);
   const [fuelChoice, setFuelChoice] = useState<Partial<Record<string, MaterialId>>>({});
   const [chapterQueue, setChapterQueue] = useState<ChapterMoment[]>([]);
   const [craftPop, setCraftPop] = useState<{ label: string; icon: ReactNode } | null>(null);
   const [armorDetailOpen, setArmorDetailOpen] = useState<Partial<Record<ArmorSlot, boolean>>>({});
-  const [rockPick, setRockPick] = useState<{
-    gacha: GachaId;
-    toolKind: ToolKind;
-    luckyIndex: number;
-  } | null>(null);
-  const [enchantOpen, setEnchantOpen] = useState(false);
   const [versionNoticeOpen, setVersionNoticeOpen] = useState(
     () => !mining.miningVersionNoticeSeen,
   );
   const [routeBranchOpen, setRouteBranchOpen] = useState(false);
   const [demoDig, setDemoDig] = useState<EnchantId | null>(null);
+  const [heroRepeat, setHeroRepeat] = useState(0);
+  const [heroTrustKey, setHeroTrustKey] = useState<string | null>(null);
+  const [highlightRecipeId, setHighlightRecipeId] = useState<string | null>(null);
+  const [highlightGacha, setHighlightGacha] = useState<GachaId | null>(null);
+  const [highlightRocks, setHighlightRocks] = useState(false);
+  const [rockLuckyIndex, setRockLuckyIndex] = useState(() => Math.floor(Math.random() * 3));
+  const [digDestStep, setDigDestStep] = useState<"place" | "rock">("place");
+  const [mineMoreOpen, setMineMoreOpen] = useState(false);
+  const [bagNoticeOpen, setBagNoticeOpen] = useState(false);
   const [smeltingId, setSmeltingId] = useState<string | null>(null);
   const [smeltProgress, setSmeltProgress] = useState(0);
   const [pinRect, setPinRect] = useState({ top: 0, left: 0, width: 0, padL: 16, padR: 16, padT: 16 });
-  const [chromeHeight, setChromeHeight] = useState(96);
-  const chromeRef = useRef<HTMLDivElement>(null);
+  const [chromeHeight, setChromeHeight] = useState(120);
+  const [bottomChromeHeight, setBottomChromeHeight] = useState(200);
+  const [chromeEl, setChromeEl] = useState<HTMLDivElement | null>(null);
+  const [bottomChromeEl, setBottomChromeEl] = useState<HTMLDivElement | null>(null);
+  const [rockHint, setRockHint] = useState<HelmetRockHint>({ kind: "none" });
   const crackStageRef = useRef(0);
   const smeltTimerRef = useRef(0);
   const pendingDigChaptersRef = useRef<ChapterMoment[]>([]);
@@ -821,8 +826,6 @@ export function MiningScreen({
       const padT = parseFloat(cs.paddingTop) || 0;
       const padL = parseFloat(cs.paddingLeft) || 16;
       const padR = parseFloat(cs.paddingRight) || 16;
-      // AppScroll 上端にぴったり固定。safe-area はヘッダー内部の padding で吸収する
-      // （padding 下に置くと、その隙間からスクロール内容が覗く）
       setPinRect({
         top: r.top,
         left: r.left,
@@ -831,15 +834,15 @@ export function MiningScreen({
         padR,
         padT,
       });
-      if (chromeRef.current) {
-        setChromeHeight(chromeRef.current.offsetHeight);
-      }
+      if (chromeEl) setChromeHeight(chromeEl.offsetHeight);
+      if (bottomChromeEl) setBottomChromeHeight(bottomChromeEl.offsetHeight);
     };
 
     sync();
     const ro = new ResizeObserver(sync);
     ro.observe(scroll);
-    if (chromeRef.current) ro.observe(chromeRef.current);
+    if (chromeEl) ro.observe(chromeEl);
+    if (bottomChromeEl) ro.observe(bottomChromeEl);
     window.addEventListener("resize", sync);
     window.addEventListener("scroll", sync, true);
     return () => {
@@ -847,15 +850,12 @@ export function MiningScreen({
       window.removeEventListener("resize", sync);
       window.removeEventListener("scroll", sync, true);
     };
-  }, [overlay, tab]);
+  }, [overlay, tab, chromeEl, bottomChromeEl]);
 
-  /** AppScroll の padding-top 分は既に空いているので、スペーサーはヘッダーのうち中身側だけ */
-  const chromeSpacerHeight = Math.max(0, chromeHeight - pinRect.padT);
+  /** AppScroll の padding-top 分は既に空いているので、スペーサーはヘッダーのうち中身側＋バッファ */
+  const chromeSpacerHeight = Math.max(0, chromeHeight - pinRect.padT + 8);
 
   const recipes = useMemo(() => recipesForState(mining), [mining]);
-  /** 作業台前だけ折りたたみ。以降は常に見える（どこで設定するか迷子防止） */
-  const supportFoldable = !hasWorkbench(mining);
-  const supportExpanded = !supportFoldable || supportOpen;
   const hasHelmet = !!(mining.equipped.helmet && mining.crafted[mining.equipped.helmet]);
   const lucky = luckyGachaForDate(dateKey, mining.unlockedGachas, hasHelmet);
   const boost = useMemo(
@@ -1064,25 +1064,38 @@ export function MiningScreen({
     beginDigFx(result);
   };
 
-  /** 行き先を確定 → 岩3択 or バケツくみ */
-  const digAt = (gacha: GachaId) => {
+  /** 行き先を確定 → シート内で岩ステップへ（ようがんはくみUI） */
+  const selectDigPlace = (gacha: GachaId) => {
     if (digBusy) return;
+    if (!mining.unlockedGachas.includes(gacha)) {
+      showToast(`${GACHA_META[gacha].label}：${gachaLockHint(gacha)}`);
+      return;
+    }
     const kind = recommendToolKind(gacha);
     setSelectedGacha(gacha);
     setToolKind(kind);
-    setOverlay(null);
+    const luckyIdx = Math.floor(Math.random() * 3);
+    setRockLuckyIndex(luckyIdx);
+    setRockHint(resolveHelmetRockHint(mining, luckyIdx));
+    setDigDestStep("rock");
+    if (gacha === "lava_cave" && !hasBucket(mining)) {
+      showToast("鉄のバケツを作ってからね");
+    }
+  };
 
-    if (gacha === "lava_cave") {
-      if (!hasBucket(mining)) {
-        showToast("鉄のバケツを作ってからね");
-        return;
-      }
-      performDig(gacha, kind, false);
+  const openDigDestination = (step: "place" | "rock" = "place") => {
+    if (digBusy) return;
+    if (mining.tickets < 1) {
+      onBack();
       return;
     }
-
-    const luckyIndex = Math.floor(Math.random() * 3);
-    setRockPick({ gacha, toolKind: kind, luckyIndex });
+    setDigDestStep(step);
+    if (step === "rock") {
+      const luckyIdx = Math.floor(Math.random() * 3);
+      setRockLuckyIndex(luckyIdx);
+      setRockHint(resolveHelmetRockHint(mining, luckyIdx));
+    }
+    setOverlay("digDestination");
   };
 
   const scoopWater = () => {
@@ -1131,8 +1144,7 @@ export function MiningScreen({
       performDig("lava_cave", toolKind, false);
       return;
     }
-    const luckyIndex = Math.floor(Math.random() * 3);
-    setRockPick({ gacha: selectedGacha, toolKind, luckyIndex });
+    openDigDestination("rock");
   };
 
   const announceUnlocks = (before: Set<GachaId>, next: MiningState) => {
@@ -1196,8 +1208,14 @@ export function MiningScreen({
     const nudge = detectProgressNudge(before, nextState);
     if (nudge) {
       setProgressNudge(nudge);
-      if (nudge.action === "party" || nudge.action === "equip") {
-        setSupportOpen(true);
+      if (nudge.action === "party") {
+        setOverlay("party");
+        setPartyStep("slots");
+        setPartySlotEdit(null);
+        setPartyCategoryFilter(null);
+      }
+      if (nudge.action === "equip") {
+        setOverlay("equip");
       }
       if (nudge.action === "craft") {
         setTab("craft");
@@ -1212,12 +1230,12 @@ export function MiningScreen({
 
   const runNudgeAction = (nudge: ProgressNudge) => {
     if (nudge.action === "party") {
-      setSupportOpen(true);
       setOverlay("party");
-      setPartySlotEdit(0);
+      setPartyStep("slots");
+      setPartySlotEdit(null);
+      setPartyCategoryFilter(null);
       setTab("mine");
     } else if (nudge.action === "equip") {
-      setSupportOpen(true);
       setOverlay("equip");
       setTab("mine");
     } else if (nudge.action === "craft") {
@@ -1320,27 +1338,70 @@ export function MiningScreen({
 
   const armorSlots: ArmorSlot[] = ["helmet", "chest", "leggings", "boots"];
 
-  const nextHero = miningNextHero(mining);
+  const nextHero = buildNextHero(mining, { repeatCount: heroRepeat });
   const ironRoute = showIronRouteGuide(mining);
   const strength = boostStrengthLabel(boost.expectedExtra);
-  const wantSpec = specialtyForGacha(selectedGacha);
-  const digNeedsTickets = mining.tickets < 1;
-  const digSheetReady = !digBusy && mining.tickets >= 1;
+  const tableReady = hasEnchantingTable(mining);
+
+  useEffect(() => {
+    const key = nextHero.trustKey ?? nextHero.title;
+    if (heroTrustKey === null) {
+      setHeroTrustKey(key);
+      return;
+    }
+    if (key !== heroTrustKey) {
+      setHeroTrustKey(key);
+      setHeroRepeat(0);
+    }
+  }, [nextHero.trustKey, nextHero.title, heroTrustKey]);
+
+  useEffect(() => {
+    const luckyIdx = Math.floor(Math.random() * 3);
+    setRockLuckyIndex(luckyIdx);
+    setRockHint(resolveHelmetRockHint(miningRef.current, luckyIdx));
+    setHighlightRocks(false);
+  }, [selectedGacha]);
 
   useEffect(() => {
     if (
-      hasEnchantingTable(mining)
+      tableReady
       && !mining.miningRouteBranchSeen
       && !versionNoticeOpen
       && !mining.unlockedGachas.includes("nether")
     ) {
       setRouteBranchOpen(true);
     }
-  }, [mining, versionNoticeOpen]);
+  }, [mining, versionNoticeOpen, tableReady]);
 
   const jumpFromHero = () => {
+    const key = nextHero.trustKey ?? nextHero.title;
+    if (key === heroTrustKey) setHeroRepeat((n) => n + 1);
+    else {
+      setHeroTrustKey(key);
+      setHeroRepeat(1);
+    }
+
+    setHighlightRecipeId(null);
+    setHighlightGacha(null);
+    setHighlightRocks(false);
+
+    if (nextHero.highlightKind === "recipe" && nextHero.highlightRecipeId) {
+      setHighlightRecipeId(nextHero.highlightRecipeId);
+      window.setTimeout(() => setHighlightRecipeId(null), 4500);
+    }
+    if (nextHero.highlightKind === "gacha" && nextHero.preferredGacha) {
+      setHighlightGacha(nextHero.preferredGacha);
+      window.setTimeout(() => setHighlightGacha(null), 4500);
+    }
     if (nextHero.preferredGacha && mining.unlockedGachas.includes(nextHero.preferredGacha)) {
       chooseGacha(nextHero.preferredGacha);
+    }
+    if (nextHero.highlightKind === "rocks") {
+      setHighlightRocks(true);
+      window.setTimeout(() => setHighlightRocks(false), 4500);
+      setTab("mine");
+      openDigDestination("rock");
+      return;
     }
     if (nextHero.jumpTab === "mine") {
       setOverlay(null);
@@ -1351,33 +1412,59 @@ export function MiningScreen({
     setTab("craft");
   };
 
-  /** party / equip は全画面置換。digDestination はボトムシートなので本体UIを残す */
-  const blockingOverlay = overlay === "party" || overlay === "equip";
+  const pickRockInSheet = (rockIndex: number) => {
+    if (digBusy) return;
+    if (mining.tickets < 1) {
+      showToast("チケットが足りないよ");
+      return;
+    }
+    navigator.vibrate?.(12);
+    const kind = recommendToolKind(selectedGacha);
+    setToolKind(kind);
+    setOverlay(null);
+    performDig(selectedGacha, kind, rockIndex === rockLuckyIndex);
+  };
+
+  /** party / equip / enchant は全画面置換。digDestination はボトムシートなので本体UIを残す */
+  const blockingOverlay = overlay === "party" || overlay === "equip" || overlay === "enchant";
+  const blockingTitle =
+    overlay === "party" ? "なかま"
+    : overlay === "equip" ? "そうび"
+    : overlay === "enchant" ? "エンチャント"
+    : "";
   const selectedMeta = GACHA_META[selectedGacha];
+  const contentPadBottom = blockingOverlay ? 96 : 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: tab === "mine" ? 120 : 72 }}>
-      {!blockingOverlay && (
-        <>
-          {/* フロー内スペーサー: fixed ヘッダーのうち、AppScroll padding より下の分だけ確保 */}
-          <div style={{ height: chromeSpacerHeight, flexShrink: 0 }} aria-hidden />
-          <div
-            ref={chromeRef}
-            className="mining-pin-chrome"
-            style={{
-              position: "fixed",
-              top: pinRect.top,
-              left: pinRect.left,
-              width: pinRect.width,
-              paddingLeft: pinRect.padL,
-              paddingRight: pinRect.padR,
-              paddingTop: pinRect.padT,
-              paddingBottom: 8,
-              boxSizing: "border-box",
-              zIndex: 50,
-              backgroundColor: theme.bg.editor,
-            }}
-          >
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: contentPadBottom }}>
+      {/* 固定ヘッダ: 本体タブ or そうび/なかま/エンチャント */}
+      <div style={{ height: chromeSpacerHeight, flexShrink: 0 }} aria-hidden />
+      <div
+        ref={setChromeEl}
+        className="mining-pin-chrome"
+        style={{
+          position: "fixed",
+          top: pinRect.top,
+          left: pinRect.left,
+          width: pinRect.width,
+          paddingLeft: pinRect.padL,
+          paddingRight: pinRect.padR,
+          paddingTop: pinRect.padT,
+          paddingBottom: 8,
+          boxSizing: "border-box",
+          zIndex: 50,
+          backgroundColor: theme.bg.editor,
+        }}
+      >
+        {blockingOverlay ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ScrollSafeBackButton onBack={() => setOverlay(null)} />
+            <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>
+              {blockingTitle}
+            </div>
+          </div>
+        ) : (
+          <>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <ScrollSafeBackButton onBack={onBack} />
               <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>こうざん／クラフト</div>
@@ -1407,18 +1494,9 @@ export function MiningScreen({
                 </button>
               ))}
             </div>
-          </div>
-        </>
-      )}
-
-      {blockingOverlay && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ScrollSafeBackButton onBack={() => setOverlay(null)} />
-          <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>
-            {overlay === "party" ? "パーティ" : "そうび"}
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {!blockingOverlay && (
       <>
@@ -1461,21 +1539,17 @@ export function MiningScreen({
           )}
           {nextHero.kind !== "done" && (
             <button type="button" className="mining-next-hero-cta" style={btnPrimary} onClick={jumpFromHero}>
-              {nextHero.jumpTab === "mine" ? "ほりにいく" : "クラフトへ"}
+              {nextHero.ctaLabel
+                ?? (nextHero.jumpTab === "mine" ? "ほりにいく" : "クラフトへ")}
             </button>
           )}
-          {hasEnchantingTable(mining) && (
-            <button
-              type="button"
-              className="mining-next-hero-cta"
-              style={{ ...btnGhost, marginTop: 8, fontWeight: 900 }}
-              onClick={() => setEnchantOpen(true)}
-            >
-              ✨ まほうをかける
+          {nextHero.kind === "done" && nextHero.highlightKind === "rocks" && (
+            <button type="button" className="mining-next-hero-cta" style={btnPrimary} onClick={jumpFromHero}>
+              {nextHero.ctaLabel ?? "ほりにいく"}
             </button>
           )}
           {activeEnchantChips.length > 0 && (
-            <div className="mining-enchant-chips" aria-label="いまのまほう">
+            <div className="mining-enchant-chips" aria-label="いまのエンチャント">
               {activeEnchantChips.map(({ target, enchant }) => (
                 <span key={target} className="mining-enchant-chip">
                   {ENCHANT_TARGET_LABEL[target]} · {ENCHANT_META[enchant.id].label} Lv{enchant.level}
@@ -1536,356 +1610,110 @@ export function MiningScreen({
           </div>
         </div>
       )}
-
-      <div
-        style={{
-          ...card,
-          padding: 10,
-          borderColor: progressNudge && (progressNudge.action === "party" || progressNudge.action === "equip")
-            ? theme.accent.primary
-            : theme.stroke.secondary,
-          boxShadow: progressNudge && (progressNudge.action === "party" || progressNudge.action === "equip")
-            ? `0 0 0 2px ${theme.accent.primary}33`
-            : undefined,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => { if (supportFoldable) setSupportOpen((v) => !v); }}
-          style={{
-            width: "100%", border: "none", background: "transparent", padding: 0,
-            cursor: supportFoldable ? "pointer" : "default", textAlign: "left", color: theme.text.primary,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: theme.text.secondary }}>
-              パーティ・そうび
-              {supportFoldable && !supportOpen && <span style={{ marginLeft: 8, fontWeight: 700 }}>（作業台のあとでひらく）</span>}
-            </div>
-            {supportFoldable && (
-              <span style={{ fontSize: 12, fontWeight: 800, color: theme.text.tertiary }}>{supportOpen ? "▲" : "▼"}</span>
-            )}
-          </div>
-        </button>
-        {supportExpanded && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>
-              緑わく＝いまの場所向き。ベッドでなかまがふえるよ
-            </div>
-            <button type="button" onClick={() => { setOverlay("party"); setPartySlotEdit(0); }} style={{ ...btnGhost, textAlign: "left", padding: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontWeight: 800, fontSize: 13 }}>パーティ（{slots}/{MAX_BEDS}）</span>
-                <span style={{ color: theme.text.tertiary }}>›</span>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {Array.from({ length: slots }, (_, i) => {
-                  const id = mining.partyIds[i];
-                  const item = id ? REWARD_LOOKUP[id] : null;
-                  const lv = id ? getBuddyEntry(buddyProgress, id).level : 1;
-                  const match = !!(item && specialtyOfCategory(item.category) === wantSpec);
-                  return (
-                    <div key={i} style={{
-                      width: 48, height: 52, borderRadius: 10,
-                      border: `1.5px ${match ? "solid" : "dashed"} ${match ? theme.category.green : theme.stroke.primary}`,
-                      background: match ? `${theme.category.green}14` : theme.fill.quaternary,
-                      padding: 2, display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      {item ? <StickerThumb item={item} level={lv} size={42} /> : (
-                        <span style={{ fontSize: 11, color: theme.text.tertiary }}>空</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </button>
-            <button type="button" onClick={() => setOverlay("equip")} style={{ ...btnGhost, textAlign: "left", padding: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontWeight: 800, fontSize: 13 }}>そうび</span>
-                <span style={{ color: theme.text.tertiary }}>›</span>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {([
-                  { id: mining.equipped.tool, label: "どうぐ" },
-                  { id: mining.equipped.helmet, label: "あたま" },
-                  { id: mining.equipped.chest, label: "むね" },
-                  { id: mining.equipped.leggings, label: "あし" },
-                  { id: mining.equipped.boots, label: "くつ" },
-                ] as const).map((slot) => (
-                  <div key={slot.label} style={{ textAlign: "center" }}>
-                    <div style={{
-                      width: 40, height: 40, borderRadius: 10,
-                      border: `1px ${slot.id ? "solid" : "dashed"} ${theme.stroke.tertiary}`,
-                      background: theme.bg.editor,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }} title={slot.id ? gearLabel(slot.id) : "なし"}>
-                      {slot.id ? <MiningItemIcon gear={slot.id} size={28} alt="" /> : (
-                        <span style={{ fontSize: 12, color: theme.text.tertiary }}>?</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: theme.text.tertiary, marginTop: 2 }}>{slot.label}</div>
-                  </div>
-                ))}
-              </div>
-            </button>
-          </div>
-        )}
-      </div>
       </>
       )}
 
       {!blockingOverlay && tab === "mine" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 10 }}>どこをほる？</div>
-            {ironRoute && (
-              <div className="mining-route-guide" style={{ marginBottom: 10 }}>
-                <div className="mining-route-guide-title">おすすめルート</div>
-                <div className="mining-route-guide-steps">
-                  <button
-                    type="button"
-                    className="mining-route-guide-step"
-                    onClick={() => chooseGacha("coal")}
-                  >
-                    ①せきたん
-                  </button>
-                  <span>→</span>
-                  <button
-                    type="button"
-                    className="mining-route-guide-step"
-                    onClick={() => setTab("craft")}
-                  >
-                    ②かまど
-                  </button>
-                  <span>→</span>
-                  <button
-                    type="button"
-                    className="mining-route-guide-step"
-                    onClick={() => chooseGacha("iron")}
-                  >
-                    ③てつ
-                  </button>
-                </div>
-                <div className="mining-route-guide-note">きんはあとでOK</div>
-              </div>
-            )}
-            <div className="mining-biome-grid">
-              {GACHA_ORDER.filter((gid) => mining.unlockedGachas.includes(gid)).map((gid) => {
-                const meta = GACHA_META[gid];
-                const isLucky = lucky === gid;
-                const selected = selectedGacha === gid;
-                const hasOtherSelected = selectedGacha !== gid;
-                return (
-                  <button
-                    key={gid}
-                    type="button"
-                    className={`mining-biome-card${selected ? " is-selected" : ""}${hasOtherSelected ? " is-dim" : ""}`}
-                    onClick={() => chooseGacha(gid)}
-                  >
-                    <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
-                    <div className="mining-biome-card-shade" />
-                    <div className="mining-biome-card-body">
-                      <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
-                      {meta.badge && (
-                        <div className="mining-biome-card-badge">{meta.badge}</div>
-                      )}
-                      {gid === "coal" && !meta.badge && (
-                        <div className="mining-biome-card-badge">石炭がとれる</div>
-                      )}
-                      {gid === "gold" && (
-                        <div className="mining-biome-card-badge is-optional">あとでOK</div>
-                      )}
-                      {gid === "diamond" && !meta.badge && (
-                        <div className="mining-biome-card-badge">ダイヤのかけら</div>
-                      )}
-                      {isLucky && (
-                        <div className="mining-biome-card-badge is-lucky">★こううん日</div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {selectedGacha === "river" && hasBucket(mining) && (
-              <button type="button" style={{ ...btnPrimary, width: "100%", marginTop: 10 }} onClick={scoopWater}>
-                🪣 バケツで水をくむ · 🎫1
+          <div style={card} className={highlightRocks ? "mining-equip-strip is-next-target" : "mining-equip-strip"}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontWeight: 800 }}>いまのどうぐ</div>
+              <button
+                type="button"
+                className="mining-equip-strip-link"
+                onClick={() => setOverlay("equip")}
+              >
+                そうびをかえる →
               </button>
-            )}
-            {selectedGacha === "lava_cave" && !hasBucket(mining) && (
-              <div style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: theme.category.orange }}>
-                鉄のバケツを作ってから入ろう
-              </div>
-            )}
-            {GACHA_ORDER.some((gid) => !mining.unlockedGachas.includes(gid)) && (
-              <div className="mining-biome-locked">
-                <div style={{ fontSize: 11, fontWeight: 800, color: theme.text.tertiary }}>まだの場所</div>
-                {GACHA_ORDER.filter((gid) => !mining.unlockedGachas.includes(gid)).map((gid) => {
-                  const meta = GACHA_META[gid];
-                  return (
-                    <div key={gid} className="mining-biome-locked-card">
-                      <img src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
-                      <div className="mining-biome-locked-shade" />
-                      <div className="mining-biome-locked-body">
-                        <span className="mining-biome-locked-title">🔒 {meta.label}</span>
-                        <span className="mining-biome-locked-hint">{gachaLockHint(gid)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>つかうどうぐの種類</div>
-            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
-              種類を選ぶと、いちばん強いのを使うよ
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="mining-equip-strip-list">
               {(["axe", "sword", "pickaxe"] as ToolKind[]).map((kind) => {
                 const best = bestOwnedTool(mining, kind);
-                const recommended = recommendToolKind(selectedGacha) === kind;
                 const selected = toolKind === kind;
                 return (
                   <button
                     key={kind}
                     type="button"
-                    disabled={!best}
-                    onClick={() => selectToolKind(kind)}
-                    style={{
-                      ...btnGhost,
-                      opacity: best ? 1 : 0.4,
-                      borderColor: selected ? theme.accent.primary : theme.stroke.secondary,
-                      backgroundColor: selected ? `${theme.accent.primary}18` : theme.fill.secondary,
-                      textAlign: "left",
-                      padding: "10px 12px",
+                    className={`mining-equip-strip-row${selected ? " is-selected" : ""}${!best ? " is-empty" : ""}`}
+                    onClick={() => {
+                      if (!best) {
+                        setOverlay("equip");
+                        return;
+                      }
+                      selectToolKind(kind);
                     }}
                   >
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                      {best && <MiningItemIcon gear={best} size={26} alt="" />}
-                      <strong>{TOOL_KIND_LABEL[kind]}</strong>
-                      {recommended && best && (
-                        <span style={{ color: theme.category.orange, fontWeight: 800 }}>おすすめ</span>
+                    <span className="mining-equip-strip-icon" aria-hidden>
+                      {best ? (
+                        <MiningItemIcon gear={best} size={32} alt="" />
+                      ) : (
+                        <span className="mining-equip-strip-empty">？</span>
                       )}
-                      {selected && best && (
-                        <span style={{ color: theme.accent.primary, fontWeight: 800 }}>つかう</span>
-                      )}
-                    </div>
-                    {best && (
-                      <div style={{ marginTop: 4, fontSize: 12, fontWeight: 800, color: theme.text.primary }}>
-                        いま使う: {gearLabel(best)}
-                      </div>
-                    )}
-                    <div style={{
-                      marginTop: 4,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: recommended ? theme.category.orange : theme.text.secondary,
-                      lineHeight: 1.4,
-                    }}>
-                      {toolEffectForGacha(kind, selectedGacha)}
-                    </div>
+                    </span>
+                    <span className="mining-equip-strip-effect">{TOOL_EFFECT_BLURB[kind]}</span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div style={card}>
+          <div className="mining-more-fold">
             <button
               type="button"
-              onClick={() => setBoostDetailOpen((v) => !v)}
+              onClick={() => setMineMoreOpen((v) => !v)}
               style={{
                 width: "100%",
                 border: "none",
                 background: "transparent",
-                padding: 0,
+                padding: "4px 0",
                 cursor: "pointer",
                 textAlign: "left",
+                fontWeight: 800,
+                fontSize: 13,
+                color: theme.text.secondary,
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                <div style={{ fontWeight: 800 }}>いまのつよさ</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ display: "flex", gap: 3 }}>
-                    {[1, 2, 3].map((n) => (
-                      <span
-                        key={n}
-                        style={{
-                          width: 10,
-                          height: 14,
-                          borderRadius: 3,
-                          backgroundColor: n <= strength.pips ? strength.color : theme.stroke.tertiary,
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>
-                    {strength.label} {boostDetailOpen ? "▲" : "▼"}
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginTop: 4, fontSize: 12, color: theme.text.secondary }}>
-                くわしく見る（パーセント）
-              </div>
+              つよさ・詳細 {mineMoreOpen ? "▲" : "▼"}
             </button>
-            {boostDetailOpen && (
-              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                {boost.lines.map((line) => (
-                  <div
-                    key={line.label}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      background: line.active ? `${theme.category.green}14` : theme.fill.secondary,
-                      border: `1px solid ${line.active ? `${theme.category.green}55` : theme.stroke.tertiary}`,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <strong style={{ fontSize: 13 }}>{line.label}</strong>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: line.active ? theme.category.green : theme.text.secondary }}>
-                        {line.value}
-                      </span>
-                    </div>
-                    {line.hint && (
-                      <div style={{ fontSize: 11, color: theme.text.tertiary, marginTop: 2 }}>{line.hint}</div>
-                    )}
+            {mineMoreOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontWeight: 800, fontSize: 13 }}>いまのつよさ</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>{strength.label}</div>
                   </div>
-                ))}
+                  {boost.lines.filter((l) => l.active).slice(0, 3).map((line) => (
+                    <div key={line.label} style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 4 }}>
+                      {line.label}: {line.value}
+                    </div>
+                  ))}
+                </div>
+                {lastDig && digFx === "idle" && (
+                  <div>
+                    <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 13 }}>さいごにほった結果</div>
+                    <div className="mining-dig-slot-row">
+                      {lastDig.drops.map((d) => (
+                        <div key={d.material} className="mining-dig-slot-wrap">
+                          <MiningSlot material={d.material} amount={d.amount} size={40} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
-
-          {lastDig && digFx === "idle" && (
-            <div style={{ ...card, borderColor: `${theme.category.orange}66`, backgroundColor: `${theme.category.orange}10` }}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>さいごにほった結果</div>
-              <div className="mining-dig-slot-row" style={{ marginBottom: 8 }}>
-                {lastDig.drops.map((d) => (
-                  <div key={d.material} className="mining-dig-slot-wrap">
-                    <MiningSlot material={d.material} amount={d.amount} size={48} />
-                    <span className="mining-dig-slot-label">{MATERIAL_META[d.material].label}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12, color: theme.text.secondary }}>
-                {lastDig.breakdown.join(" · ")}
-                {lastDig.usedTool ? ` · ${gearLabel(lastDig.usedTool)}` : ""}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
       {overlay === "equip" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ ...card, backgroundColor: `${theme.accent.primary}10` }}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>そうびをえらぶ</div>
-            <div style={{ fontSize: 13, lineHeight: 1.5, color: theme.text.secondary }}>
-              ここで強いどうぐ・ぼうぐをつけるよ
-            </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
+            いちばん強いどうぐ・ぼうぐをつけよう
           </div>
 
           <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>ほるどうぐ（いちばん強いものをそうび）</div>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>ほるどうぐ</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {(["axe", "sword", "pickaxe"] as ToolKind[]).map((kind) => {
                 const best = bestOwnedTool(mining, kind);
@@ -1895,36 +1723,27 @@ export function MiningScreen({
                     key={kind}
                     type="button"
                     disabled={!best}
+                    className={`mining-equip-tool-row${equipped ? " is-equipped" : ""}`}
                     onClick={() => {
                       if (!best) return;
                       setToolKind(kind);
                       onChange(equipTool(mining, best));
                       showToast(`${gearLabel(best)} をそうびした！`);
                     }}
-                    style={{
-                      ...btnGhost,
-                      opacity: best ? 1 : 0.4,
-                      textAlign: "left",
-                      padding: "12px 12px",
-                      borderColor: equipped ? theme.category.green : theme.stroke.secondary,
-                      backgroundColor: equipped ? `${theme.category.green}18` : theme.fill.secondary,
-                    }}
+                    style={{ opacity: best ? 1 : 0.4 }}
                   >
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                      {best && <MiningItemIcon gear={best} size={28} alt="" />}
-                      <span>
-                        {TOOL_KIND_LABEL[kind]} · {best ? gearLabel(best) : "未所持"}
-                        {equipped && <span style={{ marginLeft: 8, color: theme.category.green }}>そうび中</span>}
-                      </span>
-                    </div>
-                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
-                      効果: {TOOL_EFFECT_BLURB[kind]}
-                    </div>
-                    {mining.enchants[kind] && (
-                      <div className="mining-enchant-chip is-inline">
-                        まほう: {ENCHANT_META[mining.enchants[kind]!.id].label} Lv{mining.enchants[kind]!.level}
-                      </div>
-                    )}
+                    <span className="mining-equip-tool-icon" aria-hidden>
+                      {best ? <MiningItemIcon gear={best} size={32} alt="" /> : "？"}
+                    </span>
+                    <span className="mining-equip-tool-body">
+                      <span className="mining-equip-tool-effect">{TOOL_EFFECT_BLURB[kind]}</span>
+                      {equipped && <span className="mining-equip-tool-badge">そうび中</span>}
+                      {mining.enchants[kind] && (
+                        <span className="mining-enchant-chip is-inline">
+                          {ENCHANT_META[mining.enchants[kind]!.id].label} Lv{mining.enchants[kind]!.level}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 );
               })}
@@ -1932,93 +1751,90 @@ export function MiningScreen({
           </div>
 
           <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>ぼうぐ（かぶる・きるもの）</div>
-            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 10, lineHeight: 1.45 }}>
-              鉄からつくれるよ。部位ごとに1つそうびできるよ。
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>ぼうぐ</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {armorSlots.map((slot) => {
                 const owned = ownedArmorForSlot(mining, slot);
                 const current = mining.equipped[slot];
+                const open = !!armorDetailOpen[slot];
                 return (
                   <div
                     key={slot}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      border: `1px solid ${theme.stroke.tertiary}`,
-                      backgroundColor: theme.fill.quaternary,
-                    }}
+                    className={`mining-equip-armor-row${open ? " is-open" : ""}${current ? " is-equipped" : ""}`}
                   >
-                    <div style={{ fontWeight: 800, marginBottom: 2, fontSize: 15 }}>{ARMOR_KIND_LABEL[slot]}</div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: theme.text.primary, marginBottom: 4, lineHeight: 1.4 }}>
-                      {ARMOR_EFFECT_SHORT[slot]}
-                    </div>
-                    {mining.enchants[slot] && (
-                      <div className="mining-enchant-chip is-inline" style={{ marginBottom: 6 }}>
-                        まほう: {ENCHANT_META[mining.enchants[slot]!.id].label} Lv{mining.enchants[slot]!.level}
-                      </div>
-                    )}
                     <button
                       type="button"
-                      onClick={() => setArmorDetailOpen((prev) => ({ ...prev, [slot]: !prev[slot] }))}
-                      style={{
-                        border: "none",
-                        background: "transparent",
-                        padding: 0,
-                        marginBottom: 8,
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: theme.text.tertiary,
-                        cursor: "pointer",
-                      }}
+                      className="mining-equip-armor-head"
+                      onClick={() =>
+                        setArmorDetailOpen((prev) => (prev[slot] ? {} : { [slot]: true }))
+                      }
                     >
-                      {armorDetailOpen[slot] ? "▲ くわしく" : "▼ くわしく"}
+                      <span className="mining-equip-armor-icon" aria-hidden>
+                        {current ? <MiningItemIcon gear={current} size={28} alt="" /> : "＋"}
+                      </span>
+                      <span className="mining-equip-armor-body">
+                        <span className="mining-equip-armor-title">
+                          {ARMOR_KIND_LABEL[slot]}
+                          {current && <span className="mining-equip-tool-badge">そうび中</span>}
+                        </span>
+                        <span className="mining-equip-armor-effect">{ARMOR_EFFECT_SHORT[slot]}</span>
+                      </span>
+                      <span className="mining-equip-armor-chevron" aria-hidden>{open ? "▲" : "▼"}</span>
                     </button>
-                    {armorDetailOpen[slot] && (
-                      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.45 }}>
-                        {ARMOR_EFFECT_BLURB[slot]}
-                      </div>
-                    )}
-                    {owned.length === 0 ? (
-                      <div style={{ fontSize: 12, color: theme.text.tertiary }}>まだないよ（鉄クラフト後）</div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {owned.map((id) => (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => {
-                              onChange(equipArmor(mining, slot, id));
-                              showToast(`${gearLabel(id)} をそうびした！`);
-                            }}
-                            style={{
-                              ...btnGhost,
-                              borderColor: current === id ? theme.category.green : theme.stroke.secondary,
-                              backgroundColor: current === id ? `${theme.category.green}18` : theme.bg.editor,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                            }}
-                          >
-                            <MiningItemIcon gear={id} size={22} alt="" />
-                            {gearLabel(id)}
-                            {current === id && (
-                              <span style={{ color: theme.category.green, fontWeight: 800 }}>そうび中</span>
+                    {open && (
+                      <div className="mining-equip-armor-detail">
+                        <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.45 }}>
+                          {ARMOR_EFFECT_BLURB[slot]}
+                        </div>
+                        {mining.enchants[slot] && (
+                          <div className="mining-enchant-chip is-inline" style={{ marginBottom: 8 }}>
+                            {ENCHANT_META[mining.enchants[slot]!.id].label} Lv{mining.enchants[slot]!.level}
+                          </div>
+                        )}
+                        {owned.length === 0 ? (
+                          <div style={{ fontSize: 12, color: theme.text.tertiary }}>まだないよ（鉄クラフト後）</div>
+                        ) : (
+                          <div className="mining-equip-armor-picks">
+                            {owned.map((id) => {
+                              const tier = armorTierFromGearId(id);
+                              const effectCopy = tier
+                                ? armorTierEffectCopy(slot, tier)
+                                : ARMOR_EFFECT_SHORT[slot];
+                              return (
+                                <button
+                                  key={id}
+                                  type="button"
+                                  className={`mining-equip-armor-pick${current === id ? " is-equipped" : ""}`}
+                                  onClick={() => {
+                                    onChange(equipArmor(mining, slot, id));
+                                    showToast(`${gearLabel(id)} をそうびした！`);
+                                  }}
+                                >
+                                  <span className="mining-equip-armor-pick-icon" aria-hidden>
+                                    <MiningItemIcon gear={id} size={28} alt="" />
+                                  </span>
+                                  <span className="mining-equip-armor-pick-body">
+                                    <span className="mining-equip-armor-pick-label">{effectCopy}</span>
+                                    {current === id && (
+                                      <span className="mining-equip-tool-badge">そうび中</span>
+                                    )}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                            {current && (
+                              <button
+                                type="button"
+                                className="mining-equip-armor-pick is-unequip"
+                                onClick={() => {
+                                  onChange(equipArmor(mining, slot, null));
+                                  showToast("はずしたよ");
+                                }}
+                              >
+                                はずす
+                              </button>
                             )}
-                          </button>
-                        ))}
-                        {current && (
-                          <button
-                            type="button"
-                            style={btnGhost}
-                            onClick={() => {
-                              onChange(equipArmor(mining, slot, null));
-                              showToast("はずしたよ");
-                            }}
-                          >
-                            はずす
-                          </button>
+                          </div>
                         )}
                       </div>
                     )}
@@ -2026,10 +1842,6 @@ export function MiningScreen({
                 );
               })}
             </div>
-          </div>
-
-          <div style={{ fontSize: 12, color: theme.text.secondary, lineHeight: 1.5, padding: "0 4px" }}>
-            くわしいつよさは「ほる」タブで見れるよ
           </div>
         </div>
       )}
@@ -2122,7 +1934,11 @@ export function MiningScreen({
               })();
               const isSmelt = !!recipe.fuelOptions?.length;
               return (
-                <div key={recipe.id} style={card}>
+                <div
+                  key={recipe.id}
+                  className={`mining-recipe-card${highlightRecipeId === recipe.id ? " is-next-target" : ""}`}
+                  style={card}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 900, fontSize: 15 }}>
@@ -2377,172 +2193,177 @@ export function MiningScreen({
 
       {overlay === "party" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>なかまを入れよう</div>
-            <div style={{ fontSize: 12, color: theme.text.secondary, lineHeight: 1.5, marginBottom: 8 }}>
-              ベッドをつくると、なかまが1人ふえる（いま {slots}/{MAX_BEDS}）
+          {partyStep === "slots" && (
+            <div style={card}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>なかまを入れよう</div>
+              <div style={{ fontSize: 12, color: theme.text.secondary, lineHeight: 1.5, marginBottom: 8 }}>
+                ベッドをつくると、なかまが1人ふえる（いま {slots}/{MAX_BEDS}）
+              </div>
+              <div style={{
+                padding: "8px 10px",
+                borderRadius: 10,
+                backgroundColor: `${theme.accent.primary}12`,
+                fontSize: 12,
+                fontWeight: 800,
+                color: theme.text.primary,
+                lineHeight: 1.45,
+                marginBottom: 12,
+              }}>
+                「{GACHA_META[selectedGacha].label}」向き・人数多め・高Lvほど、素材がふえやすい
+              </div>
+              <div className="mining-party-slot-list">
+                {Array.from({ length: slots }, (_, i) => {
+                  const id = mining.partyIds[i];
+                  const item = id ? REWARD_LOOKUP[id] : null;
+                  const lv = id ? getBuddyEntry(buddyProgress, id).level : 0;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className="mining-party-slot-card"
+                      onClick={() => {
+                        setPartySlotEdit(i);
+                        setPartyCategoryFilter(null);
+                        setPartyStep("category");
+                      }}
+                    >
+                      <span className="mining-party-slot-face" aria-hidden>
+                        {item ? (
+                          <StickerThumb item={item} level={lv} size={48} />
+                        ) : (
+                          <span className="mining-party-slot-empty">＋</span>
+                        )}
+                      </span>
+                      <span className="mining-party-slot-body">
+                        <span className="mining-party-slot-title">
+                          {item ? `${item.label} Lv${lv}` : "＋ いれる"}
+                        </span>
+                        <span className="mining-party-slot-sub">
+                          {item ? `とくい ${specialtyBlurb(item.category)}` : `スロット${i + 1}`}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              backgroundColor: `${theme.accent.primary}12`,
-              fontSize: 12,
-              fontWeight: 800,
-              color: theme.text.primary,
-              lineHeight: 1.45,
-            }}>
-              「{GACHA_META[selectedGacha].label}」向き・人数多め・高Lvほど、素材がふえやすい
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              {Array.from({ length: slots }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setPartySlotEdit(i)}
-                  style={{
-                    ...btnGhost,
-                    flex: 1,
-                    borderColor: partySlotEdit === i ? theme.accent.primary : theme.stroke.secondary,
-                  }}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-              {Array.from({ length: slots }, (_, i) => {
-                const id = mining.partyIds[i];
-                const item = id ? REWARD_LOOKUP[id] : null;
-                const lv = id ? getBuddyEntry(buddyProgress, id).level : 0;
-                return (
-                  <div key={i} style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
-                    スロット{i + 1}:{" "}
-                    {item
-                      ? `${item.label} Lv${lv} · とくい ${specialtyBlurb(item.category)}`
-                      : "空"}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          )}
 
-          <div style={card}>
-            <div style={{ fontWeight: 800, marginBottom: 8 }}>とくいの場所</div>
-            <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
-              タップすると、そのなかまだけ見えるよ
-            </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          {partyStep === "category" && partySlotEdit !== null && (
+            <div style={card}>
               <button
                 type="button"
-                onClick={() => setPartyCategoryFilter(null)}
-                style={{
-                  ...btnGhost,
-                  padding: "8px 10px",
-                  borderColor: partyCategoryFilter === null ? theme.accent.primary : theme.stroke.secondary,
-                  backgroundColor: partyCategoryFilter === null ? `${theme.accent.primary}18` : theme.fill.secondary,
-                  color: partyCategoryFilter === null ? theme.accent.primary : theme.text.primary,
+                className="mining-dig-dest-back"
+                onClick={() => {
+                  setPartyStep("slots");
+                  setPartySlotEdit(null);
+                  setPartyCategoryFilter(null);
                 }}
               >
-                すべて
+                ← スロットにもどる
               </button>
-              {partyCategoryFilter && (
-                <span style={{ fontSize: 12, fontWeight: 800, color: theme.accent.primary, alignSelf: "center" }}>
-                  絞り込み中
-                </span>
-              )}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {STICKER_CATEGORIES.map((cat) => {
-                const spec = specialtyOfCategory(cat.id);
-                const meta = SPECIALTY_META[spec];
-                const selected = partyCategoryFilter === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      setPartyCategoryFilter((prev) => (prev === cat.id ? null : cat.id));
-                      setPartySlotEdit((prev) => (prev === null ? 0 : prev));
-                    }}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto",
-                      gap: 8,
-                      alignItems: "center",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: `1.5px solid ${selected ? theme.accent.primary : theme.stroke.secondary}`,
-                      background: selected ? `${theme.accent.primary}18` : theme.fill.secondary,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      color: theme.text.primary,
-                    }}
-                  >
-                    <span>{cat.label}</span>
-                    <span style={{ color: theme.accent.primary }}>
-                      {meta.emoji} {meta.label}
-                      <span style={{ marginLeft: 6, color: theme.text.tertiary, fontWeight: 700 }}>
-                        {meta.gachaHint}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {partySlotEdit !== null && (
-            <div style={card}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <strong>スロット{partySlotEdit + 1}</strong>
+              <div style={{ fontWeight: 800, marginTop: 8, marginBottom: 4 }}>
+                スロット{partySlotEdit + 1} · とくいの場所をえらぶ
+              </div>
+              <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 10, lineHeight: 1.45 }}>
+                どの場所がとくいのなかまを入れる？
+              </div>
+              {mining.partyIds[partySlotEdit] && (
                 <button
                   type="button"
-                  style={{ ...btnGhost, padding: "6px 10px" }}
+                  style={{ ...btnGhost, width: "100%", marginBottom: 10 }}
                   onClick={() => {
                     onChange(setPartySlot(mining, partySlotEdit, null));
                     showToast("はずしたよ");
+                    setPartyStep("slots");
+                    setPartySlotEdit(null);
                   }}
                 >
-                  はずす
+                  いまのなかまをはずす
                 </button>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {STICKER_CATEGORIES.map((cat) => {
+                  const spec = specialtyOfCategory(cat.id);
+                  const meta = SPECIALTY_META[spec];
+                  const count = ownedStickers.filter((r) => r.category === cat.id).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      className="mining-party-cat-btn"
+                      disabled={count === 0}
+                      onClick={() => {
+                        setPartyCategoryFilter(cat.id);
+                        setPartyStep("pick");
+                      }}
+                    >
+                      <span>{cat.label}</span>
+                      <span className="mining-party-cat-meta">
+                        {meta.emoji} {meta.label}
+                        <span className="mining-party-cat-count">{count}人</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.45 }}>
-                空いている枠に、Lvの高いなかまを入れよう
+            </div>
+          )}
+
+          {partyStep === "pick" && partySlotEdit !== null && partyCategoryFilter && (
+            <div style={card}>
+              <button
+                type="button"
+                className="mining-dig-dest-back"
+                onClick={() => {
+                  setPartyStep("category");
+                  setPartyCategoryFilter(null);
+                }}
+              >
+                ← カテゴリにもどる
+              </button>
+              <div style={{ fontWeight: 800, marginTop: 8, marginBottom: 4 }}>
+                スロット{partySlotEdit + 1} · なかまをえらぶ
+              </div>
+              <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 10, lineHeight: 1.45 }}>
+                {STICKER_CATEGORIES.find((c) => c.id === partyCategoryFilter)?.label}
+                {" · "}
+                {specialtyBlurb(partyCategoryFilter)}
               </div>
               {partyCandidates.length === 0 ? (
                 <div style={{ fontSize: 13, fontWeight: 700, color: theme.text.tertiary, padding: "12px 4px" }}>
                   このカテゴリのシールはまだないよ
                 </div>
               ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, maxHeight: 360, overflowY: "auto" }}>
-                {partyCandidates.map((item) => {
-                  const lv = getBuddyEntry(buddyProgress, item.id).level;
-                  const blurb = specialtyBlurb(item.category);
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        if (!stickerAlbum.includes(item.id)) return;
-                        onChange(setPartySlot(mining, partySlotEdit, item.id));
-                        showToast(`${item.label} Lv${lv} を入れた！`);
-                        setPartySlotEdit(null);
-                      }}
-                      style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, textAlign: "left" }}
-                    >
-                      <StickerThumb item={item} level={lv} />
-                      <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {item.label}
-                      </div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: theme.accent.primary, lineHeight: 1.3, marginTop: 2 }}>
-                        Lv{lv} · {blurb}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, maxHeight: 420, overflowY: "auto" }}>
+                  {partyCandidates.map((item) => {
+                    const lv = getBuddyEntry(buddyProgress, item.id).level;
+                    const blurb = specialtyBlurb(item.category);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (!stickerAlbum.includes(item.id)) return;
+                          onChange(setPartySlot(mining, partySlotEdit, item.id));
+                          showToast(`${item.label} Lv${lv} を入れた！`);
+                          setPartyStep("slots");
+                          setPartySlotEdit(null);
+                          setPartyCategoryFilter(null);
+                        }}
+                        style={{ border: "none", background: "transparent", cursor: "pointer", padding: 0, textAlign: "left" }}
+                      >
+                        <StickerThumb item={item} level={lv} />
+                        <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.label}
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: theme.accent.primary, lineHeight: 1.3, marginTop: 2 }}>
+                          Lv{lv} · {blurb}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
@@ -2551,6 +2372,27 @@ export function MiningScreen({
 
       {!blockingOverlay && tab === "bag" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={card}>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>おしらせ</div>
+            <button
+              type="button"
+              style={{ ...btnGhost, width: "100%", textAlign: "left" }}
+              onClick={() => setBagNoticeOpen((v) => !v)}
+            >
+              鉱山のおしらせをみる {bagNoticeOpen ? "▲" : "▼"}
+            </button>
+            {bagNoticeOpen && (
+              <div style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.5 }}>
+                岩がかたくなったよ。そのかわり、エンチャントと新しいほりばがふえた！
+                農場・かわ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
+                {tableReady && !mining.unlockedGachas.includes("nether") && (
+                  <div style={{ marginTop: 8 }}>
+                    テーブルのあと：はやくネザーへ／つよくなってから、どっちも正解だよ。
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>こうかん所</div>
             <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
@@ -2686,53 +2528,66 @@ export function MiningScreen({
         </div>
       )}
 
-      {!blockingOverlay && tab === "mine" && (
+      {!blockingOverlay && (
         <div
-          className="mining-dig-cta-bar"
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 35,
-            boxSizing: "border-box",
-            /* 右はハンバーガー分あける。下はバー自体を画面端まで伸ばし、余白は内側 padding */
-            padding: "10px 72px max(10px, env(safe-area-inset-bottom, 0px)) 16px",
-            backgroundColor: theme.bg.editor,
-            boxShadow: "0 -10px 18px -14px rgba(0,0,0,0.28)",
-          }}
+          aria-hidden
+          style={{ height: bottomChromeHeight + 12, flexShrink: 0 }}
+        />
+      )}
+
+      {!blockingOverlay && (
+        <div
+          ref={setBottomChromeEl}
+          className="mining-bottom-chrome"
+          aria-label="ほる・そうび・なかま・エンチャ"
         >
-          <button
-            type="button"
-            className={digSheetReady ? "mining-dig-cta is-ready" : "mining-dig-cta"}
-            onClick={() => {
-              if (mining.tickets < 1) { onBack(); return; }
-              if (digBusy) return;
-              setOverlay("digDestination");
-            }}
-            disabled={digBusy}
-            style={{
-              ...btnPrimary,
-              width: "100%",
-              fontSize: 16,
-              padding: "14px 16px",
-              opacity: digBusy ? 0.55 : 1,
-              cursor: digBusy ? "not-allowed" : "pointer",
-              /* undefined だとブラウザ既定のグレーに見えることがあるので、常に色を明示する */
-              backgroundColor: digNeedsTickets
-                ? theme.category.orange
-                : digSheetReady
-                  ? theme.accent.primary
-                  : theme.fill.secondary,
-              color: digNeedsTickets || digSheetReady ? "#fff" : theme.text.tertiary,
-              boxShadow: digSheetReady ? "0 4px 16px rgba(91, 142, 255, 0.55)" : "none",
-              border: digSheetReady ? "none" : `1.5px solid ${theme.stroke.secondary}`,
-            }}
-          >
-            {mining.tickets < 1
-              ? "🎫をもらおう（タスクにもどる）"
-              : `${selectedMeta.emoji} ${selectedMeta.label}をほる · 🎫${mining.tickets}`}
-          </button>
+          {tab === "mine" && overlay !== "digDestination" && (
+            <button
+              type="button"
+              className={`mining-dig-cta${mining.tickets >= 1 && !digBusy ? " is-ready" : ""}`}
+              disabled={digBusy}
+              onClick={() => openDigDestination("place")}
+            >
+              {mining.tickets < 1
+                ? "ほれる回数がありません · タスクへ"
+                : `ほる場所をえらぶ · あと${mining.tickets}回`}
+            </button>
+          )}
+          <div className="mining-main-tabs mining-bottom-tabs" aria-label="そうび・なかま・エンチャ">
+            <button
+              type="button"
+              className={`mining-main-tab${overlay === "equip" ? " is-active" : ""}`}
+              onClick={() => setOverlay("equip")}
+            >
+              そうび
+            </button>
+            <button
+              type="button"
+              className={`mining-main-tab${overlay === "party" ? " is-active" : ""}`}
+              onClick={() => {
+                setOverlay("party");
+                setPartyStep("slots");
+                setPartySlotEdit(null);
+                setPartyCategoryFilter(null);
+              }}
+            >
+              なかま
+            </button>
+            <button
+              type="button"
+              className={`mining-main-tab${overlay === "enchant" ? " is-active" : ""}`}
+              disabled={!tableReady}
+              onClick={() => {
+                if (!tableReady) {
+                  showToast("テーブルができたら使えるよ");
+                  return;
+                }
+                setOverlay("enchant");
+              }}
+            >
+              エンチャ
+            </button>
+          </div>
         </div>
       )}
 
@@ -2749,12 +2604,14 @@ export function MiningScreen({
             className="mining-dig-dest-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="どこをほる？"
+            aria-label={digDestStep === "place" ? "どこをほる？" : `${selectedMeta.label}でほる`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mining-dig-dest-handle" aria-hidden />
             <div className="mining-dig-dest-head">
-              <div className="mining-dig-dest-title">どこをほる？</div>
+              <div className="mining-dig-dest-title">
+                {digDestStep === "place" ? "どこをほる？" : ""}
+              </div>
               <button
                 type="button"
                 className="mining-dig-dest-close"
@@ -2764,80 +2621,215 @@ export function MiningScreen({
                 ×
               </button>
             </div>
-            {ironRoute && (
-              <div className="mining-dig-dest-hint">おすすめ: せきたん → かまど → てつ</div>
+
+            {digDestStep === "place" && (
+              <>
+                {ironRoute && (
+                  <div className="mining-dig-dest-hint">おすすめ: せきたん → かまど → てつ</div>
+                )}
+                <div className="mining-biome-grid">
+                  {GACHA_ORDER.map((gid) => {
+                    const unlocked = mining.unlockedGachas.includes(gid);
+                    const meta = GACHA_META[gid];
+                    const isLucky = unlocked && lucky === gid;
+                    const selected = unlocked && selectedGacha === gid;
+                    const hasOtherSelected = unlocked && selectedGacha !== gid;
+                    const isNext = highlightGacha === gid;
+                    if (!unlocked) {
+                      return (
+                        <button
+                          key={gid}
+                          type="button"
+                          className="mining-biome-card is-locked"
+                          onClick={() => showToast(`${meta.label}：${gachaLockHint(gid)}`)}
+                        >
+                          <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
+                          <div className="mining-biome-card-shade" />
+                          <div className="mining-biome-card-body">
+                            <div className="mining-biome-card-title">🔒 {meta.label}</div>
+                            <div className="mining-biome-card-badge">{gachaLockHint(gid)}</div>
+                          </div>
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        key={gid}
+                        type="button"
+                        className={`mining-biome-card${selected ? " is-selected" : ""}${hasOtherSelected ? " is-dim" : ""}${isNext ? " is-next-target" : ""}`}
+                        onClick={() => selectDigPlace(gid)}
+                      >
+                        <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
+                        <div className="mining-biome-card-shade" />
+                        <div className="mining-biome-card-body">
+                          <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
+                          {meta.badge && <div className="mining-biome-card-badge">{meta.badge}</div>}
+                          {gid === "coal" && !meta.badge && (
+                            <div className="mining-biome-card-badge">石炭がとれる</div>
+                          )}
+                          {gid === "gold" && (
+                            <div className="mining-biome-card-badge is-optional">あとでOK</div>
+                          )}
+                          {gid === "diamond" && !meta.badge && (
+                            <div className="mining-biome-card-badge">ダイヤのかけら</div>
+                          )}
+                          {isLucky && (
+                            <div className="mining-biome-card-badge is-lucky">★こううん日</div>
+                          )}
+                          {selected && (
+                            <div className="mining-biome-card-badge">いまここ</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
-            <div className="mining-biome-grid">
-              {GACHA_ORDER.filter((gid) => mining.unlockedGachas.includes(gid)).map((gid) => {
-                const meta = GACHA_META[gid];
-                const isLucky = lucky === gid;
-                const selected = selectedGacha === gid;
-                const hasOtherSelected = selectedGacha !== gid;
-                return (
-                  <button
-                    key={gid}
-                    type="button"
-                    className={`mining-biome-card${selected ? " is-selected" : ""}${hasOtherSelected ? " is-dim" : ""}`}
-                    onClick={() => digAt(gid)}
-                  >
-                    <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
-                    <div className="mining-biome-card-shade" />
-                    <div className="mining-biome-card-body">
-                      <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
-                      {meta.badge && (
-                        <div className="mining-biome-card-badge">{meta.badge}</div>
+
+            {digDestStep === "rock" && (
+              <div className="mining-dig-dest-rock">
+                <div className="mining-rock-scene" aria-hidden={false}>
+                  <img
+                    className="mining-rock-scene-img"
+                    src={DIG_BLOCK_IMAGE[selectedGacha]}
+                    alt=""
+                    draggable={false}
+                  />
+                  <div className="mining-rock-scene-shade" />
+                  <div className="mining-rock-scene-caption">
+                    <span aria-hidden>{selectedMeta.emoji}</span>
+                    <span>
+                      {selectedGacha === "lava_cave"
+                        ? "ようがんでくむ"
+                        : `${selectedMeta.label}でほる`}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="mining-dig-dest-back"
+                  onClick={() => setDigDestStep("place")}
+                >
+                  ← 場所を選びなおす
+                </button>
+
+                {selectedGacha === "lava_cave" ? (
+                  hasBucket(mining) ? (
+                    <button
+                      type="button"
+                      className="mining-dig-cta is-ready"
+                      style={{ width: "100%", marginTop: 12 }}
+                      disabled={digBusy || mining.tickets < 1}
+                      onClick={() => {
+                        setOverlay(null);
+                        performDig("lava_cave", toolKind, false);
+                      }}
+                    >
+                      バケツでようがんをくむ · 🎫1
+                    </button>
+                  ) : (
+                    <div style={{ marginTop: 12, fontSize: 14, fontWeight: 800, color: theme.category.orange }}>
+                      鉄のバケツを作ってから入ろう
+                      <button
+                        type="button"
+                        style={{ ...btnPrimary, width: "100%", marginTop: 12 }}
+                        onClick={() => {
+                          setOverlay(null);
+                          setTab("craft");
+                        }}
+                      >
+                        クラフトへ
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <div className="mining-rock-pick-stage">
+                      <div className="mining-rock-pick-stage-title">どれをたたく？</div>
+                      <div className="mining-rock-pick-stage-sub">あたりはひみつ。すきなのを選ぼう</div>
+                      <div className="mining-rock-hero-row">
+                        {(["左", "まんなか", "みぎ"] as const).map((label, i) => {
+                          const isHitHint = rockHint.kind === "hit" && rockHint.index === i;
+                          const isMissHint = rockHint.kind === "miss" && rockHint.index === i;
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              className={`mining-rock-tile v${i}${isHitHint ? " is-glow" : ""}${isMissHint ? " is-miss-hint" : ""}`}
+                              disabled={digBusy || mining.tickets < 1}
+                              onClick={() => pickRockInSheet(i)}
+                            >
+                              <span className="mining-rock-tile-face" aria-hidden>
+                                <img
+                                  className="mining-rock-tile-img"
+                                  src={DIG_BLOCK_IMAGE[selectedGacha]}
+                                  alt=""
+                                  draggable={false}
+                                />
+                                <span className="mining-rock-tile-crack" />
+                              </span>
+                              <span className="mining-rock-tile-label">{label}</span>
+                              {isMissHint && (
+                                <span className="mining-rock-tile-badge is-miss">はずれ</span>
+                              )}
+                              {isHitHint && (
+                                <span className="mining-rock-tile-badge is-hit">あたり</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {mining.tickets < 1 && (
+                        <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: theme.text.secondary }}>
+                          チケットが足りないよ
+                        </div>
                       )}
-                      {gid === "gold" && (
-                        <div className="mining-biome-card-badge is-optional">あとでOK</div>
+                      {rockHint.kind === "hit" && (
+                        <div className="mining-rock-pick-lucky-hint">
+                          ヘルメットのヒント：キラッと光る岩があたりだよ
+                        </div>
                       )}
-                      {isLucky && (
-                        <div className="mining-biome-card-badge is-lucky">★こううん日</div>
-                      )}
-                      {selected && (
-                        <div className="mining-biome-card-badge">
-                          {gid === "lava_cave" ? "いまここ · タップでくむ" : "いまここ · タップでほる"}
+                      {rockHint.kind === "miss" && (
+                        <div className="mining-rock-pick-lucky-hint">
+                          ヘルメットのヒント：うすい岩ははずれだよ
                         </div>
                       )}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
+                    {selectedGacha === "river" && hasBucket(mining) && (
+                      <div className="mining-bucket-band">
+                        <button
+                          type="button"
+                          className="mining-bucket-btn"
+                          style={btnGhost}
+                          disabled={digBusy || mining.tickets < 1}
+                          onClick={scoopWater}
+                        >
+                          バケツで水をくむ · 🎫1
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {rockPick && (
-        <MiningRockPick
-          placeLabel={GACHA_META[rockPick.gacha].label}
-          hintLucky={
-            lucky === rockPick.gacha
-            && (
-              !!(mining.equipped.helmet && mining.crafted[mining.equipped.helmet])
-              || sumEnchantBonus(mining, "prospect", prospectBonus, rockPick.toolKind) > 0
-            )
-          }
-          luckyIndex={rockPick.luckyIndex}
-          onPick={(luckyRock) => {
-            const { gacha, toolKind: kind } = rockPick;
-            setRockPick(null);
-            performDig(gacha, kind, luckyRock);
-          }}
-          onCancel={() => setRockPick(null)}
-        />
-      )}
-
-      {enchantOpen && hasEnchantingTable(mining) && (
-        <MiningEnchantPanel
-          mining={mining}
-          onChange={onChange}
-          onClose={() => setEnchantOpen(false)}
-          showToast={(msg) => showToast(msg)}
-          onFirstEnchant={(id) => {
-            setEnchantOpen(false);
-            setDemoDig(id);
-          }}
-        />
+      {overlay === "enchant" && hasEnchantingTable(mining) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 24 }}>
+          <MiningEnchantPanel
+            mining={mining}
+            onChange={onChange}
+            showToast={(msg) => showToast(msg)}
+            onFirstEnchant={(id) => {
+              setOverlay(null);
+              setDemoDig(id);
+            }}
+          />
+        </div>
       )}
 
       {demoDig && (
@@ -2895,12 +2887,12 @@ export function MiningScreen({
                 onClick={() => {
                   onChange({ ...mining, miningRouteBranchSeen: true });
                   setRouteBranchOpen(false);
-                  setEnchantOpen(true);
-                  showToast("つよくなってから行こう！まほうをかけよう", "progress");
+                  setOverlay("enchant");
+                  showToast("つよくなってから行こう！エンチャントをつけよう", "progress");
                 }}
               >
                 <div className="mining-route-branch-title">つよくなってから行く</div>
-                <div className="mining-route-branch-body">まほうをつけてから、ネザーへ進む</div>
+                <div className="mining-route-branch-body">エンチャントをつけてから、ネザーへ進む</div>
               </button>
             </div>
             <button
@@ -2922,7 +2914,7 @@ export function MiningScreen({
           <div className="mining-rock-pick-sheet">
             <div className="mining-rock-pick-title">鉱山がバージョンアップ！</div>
             <div className="mining-rock-pick-sub" style={{ textAlign: "left", lineHeight: 1.55 }}>
-              岩がかたくなったよ。そのかわり、まほうと新しいほりばがふえた！
+              岩がかたくなったよ。そのかわり、エンチャントと新しいほりばがふえた！
               農場・かわ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
             </div>
             <button
