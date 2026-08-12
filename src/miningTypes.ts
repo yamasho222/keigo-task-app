@@ -16,13 +16,32 @@ export type MaterialId =
   | "ancient_debris"
   | "nether_quartz"
   | "netherite_scrap"
-  | "netherite_ingot";
+  | "netherite_ingot"
+  | "sugar_cane"
+  | "paper"
+  | "leather"
+  | "water"
+  | "lava"
+  | "obsidian"
+  | "lapis"
+  | "book";
 
 /** パーティ枠＝ベッド数（1〜3） */
 export const MAX_BEDS = 3;
 export const BED_IMAGE = "/mining/White_Bed.png";
 
-export type GachaId = "wood" | "stone" | "iron" | "coal" | "gold" | "diamond" | "nether";
+export type GachaId =
+  | "wood"
+  | "farm"
+  | "stone"
+  | "river"
+  | "iron"
+  | "coal"
+  | "gold"
+  | "lava_cave"
+  | "diamond"
+  | "lapis_cave"
+  | "nether";
 
 export type GearSlot = "tool" | "helmet" | "chest" | "leggings" | "boots";
 
@@ -32,11 +51,31 @@ export type GearTier = "wood" | "stone" | "iron" | "gold" | "diamond" | "netheri
 
 export type ArmorKind = "helmet" | "chest" | "leggings" | "boots";
 
+/** まほうの付与先（種類ごと1つ） */
+export type EnchantTarget = ToolKind | ArmorKind;
+
+export type EnchantId =
+  | "efficiency"
+  | "fortune"
+  | "refund"
+  | "bargain"
+  | "prospect"
+  | "bonus_star";
+
+export type EnchantLevel = 1 | 2 | 3;
+
+export interface GearEnchant {
+  id: EnchantId;
+  level: EnchantLevel;
+}
+
 export type CraftedGearId =
   | `${ToolKind}_${GearTier}`
   | `${ArmorKind}_${Exclude<GearTier, "wood" | "stone">}`
   | "workbench"
-  | "furnace";
+  | "furnace"
+  | "bucket_iron"
+  | "enchanting_table";
 
 export type MiningSpecialty =
   | "wood"
@@ -80,6 +119,14 @@ export interface MiningState {
   luckyBonusClaimedDate?: string | null;
   /** 前回選んだ／掘った行き先（再入場の初期表示用） */
   lastSelectedGacha?: GachaId | null;
+  /** 種類ごとのまほう */
+  enchants: Partial<Record<EnchantTarget, GearEnchant>>;
+  /** アカウント初回のまほう決定を使ったか */
+  firstEnchantClaimed?: boolean;
+  /** 鉱山バージョンアップ告知を見たか */
+  miningVersionNoticeSeen?: boolean;
+  /** テーブル後の分岐カード（はやく／つよく）を見たか */
+  miningRouteBranchSeen?: boolean;
 }
 
 export const MATERIAL_META: Record<
@@ -102,12 +149,22 @@ export const MATERIAL_META: Record<
   nether_quartz: { label: "ネザークォーツ", emoji: "⬜", image: "/mining/Nether_Quartz.png" },
   netherite_scrap: { label: "ネザライトの欠片", emoji: "📎", image: "/mining/Netherite_Scrap.webp" },
   netherite_ingot: { label: "ネザライトインゴット", emoji: "🛡️", image: "/mining/Netherite_Ingot.png" },
+  sugar_cane: { label: "さとうきび", emoji: "🎋" },
+  paper: { label: "紙", emoji: "📄" },
+  leather: { label: "皮", emoji: "🟤" },
+  water: { label: "水", emoji: "💧" },
+  lava: { label: "ようがん", emoji: "🌋" },
+  obsidian: { label: "黒曜石", emoji: "⬛" },
+  lapis: { label: "ラピスラズリ", emoji: "🔵" },
+  book: { label: "本", emoji: "📖" },
 };
 
 /** 装備・設備の画像（あれば表示） */
 export const GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
   workbench: "/mining/Crafting_Table.png",
   furnace: "/mining/Furnace.png",
+  bucket_iron: "/mining/Iron_Ingot.png",
+  enchanting_table: "/mining/Crafting_Table.png",
   sword_wood: "/mining/Wooden_Sword.png",
   axe_wood: "/mining/Wooden_Axe.png",
   pickaxe_wood: "/mining/Wooden_Pickaxe.webp",
@@ -154,24 +211,35 @@ export function gearImage(id: CraftedGearId): string | undefined {
 
 export const GACHA_ORDER: GachaId[] = [
   "wood",
+  "farm",
   "stone",
+  "river",
   "iron",
   "coal",
   "gold",
+  "lava_cave",
   "diamond",
+  "lapis_cave",
   "nether",
 ];
 
+/** こううん日の抽選から外す（バケツ専用など） */
+export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set(["lava_cave"]);
+
 export const GACHA_META: Record<
   GachaId,
-  { label: string; emoji: string; specialty: MiningSpecialty }
+  { label: string; emoji: string; specialty: MiningSpecialty; badge?: string }
 > = {
   wood: { label: "もり", emoji: "🌲", specialty: "wood" },
+  farm: { label: "農場", emoji: "🌾", specialty: "wood", badge: "羊毛・皮" },
   stone: { label: "いしのどうくつ", emoji: "⛰️", specialty: "cobble" },
+  river: { label: "かわ", emoji: "🌊", specialty: "cobble", badge: "さとうきび／水" },
   iron: { label: "てつのこうざん", emoji: "⛏️", specialty: "iron" },
   coal: { label: "せきたんのやま", emoji: "⬛", specialty: "coal" },
   gold: { label: "きんのこうざん", emoji: "🌟", specialty: "gold" },
+  lava_cave: { label: "ようがんどうくつ", emoji: "🌋", specialty: "iron", badge: "バケツひつよう" },
   diamond: { label: "ダイヤのしんそう", emoji: "💎", specialty: "diamond" },
+  lapis_cave: { label: "ラピスどうくつ", emoji: "🔵", specialty: "diamond", badge: "ラピスだけ" },
   nether: { label: "ネザー", emoji: "🔥", specialty: "netherite" },
 };
 
@@ -181,12 +249,38 @@ export const GACHA_META: Record<
  */
 export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
   wood: "/mining/tree.png",
+  farm: "/mining/White_Wool.png",
   stone: "/mining/Stone.png",
+  river: "/mining/Oak_Genboku.png",
   iron: "/mining/Iron_Ore.png",
   coal: "/mining/Coal_Ore.png",
   gold: "/mining/Gold_Ore.webp",
+  lava_cave: "/mining/Netherrack.webp",
   diamond: "/mining/Diamond_Ore.png",
+  lapis_cave: "/mining/Diamond_Ore.png",
   nether: "/mining/Netherrack.webp",
+};
+
+export const ENCHANT_META: Record<
+  EnchantId,
+  { label: string; blurb: string; weight: number }
+> = {
+  efficiency: { label: "こうりつ", blurb: "たまに素材がもう1こ", weight: 1 },
+  fortune: { label: "大あたり", blurb: "たまにきほんが3こ", weight: 1 },
+  refund: { label: "もどり", blurb: "たまに🎫がもどる", weight: 2 },
+  bargain: { label: "やすうり", blurb: "こうかん所が安くなる", weight: 4 },
+  prospect: { label: "あたり日", blurb: "こううんのほりばで得しやすい", weight: 2 },
+  bonus_star: { label: "⭐おまけ", blurb: "たまにこうかん⭐がもらえる", weight: 4 },
+};
+
+export const ENCHANT_TARGET_LABEL: Record<EnchantTarget, string> = {
+  sword: "剣",
+  axe: "斧",
+  pickaxe: "ツルハシ",
+  helmet: "ヘルメット",
+  chest: "むねあて",
+  leggings: "レギンス",
+  boots: "ブーツ",
 };
 
 export const TOOL_KIND_LABEL: Record<ToolKind, string> = {
@@ -221,12 +315,15 @@ export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
 /** いま掘る場所に対して、そのほるどうぐが効くか一言 */
 export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (kind === "axe") {
-    return gacha === "wood" ? "いま効く：たくさんほれる" : "もりのときだけ効く";
+    if (gacha === "wood" || gacha === "farm") return "いま効く：たくさんほれる";
+    return "もり・農場のときだけ効く";
   }
   if (kind === "pickaxe") {
-    if (gacha === "wood") return "こうざんのときだけ効く";
+    if (gacha === "wood" || gacha === "farm") return "こうざんのときだけ効く";
+    if (gacha === "lava_cave") return "バケツでようがんをくむ";
     if (gacha === "nether") return "いま効く：残骸が出やすい";
     if (gacha === "coal") return "いま効く：石炭+1";
+    if (gacha === "lapis_cave") return "いま効く：ラピス";
     return "いま効く：たくさんほれる";
   }
   if (gacha === "iron" || gacha === "gold") return "たまに+3／インゴット直";
@@ -258,7 +355,7 @@ export const CATEGORY_SPECIALTY: Record<string, MiningSpecialty> = {
   doraemon: "cobble",
   saikyoou: "cobble",
   minecraft: "cobble",
-  brainrot: "iron",
+  brainrot: "coal",
   youtube: "gold",
   sumanai: "diamond",
   kimitsu: "netherite",
@@ -309,19 +406,56 @@ export function emptyMiningState(): MiningState {
     bedtimeTicketClaimed: {},
     luckyBonusClaimedDate: null,
     lastSelectedGacha: null,
+    enchants: {},
+    firstEnchantClaimed: false,
+    miningVersionNoticeSeen: false,
+    miningRouteBranchSeen: false,
   };
 }
 
+const ALL_GACHA_IDS: GachaId[] = [
+  "wood",
+  "farm",
+  "stone",
+  "river",
+  "iron",
+  "coal",
+  "gold",
+  "lava_cave",
+  "diamond",
+  "lapis_cave",
+  "nether",
+];
+
 function isGachaId(id: unknown): id is GachaId {
-  return (
-    id === "wood"
-    || id === "stone"
-    || id === "iron"
-    || id === "coal"
-    || id === "gold"
-    || id === "diamond"
-    || id === "nether"
-  );
+  return typeof id === "string" && (ALL_GACHA_IDS as string[]).includes(id);
+}
+
+const ALL_ENCHANT_IDS: EnchantId[] = [
+  "efficiency",
+  "fortune",
+  "refund",
+  "bargain",
+  "prospect",
+  "bonus_star",
+];
+
+const ALL_ENCHANT_TARGETS: EnchantTarget[] = [
+  "sword",
+  "axe",
+  "pickaxe",
+  "helmet",
+  "chest",
+  "leggings",
+  "boots",
+];
+
+function isEnchantId(id: unknown): id is EnchantId {
+  return typeof id === "string" && (ALL_ENCHANT_IDS as string[]).includes(id);
+}
+
+function isEnchantTarget(id: unknown): id is EnchantTarget {
+  return typeof id === "string" && (ALL_ENCHANT_TARGETS as string[]).includes(id);
 }
 
 function normalizeBoolRecord(raw: unknown): Record<string, boolean> {
@@ -411,7 +545,25 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
     luckyBonusClaimedDate:
       typeof raw.luckyBonusClaimedDate === "string" ? raw.luckyBonusClaimedDate : null,
     lastSelectedGacha,
+    enchants: normalizeEnchants(raw.enchants),
+    firstEnchantClaimed: !!raw.firstEnchantClaimed,
+    miningVersionNoticeSeen: !!raw.miningVersionNoticeSeen,
+    miningRouteBranchSeen: !!raw.miningRouteBranchSeen,
   };
+}
+
+function normalizeEnchants(raw: unknown): Partial<Record<EnchantTarget, GearEnchant>> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<Record<EnchantTarget, GearEnchant>> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isEnchantTarget(k) || !v || typeof v !== "object") continue;
+    const rec = v as { id?: unknown; level?: unknown };
+    if (!isEnchantId(rec.id)) continue;
+    const level = Math.floor(Number(rec.level));
+    if (level !== 1 && level !== 2 && level !== 3) continue;
+    out[k] = { id: rec.id, level };
+  }
+  return out;
 }
 
 export function getMaterialCount(state: MiningState, id: MaterialId): number {
@@ -421,6 +573,8 @@ export function getMaterialCount(state: MiningState, id: MaterialId): number {
 export function gearLabel(id: CraftedGearId): string {
   if (id === "workbench") return "作業台";
   if (id === "furnace") return "かまど";
+  if (id === "bucket_iron") return "鉄のバケツ";
+  if (id === "enchanting_table") return "エンチャントテーブル";
   const [kind, tier] = id.split("_") as [string, GearTier];
   if (kind === "sword" || kind === "axe" || kind === "pickaxe") {
     return `${GEAR_TIER_LABEL[tier]}の${TOOL_KIND_LABEL[kind]}`;
@@ -440,6 +594,13 @@ export function parseToolId(id: CraftedGearId | null): { kind: ToolKind; tier: G
   const m = /^(sword|axe|pickaxe)_(wood|stone|iron|gold|diamond|netherite)$/.exec(id);
   if (!m) return null;
   return { kind: m[1] as ToolKind, tier: m[2] as GearTier };
+}
+
+export function enchantTargetOfGear(id: CraftedGearId): EnchantTarget | null {
+  const tool = parseToolId(id);
+  if (tool) return tool.kind;
+  const m = /^(helmet|chest|leggings|boots)_/.exec(id);
+  return m ? (m[1] as ArmorKind) : null;
 }
 
 export function tierRank(tier: GearTier): number {

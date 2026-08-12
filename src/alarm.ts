@@ -488,4 +488,15 @@ export function playGachaAmbient(gacha: GachaIdLike): void {
   );
 }
 
-type GachaIdLike = "wood" | "stone" | "iron" | "coal" | "gold" | "diamond" | "nether";
+type GachaIdLike =
+  | "wood"
+  | "farm"
+  | "stone"
+  | "river"
+  | "iron"
+  | "coal"
+  | "gold"
+  | "lava_cave"
+  | "diamond"
+  | "lapis_cave"
+  | "nether";

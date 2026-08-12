@@ -16,7 +16,10 @@ export type RecipeId =
   | "smelt_iron"
   | "smelt_gold"
   | "smelt_debris"
-  | "netherite_ingot_craft";
+  | "netherite_ingot_craft"
+  | "paper_batch"
+  | "book_craft"
+  | "obsidian_craft";
 
 export interface MiningRecipe {
   id: RecipeId;
@@ -33,6 +36,8 @@ export interface MiningRecipe {
   needsWorkbench?: boolean;
   /** かまどが必要 */
   needsFurnace?: boolean;
+  /** エンチャントテーブルが必要（ダイヤどうぐ） */
+  needsEnchantingTable?: boolean;
   /**
    * 精錬の燃料（いずれか1つ）。石炭1／板材2／原木2 など。
    * ある場合は costs に燃料を含めず、こちらで支払う。
@@ -71,6 +76,7 @@ function toolRecipe(
   main: MaterialId,
   mainAmount: number,
   unlock: GachaId,
+  opts?: { needsEnchantingTable?: boolean },
 ): MiningRecipe {
   const stickAmount = id.startsWith("sword_") ? 1 : 2;
   return {
@@ -83,6 +89,7 @@ function toolRecipe(
       { material: "stick", amount: stickAmount },
     ],
     needsWorkbench: true,
+    needsEnchantingTable: opts?.needsEnchantingTable,
     requiresUnlock: unlock,
   };
 }
@@ -172,6 +179,59 @@ export const MINING_RECIPES: MiningRecipe[] = [
     costs: [{ material: "cobble", amount: 8 }],
     needsWorkbench: true,
   },
+  {
+    id: "paper_batch",
+    label: "紙",
+    emoji: "📄",
+    outputs: [{ material: "paper", amount: 3 }],
+    costs: [{ material: "sugar_cane", amount: 3 }],
+    requiresUnlock: "river",
+  },
+  {
+    id: "book_craft",
+    label: "本",
+    emoji: "📖",
+    outputs: [{ material: "book", amount: 1 }],
+    costs: [
+      { material: "paper", amount: 3 },
+      { material: "leather", amount: 1 },
+    ],
+    needsWorkbench: true,
+    requiresUnlock: "farm",
+  },
+  {
+    id: "bucket_iron",
+    label: "鉄のバケツ",
+    emoji: "🪣",
+    craftFlag: "bucket_iron",
+    costs: [{ material: "iron_ingot", amount: 3 }],
+    needsWorkbench: true,
+    requiresUnlock: "iron",
+  },
+  {
+    id: "obsidian_craft",
+    label: "黒曜石",
+    emoji: "⬛",
+    outputs: [{ material: "obsidian", amount: 1 }],
+    costs: [
+      { material: "water", amount: 1 },
+      { material: "lava", amount: 1 },
+    ],
+    requiresUnlock: "lava_cave",
+  },
+  {
+    id: "enchanting_table",
+    label: "エンチャントテーブル",
+    emoji: "✨",
+    craftFlag: "enchanting_table",
+    costs: [
+      { material: "obsidian", amount: 4 },
+      { material: "diamond", amount: 2 },
+      { material: "book", amount: 1 },
+    ],
+    needsWorkbench: true,
+    requiresUnlock: "diamond",
+  },
 
   // 木
   toolRecipe("sword_wood", "木の剣", "⚔️", "plank", 2, "wood"),
@@ -254,10 +314,16 @@ export const MINING_RECIPES: MiningRecipe[] = [
   armorRecipe("leggings_gold", "金のレギンス", "gold_ingot", 7, "gold"),
   armorRecipe("boots_gold", "金のブーツ", "gold_ingot", 4, "gold"),
 
-  // ダイヤ
-  toolRecipe("sword_diamond", "ダイヤの剣", "⚔️", "diamond", 2, "diamond"),
-  toolRecipe("axe_diamond", "ダイヤの斧", "🪓", "diamond", 3, "diamond"),
-  toolRecipe("pickaxe_diamond", "ダイヤのツルハシ", "⛏️", "diamond", 3, "diamond"),
+  // ダイヤ（どうぐはテーブル必須）
+  toolRecipe("sword_diamond", "ダイヤの剣", "⚔️", "diamond", 2, "diamond", {
+    needsEnchantingTable: true,
+  }),
+  toolRecipe("axe_diamond", "ダイヤの斧", "🪓", "diamond", 3, "diamond", {
+    needsEnchantingTable: true,
+  }),
+  toolRecipe("pickaxe_diamond", "ダイヤのツルハシ", "⛏️", "diamond", 3, "diamond", {
+    needsEnchantingTable: true,
+  }),
   armorRecipe("helmet_diamond", "ダイヤのヘルメット", "diamond", 5, "diamond"),
   armorRecipe("chest_diamond", "ダイヤのむねあて", "diamond", 8, "diamond"),
   armorRecipe("leggings_diamond", "ダイヤのレギンス", "diamond", 7, "diamond"),
@@ -424,6 +490,45 @@ export function craftGridForRecipe(recipe: MiningRecipe): (MaterialId | null)[] 
     g[5] = "gold_ingot";
     g[6] = "gold_ingot";
     g[8] = "gold_ingot";
+    return g;
+  }
+  if (recipe.id === "paper_batch") {
+    const g = empty();
+    g[3] = "sugar_cane";
+    g[4] = "sugar_cane";
+    g[5] = "sugar_cane";
+    return g;
+  }
+  if (recipe.id === "book_craft") {
+    const g = empty();
+    g[0] = "paper";
+    g[1] = "paper";
+    g[2] = "paper";
+    g[4] = "leather";
+    return g;
+  }
+  if (recipe.id === "bucket_iron") {
+    const g = empty();
+    g[3] = "iron_ingot";
+    g[5] = "iron_ingot";
+    g[7] = "iron_ingot";
+    return g;
+  }
+  if (recipe.id === "obsidian_craft") {
+    const g = empty();
+    g[3] = "water";
+    g[5] = "lava";
+    return g;
+  }
+  if (recipe.id === "enchanting_table") {
+    const g = empty();
+    g[1] = "book";
+    g[3] = "diamond";
+    g[4] = "obsidian";
+    g[5] = "diamond";
+    g[6] = "obsidian";
+    g[7] = "obsidian";
+    g[8] = "obsidian";
     return g;
   }
   if (main && id.includes("netherite")) {

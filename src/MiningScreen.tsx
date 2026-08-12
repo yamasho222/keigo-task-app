@@ -21,6 +21,8 @@ import {
   exchangePointsForLog,
   exchangePointsForWool,
   exchangeQuartzForPoints,
+  hasBucket,
+  hasEnchantingTable,
   hasFurnace,
   hasWorkbench,
   luckyGachaForDate,
@@ -29,6 +31,7 @@ import {
   previewDigBoost,
   recommendToolKind,
   recipesForState,
+  resolveBucketFill,
   resolveDig,
   digHitTier,
   isDigHighlightDrop,
@@ -40,6 +43,15 @@ import {
 } from "./miningProgress";
 import { NETHERITE_UPGRADE_REQUIRES, craftGridForRecipe, recipeProgress } from "./miningRecipes";
 import { MiningItemIcon } from "./MiningItemIcon";
+import { MiningRockPick } from "./MiningRockPick";
+import { MiningEnchantPanel } from "./MiningEnchantPanel";
+import {
+  bargainStars,
+  demoDigLines,
+  listActiveEnchants,
+  prospectBonus,
+  sumEnchantBonus,
+} from "./miningEnchant";
 import {
   boostStrengthLabel,
   craftTutorialBanner,
@@ -60,6 +72,8 @@ import {
   ARMOR_EFFECT_SHORT,
   ARMOR_EFFECT_BLURB,
   DIG_BLOCK_IMAGE,
+  ENCHANT_META,
+  ENCHANT_TARGET_LABEL,
   GACHA_META,
   GACHA_ORDER,
   MATERIAL_META,
@@ -75,6 +89,7 @@ import {
   parseToolId,
   partySlotCount,
   type CraftedGearId,
+  type EnchantId,
   type GachaId,
   type MaterialId,
   type MiningState,
@@ -347,11 +362,15 @@ function DigCrackOverlay({
 
 const BLOCK_TONE: Record<GachaId, { top: string; front: string; side: string; edge: string }> = {
   wood: { top: "#6d9b45", front: "#8f6a3e", side: "#6e4f2c", edge: "#3d2a16" },
+  farm: { top: "#c8e6a0", front: "#8fbc5a", side: "#6a9a3a", edge: "#3d5a1a" },
   stone: { top: "#9aa0a6", front: "#7d838a", side: "#5f646a", edge: "#2f3338" },
+  river: { top: "#7ec8e8", front: "#4a9fc4", side: "#2a7a90", edge: "#0a3a48" },
   iron: { top: "#c4cdd6", front: "#8a959f", side: "#6a737c", edge: "#3a424a" },
   coal: { top: "#5a5a5a", front: "#3d3d3d", side: "#2a2a2a", edge: "#111" },
   gold: { top: "#f0d060", front: "#c9a227", side: "#9a7a14", edge: "#5a4408" },
+  lava_cave: { top: "#e07030", front: "#c04018", side: "#8a2010", edge: "#3a0a08" },
   diamond: { top: "#6ad4e8", front: "#2aa8c4", side: "#1a7a90", edge: "#0a3a48" },
+  lapis_cave: { top: "#4a6ad4", front: "#2a48a8", side: "#1a3070", edge: "#0a1840" },
   nether: { top: "#8b3a32", front: "#6b241e", side: "#4a1512", edge: "#220a08" },
 };
 
@@ -721,10 +740,14 @@ function CraftSuccessPop({
 }
 
 function gachaLockHint(gid: GachaId): string {
+  if (gid === "farm") return "木のどうぐ3つでひらく";
   if (gid === "stone") return "木の剣・斧・ツルハシでひらく";
+  if (gid === "river") return "石のどうぐ3つでひらく";
   if (gid === "iron" || gid === "gold" || gid === "coal") return "石の剣・斧・ツルハシでひらく";
-  if (gid === "diamond") return "鉄の剣・斧・ツルハシでひらく";
-  if (gid === "nether") return "ダイヤの剣・斧・ツルハシでひらく";
+  if (gid === "lava_cave" || gid === "lapis_cave" || gid === "diamond") {
+    return "鉄のどうぐ3つでひらく";
+  }
+  if (gid === "nether") return "テーブル＋ダイヤどうぐ3つでひらく";
   return "まだひらいてない";
 }
 
@@ -766,6 +789,17 @@ export function MiningScreen({
   const [chapterQueue, setChapterQueue] = useState<ChapterMoment[]>([]);
   const [craftPop, setCraftPop] = useState<{ label: string; icon: ReactNode } | null>(null);
   const [armorDetailOpen, setArmorDetailOpen] = useState<Partial<Record<ArmorSlot, boolean>>>({});
+  const [rockPick, setRockPick] = useState<{
+    gacha: GachaId;
+    toolKind: ToolKind;
+    luckyIndex: number;
+  } | null>(null);
+  const [enchantOpen, setEnchantOpen] = useState(false);
+  const [versionNoticeOpen, setVersionNoticeOpen] = useState(
+    () => !mining.miningVersionNoticeSeen,
+  );
+  const [routeBranchOpen, setRouteBranchOpen] = useState(false);
+  const [demoDig, setDemoDig] = useState<EnchantId | null>(null);
   const [smeltingId, setSmeltingId] = useState<string | null>(null);
   const [smeltProgress, setSmeltProgress] = useState(0);
   const [pinRect, setPinRect] = useState({ top: 0, left: 0, width: 0, padL: 16, padR: 16, padT: 16 });
@@ -834,6 +868,11 @@ export function MiningScreen({
     }),
     [mining, selectedGacha, toolKind, buddyProgress, dateKey],
   );
+  const activeEnchantChips = useMemo(
+    () => listActiveEnchants(mining, toolKind).slice(0, 2),
+    [mining, toolKind],
+  );
+  const bargainOff = Math.min(5, sumEnchantBonus(mining, "bargain", bargainStars));
 
   const partyDigItems = useMemo(() => {
     return mining.partyIds
@@ -984,27 +1023,80 @@ export function MiningScreen({
     if (next >= MAX_CRACK_STAGE) finishCrackToBreak();
   };
 
-  /** 行き先を確定して即掘る（シート用。gacha を明示して stale state を避ける） */
-  const digAt = (gacha: GachaId) => {
+  /** 掘り実行（岩3択のあと、またはバケツくみ） */
+  const performDig = (gacha: GachaId, kind: ToolKind, luckyRock: boolean) => {
     if (digBusy) return;
-    const kind = recommendToolKind(gacha);
-    setSelectedGacha(gacha);
-    setToolKind(kind);
-    setOverlay(null);
     void unlockAudio();
     playGachaAmbient(gacha);
     let stateForDig: MiningState = { ...mining, lastSelectedGacha: gacha };
     const best = bestOwnedTool(stateForDig, kind);
     if (best) stateForDig = equipTool(stateForDig, best);
+
+    if (gacha === "lava_cave") {
+      if (!hasBucket(stateForDig)) {
+        onChange(stateForDig);
+        showToast("バケツをそうびしてから入るよ");
+        return;
+      }
+      const result = resolveBucketFill({ state: stateForDig, gacha: "lava_cave" });
+      if ("error" in result) {
+        onChange(stateForDig);
+        showToast(result.error);
+        return;
+      }
+      beginDigFx(result);
+      return;
+    }
+
     const result = resolveDig({
       state: stateForDig,
       gacha,
       toolKind: kind,
       buddyProgress,
       dateKey,
+      luckyRock,
     });
     if ("error" in result) {
       onChange(stateForDig);
+      showToast(result.error);
+      return;
+    }
+    beginDigFx(result);
+  };
+
+  /** 行き先を確定 → 岩3択 or バケツくみ */
+  const digAt = (gacha: GachaId) => {
+    if (digBusy) return;
+    const kind = recommendToolKind(gacha);
+    setSelectedGacha(gacha);
+    setToolKind(kind);
+    setOverlay(null);
+
+    if (gacha === "lava_cave") {
+      if (!hasBucket(mining)) {
+        showToast("鉄のバケツを作ってからね");
+        return;
+      }
+      performDig(gacha, kind, false);
+      return;
+    }
+
+    const luckyIndex = Math.floor(Math.random() * 3);
+    setRockPick({ gacha, toolKind: kind, luckyIndex });
+  };
+
+  const scoopWater = () => {
+    if (digBusy) return;
+    if (!hasBucket(mining)) {
+      showToast("鉄のバケツを作ってからね");
+      return;
+    }
+    setSelectedGacha("river");
+    setOverlay(null);
+    void unlockAudio();
+    const stateForDig: MiningState = { ...mining, lastSelectedGacha: "river" };
+    const result = resolveBucketFill({ state: stateForDig, gacha: "river" });
+    if ("error" in result) {
       showToast(result.error);
       return;
     }
@@ -1030,28 +1122,30 @@ export function MiningScreen({
       closeDigFx();
       return;
     }
-    const result = resolveDig({
-      state: mining,
-      gacha: selectedGacha,
-      toolKind,
-      buddyProgress,
-      dateKey,
-    });
-    if ("error" in result) {
-      showToast(result.error);
-      closeDigFx();
+    setDigFx("idle");
+    setDigBusy(false);
+    setCrackStage(0);
+    crackStageRef.current = 0;
+    crackDoneRef.current = false;
+    if (selectedGacha === "lava_cave") {
+      performDig("lava_cave", toolKind, false);
       return;
     }
-    beginDigFx(result);
+    const luckyIndex = Math.floor(Math.random() * 3);
+    setRockPick({ gacha: selectedGacha, toolKind, luckyIndex });
   };
 
   const announceUnlocks = (before: Set<GachaId>, next: MiningState) => {
     const unlockMessages: { id: GachaId; label: string }[] = [
+      { id: "farm", label: "農場 ひらいた！" },
       { id: "stone", label: "いしのどうくつ ひらいた！" },
+      { id: "river", label: "かわ ひらいた！" },
       { id: "iron", label: "てつのこうざん ひらいた！" },
       { id: "coal", label: "せきたんのやま ひらいた！" },
       { id: "gold", label: "きんのこうざん ひらいた！" },
+      { id: "lava_cave", label: "ようがんどうくつ ひらいた！" },
       { id: "diamond", label: "ダイヤのしんそう ひらいた！" },
+      { id: "lapis_cave", label: "ラピスどうくつ ひらいた！" },
       { id: "nether", label: "ネザー ひらいた！" },
     ];
     let delay = 500;
@@ -1233,6 +1327,17 @@ export function MiningScreen({
   const digNeedsTickets = mining.tickets < 1;
   const digSheetReady = !digBusy && mining.tickets >= 1;
 
+  useEffect(() => {
+    if (
+      hasEnchantingTable(mining)
+      && !mining.miningRouteBranchSeen
+      && !versionNoticeOpen
+      && !mining.unlockedGachas.includes("nether")
+    ) {
+      setRouteBranchOpen(true);
+    }
+  }, [mining, versionNoticeOpen]);
+
   const jumpFromHero = () => {
     if (nextHero.preferredGacha && mining.unlockedGachas.includes(nextHero.preferredGacha)) {
       chooseGacha(nextHero.preferredGacha);
@@ -1358,6 +1463,25 @@ export function MiningScreen({
             <button type="button" className="mining-next-hero-cta" style={btnPrimary} onClick={jumpFromHero}>
               {nextHero.jumpTab === "mine" ? "ほりにいく" : "クラフトへ"}
             </button>
+          )}
+          {hasEnchantingTable(mining) && (
+            <button
+              type="button"
+              className="mining-next-hero-cta"
+              style={{ ...btnGhost, marginTop: 8, fontWeight: 900 }}
+              onClick={() => setEnchantOpen(true)}
+            >
+              ✨ まほうをかける
+            </button>
+          )}
+          {activeEnchantChips.length > 0 && (
+            <div className="mining-enchant-chips" aria-label="いまのまほう">
+              {activeEnchantChips.map(({ target, enchant }) => (
+                <span key={target} className="mining-enchant-chip">
+                  {ENCHANT_TARGET_LABEL[target]} · {ENCHANT_META[enchant.id].label} Lv{enchant.level}
+                </span>
+              ))}
+            </div>
           )}
         </div>
 
@@ -1561,13 +1685,16 @@ export function MiningScreen({
                     <div className="mining-biome-card-shade" />
                     <div className="mining-biome-card-body">
                       <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
-                      {gid === "coal" && (
+                      {meta.badge && (
+                        <div className="mining-biome-card-badge">{meta.badge}</div>
+                      )}
+                      {gid === "coal" && !meta.badge && (
                         <div className="mining-biome-card-badge">石炭がとれる</div>
                       )}
                       {gid === "gold" && (
                         <div className="mining-biome-card-badge is-optional">あとでOK</div>
                       )}
-                      {gid === "diamond" && (
+                      {gid === "diamond" && !meta.badge && (
                         <div className="mining-biome-card-badge">ダイヤのかけら</div>
                       )}
                       {isLucky && (
@@ -1578,6 +1705,16 @@ export function MiningScreen({
                 );
               })}
             </div>
+            {selectedGacha === "river" && hasBucket(mining) && (
+              <button type="button" style={{ ...btnPrimary, width: "100%", marginTop: 10 }} onClick={scoopWater}>
+                🪣 バケツで水をくむ · 🎫1
+              </button>
+            )}
+            {selectedGacha === "lava_cave" && !hasBucket(mining) && (
+              <div style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: theme.category.orange }}>
+                鉄のバケツを作ってから入ろう
+              </div>
+            )}
             {GACHA_ORDER.some((gid) => !mining.unlockedGachas.includes(gid)) && (
               <div className="mining-biome-locked">
                 <div style={{ fontSize: 11, fontWeight: 800, color: theme.text.tertiary }}>まだの場所</div>
@@ -1783,6 +1920,11 @@ export function MiningScreen({
                     <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.45 }}>
                       効果: {TOOL_EFFECT_BLURB[kind]}
                     </div>
+                    {mining.enchants[kind] && (
+                      <div className="mining-enchant-chip is-inline">
+                        まほう: {ENCHANT_META[mining.enchants[kind]!.id].label} Lv{mining.enchants[kind]!.level}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -1812,6 +1954,11 @@ export function MiningScreen({
                     <div style={{ fontSize: 13, fontWeight: 800, color: theme.text.primary, marginBottom: 4, lineHeight: 1.4 }}>
                       {ARMOR_EFFECT_SHORT[slot]}
                     </div>
+                    {mining.enchants[slot] && (
+                      <div className="mining-enchant-chip is-inline" style={{ marginBottom: 6 }}>
+                        まほう: {ENCHANT_META[mining.enchants[slot]!.id].label} Lv{mining.enchants[slot]!.level}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => setArmorDetailOpen((prev) => ({ ...prev, [slot]: !prev[slot] }))}
@@ -2409,6 +2556,11 @@ export function MiningScreen({
             <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
               こうかん⭐と素材を、おたがいにかえられるよ
             </div>
+            {bargainOff > 0 && (
+              <div className="mining-bargain-banner">
+                やすうりで⭐{bargainOff} 安くなってる！
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -2632,26 +2784,157 @@ export function MiningScreen({
                     <div className="mining-biome-card-shade" />
                     <div className="mining-biome-card-body">
                       <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
-                      {gid === "coal" && (
-                        <div className="mining-biome-card-badge">石炭がとれる</div>
+                      {meta.badge && (
+                        <div className="mining-biome-card-badge">{meta.badge}</div>
                       )}
                       {gid === "gold" && (
                         <div className="mining-biome-card-badge is-optional">あとでOK</div>
-                      )}
-                      {gid === "diamond" && (
-                        <div className="mining-biome-card-badge">ダイヤのかけら</div>
                       )}
                       {isLucky && (
                         <div className="mining-biome-card-badge is-lucky">★こううん日</div>
                       )}
                       {selected && (
-                        <div className="mining-biome-card-badge">いまここ · タップでほる</div>
+                        <div className="mining-biome-card-badge">
+                          {gid === "lava_cave" ? "いまここ · タップでくむ" : "いまここ · タップでほる"}
+                        </div>
                       )}
                     </div>
                   </button>
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {rockPick && (
+        <MiningRockPick
+          placeLabel={GACHA_META[rockPick.gacha].label}
+          hintLucky={
+            lucky === rockPick.gacha
+            && (
+              !!(mining.equipped.helmet && mining.crafted[mining.equipped.helmet])
+              || sumEnchantBonus(mining, "prospect", prospectBonus, rockPick.toolKind) > 0
+            )
+          }
+          luckyIndex={rockPick.luckyIndex}
+          onPick={(luckyRock) => {
+            const { gacha, toolKind: kind } = rockPick;
+            setRockPick(null);
+            performDig(gacha, kind, luckyRock);
+          }}
+          onCancel={() => setRockPick(null)}
+        />
+      )}
+
+      {enchantOpen && hasEnchantingTable(mining) && (
+        <MiningEnchantPanel
+          mining={mining}
+          onChange={onChange}
+          onClose={() => setEnchantOpen(false)}
+          showToast={(msg) => showToast(msg)}
+          onFirstEnchant={(id) => {
+            setEnchantOpen(false);
+            setDemoDig(id);
+          }}
+        />
+      )}
+
+      {demoDig && (
+        <div className="mining-rock-pick-backdrop" role="dialog" aria-label="デモほり">
+          <div className="mining-rock-pick-sheet">
+            {(() => {
+              const demo = demoDigLines(demoDig);
+              return (
+                <>
+                  <div className="mining-rock-pick-title">{demo.title}</div>
+                  <div className="mining-demo-lines">
+                    {demo.lines.map((line) => (
+                      <div key={line} className="mining-demo-line">{line}</div>
+                    ))}
+                  </div>
+                  <div className="mining-demo-highlight">{demo.highlight}</div>
+                  <button
+                    type="button"
+                    className="mining-enchant-primary"
+                    onClick={() => setDemoDig(null)}
+                  >
+                    わかった！
+                  </button>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {routeBranchOpen && !versionNoticeOpen && !demoDig && (
+        <div className="mining-rock-pick-backdrop" role="dialog" aria-label="つぎのどっちも正解">
+          <div className="mining-rock-pick-sheet">
+            <div className="mining-rock-pick-title">どっちも正解！</div>
+            <div className="mining-rock-pick-sub" style={{ textAlign: "left", lineHeight: 1.5 }}>
+              テーブルができたら、すきな進み方でOKだよ
+            </div>
+            <div className="mining-route-branch">
+              <button
+                type="button"
+                className="mining-route-branch-card"
+                onClick={() => {
+                  onChange({ ...mining, miningRouteBranchSeen: true });
+                  setRouteBranchOpen(false);
+                  setTab("craft");
+                  showToast("はやくネザーへ！ダイヤどうぐをつくろう", "progress");
+                }}
+              >
+                <div className="mining-route-branch-title">はやくネザーへ</div>
+                <div className="mining-route-branch-body">ダイヤどうぐ3つをそろえて、すぐネザーへ</div>
+              </button>
+              <button
+                type="button"
+                className="mining-route-branch-card"
+                onClick={() => {
+                  onChange({ ...mining, miningRouteBranchSeen: true });
+                  setRouteBranchOpen(false);
+                  setEnchantOpen(true);
+                  showToast("つよくなってから行こう！まほうをかけよう", "progress");
+                }}
+              >
+                <div className="mining-route-branch-title">つよくなってから行く</div>
+                <div className="mining-route-branch-body">まほうをつけてから、ネザーへ進む</div>
+              </button>
+            </div>
+            <button
+              type="button"
+              className="mining-enchant-secondary"
+              onClick={() => {
+                onChange({ ...mining, miningRouteBranchSeen: true });
+                setRouteBranchOpen(false);
+              }}
+            >
+              あとで決める
+            </button>
+          </div>
+        </div>
+      )}
+
+      {versionNoticeOpen && (
+        <div className="mining-rock-pick-backdrop" role="dialog" aria-label="鉱山アップデート">
+          <div className="mining-rock-pick-sheet">
+            <div className="mining-rock-pick-title">鉱山がバージョンアップ！</div>
+            <div className="mining-rock-pick-sub" style={{ textAlign: "left", lineHeight: 1.55 }}>
+              岩がかたくなったよ。そのかわり、まほうと新しいほりばがふえた！
+              農場・かわ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
+            </div>
+            <button
+              type="button"
+              className="mining-enchant-primary"
+              onClick={() => {
+                onChange({ ...mining, miningVersionNoticeSeen: true });
+                setVersionNoticeOpen(false);
+              }}
+            >
+              わかった！
+            </button>
           </div>
         </div>
       )}

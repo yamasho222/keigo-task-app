@@ -31,6 +31,14 @@ const DEV_MATERIALS: Record<MaterialId, number> = {
   nether_quartz: DEV_MATERIAL_AMOUNT,
   netherite_scrap: DEV_MATERIAL_AMOUNT,
   netherite_ingot: DEV_MATERIAL_AMOUNT,
+  sugar_cane: DEV_MATERIAL_AMOUNT,
+  paper: DEV_MATERIAL_AMOUNT,
+  leather: DEV_MATERIAL_AMOUNT,
+  water: DEV_MATERIAL_AMOUNT,
+  lava: DEV_MATERIAL_AMOUNT,
+  obsidian: DEV_MATERIAL_AMOUNT,
+  lapis: DEV_MATERIAL_AMOUNT,
+  book: DEV_MATERIAL_AMOUNT,
 };
 
 const DEV_CRAFTED: CraftedGearId[] = [

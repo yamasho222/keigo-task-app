@@ -2294,3 +2294,249 @@ button {
   0%, 100% { background-color: rgba(91, 142, 255, 0.08); }
   50% { background-color: rgba(91, 142, 255, 0.2); }
 }
+
+/* 掘り3択・まほう */
+.mining-rock-pick-backdrop,
+.mining-enchant-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+.mining-rock-pick-sheet,
+.mining-enchant-sheet {
+  width: min(440px, 100%);
+  max-height: min(88vh, 720px);
+  overflow: auto;
+  background: var(--bg-elevated, #fff);
+  border-radius: 18px 18px 14px 14px;
+  padding: 18px 16px 16px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.2);
+}
+.mining-rock-pick-title,
+.mining-enchant-title {
+  font-size: 18px;
+  font-weight: 900;
+}
+.mining-rock-pick-sub,
+.mining-enchant-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary, #666);
+}
+.mining-rock-pick-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #c47b00;
+}
+.mining-rock-pick-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+.mining-rock-card {
+  border: 2px solid var(--stroke-secondary, #ddd);
+  border-radius: 14px;
+  background: var(--fill-secondary, #f4f4f4);
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 96px;
+  cursor: pointer;
+}
+.mining-rock-card.is-glow {
+  border-color: #f0c14b;
+  box-shadow: 0 0 0 3px rgba(240, 193, 75, 0.45);
+  background: #fff8e6;
+}
+.mining-rock-emoji { font-size: 28px; }
+.mining-rock-label { font-size: 12px; font-weight: 800; }
+.mining-rock-cancel,
+.mining-enchant-close,
+.mining-enchant-secondary {
+  width: 100%;
+  margin-top: 8px;
+  border: 1.5px solid var(--stroke-secondary, #ddd);
+  border-radius: 12px;
+  padding: 12px;
+  font-weight: 800;
+  background: transparent;
+  cursor: pointer;
+}
+.mining-enchant-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.mining-enchant-lapis {
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.mining-enchant-section {
+  font-size: 14px;
+  font-weight: 900;
+  margin: 8px 0;
+}
+.mining-enchant-free {
+  margin-left: 6px;
+  color: #2f8a3a;
+  font-size: 12px;
+}
+.mining-enchant-targets,
+.mining-enchant-offers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mining-enchant-target,
+.mining-enchant-offer {
+  text-align: left;
+  border: 1.5px solid var(--stroke-secondary, #ddd);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--fill-secondary, #f7f7f7);
+  cursor: pointer;
+}
+.mining-enchant-target {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 800;
+}
+.mining-enchant-target-meta {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+.mining-enchant-offer-name {
+  font-size: 16px;
+  font-weight: 900;
+}
+.mining-enchant-offer-blurb {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary, #666);
+}
+.mining-enchant-offer-cost {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #2f5bff;
+}
+.mining-enchant-primary {
+  width: 100%;
+  margin-top: 10px;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-weight: 900;
+  background: #5b8eff;
+  color: #fff;
+  cursor: pointer;
+}
+.mining-enchant-current-name {
+  font-size: 16px;
+  font-weight: 900;
+}
+.mining-enchant-blurb {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary, #666);
+}
+.mining-enchant-max {
+  font-weight: 900;
+  color: #2f8a3a;
+  margin: 8px 0;
+}
+.mining-enchant-empty {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-tertiary, #888);
+}
+.mining-enchant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.mining-enchant-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: #eaf0ff;
+  color: #2f5bff;
+  border: 1px solid #c5d4ff;
+}
+.mining-enchant-chip.is-inline {
+  margin-top: 6px;
+}
+.mining-bargain-banner {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff6e0;
+  border: 1px solid #f0c14b;
+  font-size: 12px;
+  font-weight: 900;
+  color: #8a5a00;
+}
+.mining-demo-lines {
+  margin: 12px 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mining-demo-line {
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fill-secondary, #f4f4f4);
+}
+.mining-demo-highlight {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 900;
+  color: #2f8a3a;
+  line-height: 1.4;
+}
+.mining-route-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0 8px;
+}
+.mining-route-branch-card {
+  text-align: left;
+  border: 2px solid var(--stroke-secondary, #ddd);
+  border-radius: 14px;
+  padding: 14px 12px;
+  background: var(--fill-secondary, #f7f7f7);
+  cursor: pointer;
+}
+.mining-route-branch-title {
+  font-size: 16px;
+  font-weight: 900;
+}
+.mining-route-branch-body {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary, #666);
+  line-height: 1.45;
+}
