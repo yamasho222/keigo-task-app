@@ -79,7 +79,6 @@ import {
   GACHA_ORDER,
   MATERIAL_META,
   MAX_BEDS,
-  TOOL_KIND_LABEL,
   TOOL_EFFECT_BLURB,
   SPECIALTY_META,
   specialtyBlurb,
@@ -2556,14 +2555,14 @@ export function MiningScreen({
           <div className="mining-main-tabs mining-bottom-tabs" aria-label="そうび・なかま・エンチャ">
             <button
               type="button"
-              className={`mining-main-tab${overlay === "equip" ? " is-active" : ""}`}
+              className="mining-main-tab"
               onClick={() => setOverlay("equip")}
             >
               そうび
             </button>
             <button
               type="button"
-              className={`mining-main-tab${overlay === "party" ? " is-active" : ""}`}
+              className="mining-main-tab"
               onClick={() => {
                 setOverlay("party");
                 setPartyStep("slots");
@@ -2575,7 +2574,7 @@ export function MiningScreen({
             </button>
             <button
               type="button"
-              className={`mining-main-tab${overlay === "enchant" ? " is-active" : ""}`}
+              className="mining-main-tab"
               disabled={!tableReady}
               onClick={() => {
                 if (!tableReady) {
