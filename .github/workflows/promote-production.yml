@@ -1,0 +1,40 @@
+# 本番ドメインが古いデプロイに残らないように、main の Production READY を強制 promote / alias する
+name: Promote production domain
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: promote-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ensure production domain tracks latest READY deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          PRODUCTION_ALIAS: app-nine-phi-bomgfkrycz.vercel.app
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::VERCEL_TOKEN が未設定です。autoAssignCustomDomains=true に依存します。"
+            echo "保険の promote を動かすには https://vercel.com/account/tokens で Personal Token を作り、"
+            echo "gh secret set VERCEL_TOKEN してください。"
+            exit 0
+          fi
+          node scripts/promote-production.mjs
