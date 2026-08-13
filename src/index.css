@@ -1071,6 +1071,32 @@ button {
   color: #5B8EFF;
 }
 
+.mining-craft-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: visible;
+  margin: 2px 0 6px;
+  padding-bottom: 2px;
+}
+.mining-craft-tab {
+  flex: 0 0 auto;
+  border: 1.5px solid #dddddd;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  background-color: #f0f0f0;
+  color: #1a1a1a;
+  white-space: nowrap;
+}
+.mining-craft-tab.is-active {
+  background-color: rgba(91, 142, 255, 0.14);
+  border-color: #5B8EFF;
+  color: #5B8EFF;
+}
+
 .mining-dig-card.is-crack {
   animation: miningDigPop 0.3s ease-out;
 }
@@ -2065,6 +2091,11 @@ button {
 }
 
 /* 結果を洞窟のまま */
+.mining-fp-scene.is-reveal-result {
+  overflow-y: auto;
+  touch-action: pan-y;
+  cursor: default;
+}
 .mining-fp-result {
   position: relative;
   z-index: 6;
@@ -2073,8 +2104,24 @@ button {
   align-items: center;
   justify-content: flex-end;
   min-height: 100%;
-  padding: 24px 16px max(28px, env(safe-area-inset-bottom));
+  padding: 24px 16px max(16px, env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+.mining-fp-result-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.mining-fp-result-total {
+  margin-top: 0;
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.85), 0 0 16px rgba(255,200,80,0.35);
+  letter-spacing: 0.02em;
 }
 .mining-fp-result-title {
   font-size: 28px;
@@ -2110,6 +2157,95 @@ button {
 .mining-fp-result .mining-dig-slot-label {
   color: rgba(255,255,255,0.9);
   text-shadow: 0 1px 2px #000;
+  max-width: none;
+  font-size: 15px;
+}
+.mining-dig-reveal-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0 12px;
+  width: 100%;
+}
+.mining-dig-reveal-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.mining-dig-reveal-icons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+.mining-dig-reveal-icon {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter:
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 12px rgba(255, 220, 120, 0.38));
+  animation: miningDigIconPop 0.48s cubic-bezier(0.2, 1.35, 0.35, 1) both;
+}
+.mining-dig-reveal-icon.is-highlight {
+  filter:
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 18px rgba(255, 180, 40, 0.78));
+}
+.mining-dig-reveal-icon.is-great {
+  filter:
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 22px rgba(255, 214, 70, 0.9));
+}
+.mining-dig-reveal-more {
+  min-width: 52px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 4px #000;
+}
+@keyframes miningDigIconPop {
+  0% { opacity: 0; transform: scale(0.42) translateY(14px); }
+  58% { opacity: 1; transform: scale(1.14) translateY(-5px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.mining-craft-qty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.mining-craft-qty-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1.5px solid #dddddd;
+  background: #f0f0f0;
+  color: #1a1a1a;
+  font-weight: 900;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.mining-craft-qty-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mining-craft-qty-n {
+  min-width: 1.5em;
+  text-align: center;
+  font-weight: 900;
+  font-size: 16px;
 }
 .mining-fp-result .mining-dig-breakdown,
 .mining-fp-result .mining-dig-hit-reasons,
@@ -2117,6 +2253,16 @@ button {
 .mining-fp-result .mining-dig-sub {
   color: rgba(255,255,255,0.82);
   text-shadow: 0 1px 2px rgba(0,0,0,0.75);
+}
+.mining-fp-result .mining-dig-breakdown {
+  margin: 12px 0 0;
+  width: 100%;
+  max-width: 100%;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 0 4px;
+  box-sizing: border-box;
 }
 .mining-fp-result .mining-dig-hit-reasons-toggle {
   color: #ffe0a0;

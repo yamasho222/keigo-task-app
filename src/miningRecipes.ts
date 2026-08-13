@@ -364,10 +364,100 @@ export function canAffordRecipe(
   return true;
 }
 
+/** いまの材料・燃料で何回つくれるか。装備／設備は常に最大1。ベッドは残り枠まで。 */
+export function maxCraftTimes(
+  recipe: MiningRecipe,
+  have: (id: MaterialId) => number,
+  opts?: { fuel?: RecipeCost | null; remainingBeds?: number },
+): number {
+  if (recipe.craftFlag) {
+    return canAffordRecipe(recipe.costs, have, recipe.fuelOptions) ? 1 : 0;
+  }
+
+  const per = new Map<MaterialId, number>();
+  for (const c of recipe.costs) {
+    per.set(c.material, (per.get(c.material) ?? 0) + c.amount);
+  }
+  let fuel: RecipeCost | null = null;
+  if (recipe.fuelOptions?.length) {
+    fuel = opts?.fuel ?? pickFuelOption(recipe.fuelOptions, have);
+    if (!fuel) return 0;
+    per.set(fuel.material, (per.get(fuel.material) ?? 0) + fuel.amount);
+  }
+
+  let times = Number.POSITIVE_INFINITY;
+  for (const [material, amount] of per) {
+    if (amount <= 0) continue;
+    times = Math.min(times, Math.floor(have(material) / amount));
+  }
+  if (!Number.isFinite(times)) times = 0;
+  times = Math.max(0, times);
+
+  if (recipe.grantsBed) {
+    const remaining = Math.max(0, Math.floor(opts?.remainingBeds ?? 0));
+    times = Math.min(times, remaining);
+  }
+  return times;
+}
+
 /** 解放状況に応じて表示するレシピ */
 export function visibleRecipes(unlockedGachas: GachaId[]): MiningRecipe[] {
   const set = new Set(unlockedGachas);
   return MINING_RECIPES.filter((r) => !r.requiresUnlock || set.has(r.requiresUnlock));
+}
+
+export type CraftRecipeTab =
+  | "all"
+  | "material"
+  | "sword"
+  | "axe"
+  | "pickaxe"
+  | "armor"
+  | "facility";
+
+export const CRAFT_RECIPE_TABS: { id: CraftRecipeTab; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "material", label: "素材" },
+  { id: "sword", label: "剣" },
+  { id: "axe", label: "斧" },
+  { id: "pickaxe", label: "ツルハシ" },
+  { id: "armor", label: "防具" },
+  { id: "facility", label: "せつび" },
+];
+
+const FACILITY_RECIPE_IDS = new Set<string>([
+  "workbench",
+  "furnace",
+  "bed",
+  "enchanting_table",
+  "bucket_iron",
+]);
+
+export function craftRecipeTabOf(recipe: MiningRecipe): Exclude<CraftRecipeTab, "all"> {
+  const id = String(recipe.craftFlag ?? recipe.id);
+  if (id.startsWith("sword_")) return "sword";
+  if (id.startsWith("axe_")) return "axe";
+  if (id.startsWith("pickaxe_")) return "pickaxe";
+  if (
+    id.startsWith("helmet_")
+    || id.startsWith("chest_")
+    || id.startsWith("leggings_")
+    || id.startsWith("boots_")
+  ) {
+    return "armor";
+  }
+  if (recipe.grantsBed || FACILITY_RECIPE_IDS.has(id)) return "facility";
+  return "material";
+}
+
+export function recipeMatchesCraftTab(recipe: MiningRecipe, tab: CraftRecipeTab): boolean {
+  if (tab === "all") return true;
+  return craftRecipeTabOf(recipe) === tab;
+}
+
+export function craftTabForRecipeId(recipeId: string): CraftRecipeTab {
+  const recipe = MINING_RECIPES.find((r) => r.id === recipeId);
+  return recipe ? craftRecipeTabOf(recipe) : "all";
 }
 
 /** 3×3クラフトの形を見せる用（操作はさせない）。精錬は null */

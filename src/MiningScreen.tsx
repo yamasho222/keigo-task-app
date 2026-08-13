@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { StickerFrameWithBadge, StickerImg } from "./Rewards";
@@ -38,11 +38,22 @@ import {
   isDigHighlightDrop,
   setPartySlot,
   tryCraft,
+  type DigHitTier,
   type DigResult,
   type HelmetRockHint,
   type MiningRecipe,
 } from "./miningProgress";
-import { NETHERITE_UPGRADE_REQUIRES, craftGridForRecipe, recipeProgress } from "./miningRecipes";
+import {
+  CRAFT_RECIPE_TABS,
+  NETHERITE_UPGRADE_REQUIRES,
+  craftGridForRecipe,
+  craftTabForRecipeId,
+  maxCraftTimes,
+  recipeMatchesCraftTab,
+  recipeProgress,
+  type CraftRecipeTab,
+  type RecipeId,
+} from "./miningRecipes";
 import { MiningItemIcon } from "./MiningItemIcon";
 import { MiningEnchantPanel } from "./MiningEnchantPanel";
 import {
@@ -159,6 +170,55 @@ function MiningSlot({
     >
       <MiningItemIcon material={material} size={icon} alt={MATERIAL_META[material].label} />
       {amount > 0 && <span className="mining-slot-count">{amount}</span>}
+    </div>
+  );
+}
+
+const DIG_REVEAL_ICON_CAP = 5;
+
+function MiningDigRevealDrops({
+  drops,
+  tier,
+  ownedCount,
+}: {
+  drops: { material: MaterialId; amount: number }[];
+  tier: DigHitTier;
+  ownedCount: (id: MaterialId) => number;
+}) {
+  let iconIndex = 0;
+  return (
+    <div className="mining-dig-reveal-stack">
+      {drops.map((d, di) => {
+        const highlight = isDigHighlightDrop(d.material, d.amount, tier);
+        const shown = Math.max(0, Math.min(d.amount, DIG_REVEAL_ICON_CAP));
+        const overflow = d.amount > DIG_REVEAL_ICON_CAP;
+        const label = MATERIAL_META[d.material].label;
+        const startIndex = iconIndex;
+        iconIndex += shown;
+        const owned = ownedCount(d.material);
+        return (
+          <div key={`${d.material}-${di}`} className="mining-dig-reveal-row">
+            <div className="mining-dig-reveal-icons">
+              {Array.from({ length: shown }, (_, i) => (
+                <span
+                  key={i}
+                  className={`mining-dig-reveal-icon${highlight ? " is-highlight" : ""}${tier === "great" && highlight ? " is-great" : ""}`}
+                  style={{ animationDelay: `${(startIndex + i) * 0.08}s` }}
+                >
+                  <MiningItemIcon
+                    material={d.material}
+                    size={64}
+                    alt={i === 0 ? label : ""}
+                  />
+                </span>
+              ))}
+              {overflow && <span className="mining-dig-reveal-more">ほか</span>}
+            </div>
+            <span className="mining-dig-slot-label">{label}</span>
+            <div className="mining-fp-result-total">いま {owned}こ</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -528,6 +588,7 @@ function DigFxOverlay({
   partyItems,
   digHitPulse,
   canDigAgain,
+  ownedCount,
   onCrackTap,
   onDigAgain,
   onClose,
@@ -540,6 +601,7 @@ function DigFxOverlay({
   partyItems: { id: string; item: RewardLookupEntry }[];
   digHitPulse: number;
   canDigAgain: boolean;
+  ownedCount: (id: MaterialId) => number;
   onCrackTap: () => void;
   onDigAgain: () => void;
   onClose: () => void;
@@ -611,65 +673,51 @@ function DigFxOverlay({
           </div>
         )}
         <div className="mining-fp-result">
-          {(tier === "good" || tier === "great") && (
-            <div className="mining-dig-burst" aria-hidden style={{ position: "relative", marginBottom: 4 }}>
-              {tier === "great" ? "✦" : "✧"}
+          <div className="mining-fp-result-main">
+            {(tier === "good" || tier === "great") && (
+              <div className="mining-dig-burst" aria-hidden style={{ position: "relative", marginBottom: 4 }}>
+                {tier === "great" ? "✦" : "✧"}
+              </div>
+            )}
+            <div className={`mining-fp-result-title${tier !== "normal" ? ` is-${tier}` : ""}`}>
+              {revealCopy.title}
             </div>
-          )}
-          <div className={`mining-fp-result-title${tier !== "normal" ? ` is-${tier}` : ""}`}>
-            {revealCopy.title}
-          </div>
-          {revealCopy.sub && (
-            <div className="mining-fp-result-sub">{revealCopy.sub}</div>
-          )}
-          <div className="mining-dig-slot-row">
-            {result && result.drops.map((d, i) => {
-              const highlight = isDigHighlightDrop(d.material, d.amount, tier);
-              return (
-                <div
-                  key={`${d.material}-${i}`}
-                  className={`mining-dig-slot-wrap${highlight ? " is-highlight" : ""}${tier === "great" && highlight ? " is-great-pop" : ""}`}
+            {result && <MiningDigRevealDrops drops={result.drops} tier={tier} ownedCount={ownedCount} />}
+            {result && tier !== "normal" && result.hitReasons.length > 0 && (
+              <div className="mining-dig-hit-reasons">
+                <button
+                  type="button"
+                  className="mining-dig-hit-reasons-toggle"
+                  onClick={() => setReasonsOpen((v) => !v)}
                 >
-                  <MiningSlot material={d.material} amount={d.amount} size={highlight ? 56 : 48} highlight={highlight} />
-                  <span className="mining-dig-slot-label">{MATERIAL_META[d.material].label}</span>
-                </div>
-              );
-            })}
-          </div>
-          {result && tier !== "normal" && result.hitReasons.length > 0 && (
-            <div className="mining-dig-hit-reasons">
-              <button
-                type="button"
-                className="mining-dig-hit-reasons-toggle"
-                onClick={() => setReasonsOpen((v) => !v)}
-              >
-                {reasonsOpen ? "▲" : "▼"} {tier === "great" ? "なぜレア？" : "なぜいいの？"}
+                  {reasonsOpen ? "▲" : "▼"} {tier === "great" ? "なぜレア？" : "なぜいいの？"}
+                </button>
+                {reasonsOpen && result.hitReasons.map((reason) => (
+                  <div key={reason} className="mining-dig-hit-reason">・{reason}</div>
+                ))}
+              </div>
+            )}
+            {result?.ticketRefunded && (
+              <div className="mining-dig-bonus">🎫 チケットがもどった！</div>
+            )}
+            <div className="mining-dig-actions">
+              {canDigAgain && (
+                <button type="button" className="mining-dig-again" onClick={onDigAgain}>
+                  もういちどほる
+                </button>
+              )}
+              <button type="button" className="mining-dig-close" onClick={onClose}>
+                {canDigAgain ? "とじる" : "つぎへ"}
               </button>
-              {reasonsOpen && result.hitReasons.map((reason) => (
-                <div key={reason} className="mining-dig-hit-reason">・{reason}</div>
-              ))}
             </div>
-          )}
+            <div className="mining-dig-sub" style={{ marginTop: 8 }}>{meta.label}</div>
+          </div>
           {result && (
             <div className="mining-dig-breakdown">
               {result.breakdown.join(" · ")}
               {result.usedTool ? ` · ${gearLabel(result.usedTool)}` : ""}
             </div>
           )}
-          {result?.ticketRefunded && (
-            <div className="mining-dig-bonus">🎫 チケットがもどった！</div>
-          )}
-          <div className="mining-dig-actions">
-            {canDigAgain && (
-              <button type="button" className="mining-dig-again" onClick={onDigAgain}>
-                もういちどほる
-              </button>
-            )}
-            <button type="button" className="mining-dig-close" onClick={onClose}>
-              {canDigAgain ? "とじる" : "つぎへ"}
-            </button>
-          </div>
-          <div className="mining-dig-sub" style={{ marginTop: 8 }}>{meta.label}</div>
         </div>
       </div>
     </div>
@@ -782,8 +830,10 @@ export function MiningScreen({
   const [partyStep, setPartyStep] = useState<"slots" | "category" | "pick">("slots");
   const [digBusy, setDigBusy] = useState(false);
   const [craftShowAll, setCraftShowAll] = useState(false);
+  const [craftTab, setCraftTab] = useState<CraftRecipeTab>("all");
   const [progressNudge, setProgressNudge] = useState<ProgressNudge | null>(null);
   const [fuelChoice, setFuelChoice] = useState<Partial<Record<string, MaterialId>>>({});
+  const [craftQty, setCraftQty] = useState<Partial<Record<RecipeId, number>>>({});
   const [chapterQueue, setChapterQueue] = useState<ChapterMoment[]>([]);
   const [craftPop, setCraftPop] = useState<{ label: string; icon: ReactNode } | null>(null);
   const [armorDetailOpen, setArmorDetailOpen] = useState<Partial<Record<ArmorSlot, boolean>>>({});
@@ -967,7 +1017,7 @@ export function MiningScreen({
     window.setTimeout(() => setToast(null), kind === "progress" ? 2600 : 2200);
   };
 
-  const have = (id: MaterialId) => getMaterialCount(mining, id);
+  const have = useCallback((id: MaterialId) => getMaterialCount(mining, id), [mining]);
 
   const selectToolKind = (kind: ToolKind) => {
     setToolKind(kind);
@@ -1185,6 +1235,7 @@ export function MiningScreen({
     before: MiningState,
     recipe: MiningRecipe,
     nextState: MiningState,
+    times = 1,
   ) => {
     const beforeUnlocks = new Set(before.unlockedGachas);
     const beforeBeds = partySlotCount(before);
@@ -1201,7 +1252,10 @@ export function MiningScreen({
     );
 
     void playMiningSfx("craft");
-    setCraftPop({ label: `${recipe.label} できた！`, icon });
+    setCraftPop({
+      label: times > 1 ? `${recipe.label} ${times}こできた！` : `${recipe.label} できた！`,
+      icon,
+    });
     window.setTimeout(() => setCraftPop(null), 1100);
 
     const nudge = detectProgressNudge(before, nextState);
@@ -1258,7 +1312,7 @@ export function MiningScreen({
     setProgressNudge(null);
   };
 
-  const onCraft = (recipe: MiningRecipe) => {
+  const onCraft = (recipe: MiningRecipe, times = 1) => {
     if (smeltingId) return;
     const chosenId = fuelChoice[recipe.id];
     const fuel =
@@ -1266,9 +1320,10 @@ export function MiningScreen({
         ? recipe.fuelOptions.find((f) => f.material === chosenId)
         : undefined;
     const snapshot = miningRef.current;
+    const craftOpts = { ...(fuel ? { fuel } : {}), times };
 
     if (recipe.fuelOptions?.length) {
-      const preview = tryCraft(snapshot, recipe, fuel ? { fuel } : undefined);
+      const preview = tryCraft(snapshot, recipe, craftOpts);
       if (preview.error) {
         showToast(preview.error);
         return;
@@ -1286,12 +1341,12 @@ export function MiningScreen({
           setSmeltingId(null);
           setSmeltProgress(0);
           const latest = miningRef.current;
-          const result = tryCraft(latest, recipe, fuel ? { fuel } : undefined);
+          const result = tryCraft(latest, recipe, craftOpts);
           if (result.error) {
             showToast(result.error);
             return;
           }
-          finishCraftSuccess(latest, recipe, result.state);
+          finishCraftSuccess(latest, recipe, result.state, times);
           return;
         }
         smeltTimerRef.current = window.setTimeout(tick, 40);
@@ -1300,12 +1355,12 @@ export function MiningScreen({
       return;
     }
 
-    const result = tryCraft(snapshot, recipe, fuel ? { fuel } : undefined);
+    const result = tryCraft(snapshot, recipe, craftOpts);
     if (result.error) {
       showToast(result.error);
       return;
     }
-    finishCraftSuccess(snapshot, recipe, result.state);
+    finishCraftSuccess(snapshot, recipe, result.state, times);
   };
 
   useEffect(() => () => {
@@ -1327,6 +1382,35 @@ export function MiningScreen({
       setPartySlotEdit(slots > 0 ? slots - 1 : null);
     }
   }, [slots, partySlotEdit]);
+
+  useEffect(() => {
+    setCraftQty((prev) => {
+      let changed = false;
+      const next: Partial<Record<RecipeId, number>> = { ...prev };
+      for (const id of Object.keys(prev) as RecipeId[]) {
+        const n = prev[id];
+        if (n == null) continue;
+        const recipe = recipes.find((r) => r.id === id);
+        if (!recipe) continue;
+        const chosen = fuelChoice[recipe.id];
+        const fuel = recipe.fuelOptions?.length
+          ? (chosen
+            ? recipe.fuelOptions.find((f) => f.material === chosen && have(f.material) >= f.amount)
+            : recipe.fuelOptions.find((f) => have(f.material) >= f.amount)) ?? null
+          : null;
+        const max = maxCraftTimes(recipe, have, {
+          fuel,
+          remainingBeds: recipe.grantsBed ? MAX_BEDS - slots : undefined,
+        });
+        const clamped = Math.max(1, Math.min(n, Math.max(1, max)));
+        if (clamped !== n) {
+          next[id] = clamped;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [fuelChoice, have, recipes, slots]);
 
   const tabs: { id: TabId; label: string }[] = [
     { id: "mine", label: "ほる" },
@@ -1386,6 +1470,7 @@ export function MiningScreen({
 
     if (nextHero.highlightKind === "recipe" && nextHero.highlightRecipeId) {
       setHighlightRecipeId(nextHero.highlightRecipeId);
+      setCraftTab(craftTabForRecipeId(nextHero.highlightRecipeId));
       window.setTimeout(() => setHighlightRecipeId(null), 4500);
     }
     if (nextHero.highlightKind === "gacha" && nextHero.preferredGacha) {
@@ -1893,6 +1978,20 @@ export function MiningScreen({
               </div>
             </div>
           )}
+          <div className="mining-craft-tabs" role="tablist" aria-label="クラフトのしゅるい">
+            {CRAFT_RECIPE_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={craftTab === t.id}
+                className={`mining-craft-tab${craftTab === t.id ? " is-active" : ""}`}
+                onClick={() => setCraftTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           {(() => {
             const annotated = recipes.map((recipe) => {
               const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
@@ -1908,15 +2007,17 @@ export function MiningScreen({
               return { recipe, upgradeFrom, hasUpgradeBase, bedFull, owned, ok };
             });
             const byId = new Map(annotated.map((a) => [a.recipe.id, a]));
+            const scoped = annotated.filter((a) => recipeMatchesCraftTab(a.recipe, craftTab));
             const recommendOrder = recommendedCraftRecipeIds(mining);
             const recommended = recommendOrder
               .map((id) => byId.get(id))
-              .filter((a): a is typeof annotated[number] => !!a && !a.owned);
-            const ready = annotated.filter((a) => a.ok);
+              .filter((a): a is typeof annotated[number] => !!a && !a.owned && recipeMatchesCraftTab(a.recipe, craftTab));
+            const ready = scoped.filter((a) => a.ok);
             const recommendedIds = new Set(recommended.map((a) => a.recipe.id));
             const readyIds = new Set(ready.map((a) => a.recipe.id));
-            const rest = annotated.filter((a) => !readyIds.has(a.recipe.id) && !recommendedIds.has(a.recipe.id));
-            const shownRest = craftShowAll ? rest : rest.slice(0, 4);
+            const rest = scoped.filter((a) => !readyIds.has(a.recipe.id) && !recommendedIds.has(a.recipe.id));
+            const collapseRest = craftTab === "all";
+            const shownRest = collapseRest && !craftShowAll ? rest.slice(0, 4) : rest;
 
             const renderRecipe = (a: typeof annotated[number]) => {
               const { recipe, upgradeFrom, hasUpgradeBase, owned, ok } = a;
@@ -1932,6 +2033,11 @@ export function MiningScreen({
                 return recipe.fuelOptions.find((f) => have(f.material) >= f.amount) ?? null;
               })();
               const isSmelt = !!recipe.fuelOptions?.length;
+              const maxTimes = maxCraftTimes(recipe, have, {
+                fuel: fuelPicked,
+                remainingBeds: recipe.grantsBed ? MAX_BEDS - slots : undefined,
+              });
+              const times = Math.max(1, Math.min(craftQty[recipe.id] ?? 1, Math.max(1, maxTimes)));
               return (
                 <div
                   key={recipe.id}
@@ -2007,7 +2113,7 @@ export function MiningScreen({
                           <div className="mining-furnace-arrow">→</div>
                           <div className="mining-furnace-slot">
                             {recipe.outputs?.[0] && (
-                              <MiningSlot material={recipe.outputs[0].material} amount={recipe.outputs[0].amount} size={44} />
+                              <MiningSlot material={recipe.outputs[0].material} amount={recipe.outputs[0].amount * times} size={44} />
                             )}
                             <span className="mining-furnace-cap">できる</span>
                           </div>
@@ -2143,18 +2249,47 @@ export function MiningScreen({
                         )}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={!ok || owned || !!smeltingId}
-                      onClick={() => onCraft(recipe)}
-                      style={{
-                        ...btnPrimary,
-                        opacity: ok && !owned && !smeltingId ? 1 : 0.4,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {smeltingId === recipe.id ? "せいれん中" : isSmelt ? "せいれん" : "つくる"}
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, flexShrink: 0 }}>
+                      {maxTimes >= 2 && (
+                        <div className="mining-craft-qty">
+                          <button
+                            type="button"
+                            className="mining-craft-qty-btn"
+                            disabled={times <= 1 || !!smeltingId}
+                            aria-label="へらす"
+                            onClick={() => setCraftQty((prev) => ({ ...prev, [recipe.id]: Math.max(1, times - 1) }))}
+                          >
+                            −
+                          </button>
+                          <span className="mining-craft-qty-n">{times}</span>
+                          <button
+                            type="button"
+                            className="mining-craft-qty-btn"
+                            disabled={times >= maxTimes || !!smeltingId}
+                            aria-label="ふやす"
+                            onClick={() => setCraftQty((prev) => ({ ...prev, [recipe.id]: Math.min(maxTimes, times + 1) }))}
+                          >
+                            ＋
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        disabled={!ok || owned || !!smeltingId}
+                        onClick={() => onCraft(recipe, times)}
+                        style={{
+                          ...btnPrimary,
+                          opacity: ok && !owned && !smeltingId ? 1 : 0.4,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {smeltingId === recipe.id
+                          ? "せいれん中"
+                          : times > 1
+                            ? (isSmelt ? `${times}こせいれん` : `${times}こつくる`)
+                            : isSmelt ? "せいれん" : "つくる"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -2162,6 +2297,11 @@ export function MiningScreen({
 
             return (
               <>
+                {scoped.length === 0 && (
+                  <div style={{ ...card, fontSize: 13, fontWeight: 800, color: theme.text.secondary }}>
+                    まだこのレシピはないよ
+                  </div>
+                )}
                 {recommended.length > 0 && (
                   <div style={{ fontWeight: 800, fontSize: 13, color: theme.category.orange }}>
                     おすすめ（いまこれ）
@@ -2174,11 +2314,11 @@ export function MiningScreen({
                   </div>
                 )}
                 {ready.filter((a) => !recommendedIds.has(a.recipe.id)).map(renderRecipe)}
-                {(shownRest.length > 0 || rest.length > 4) && (
+                {(shownRest.length > 0 || (collapseRest && rest.length > 4)) && (
                   <div style={{ fontWeight: 800, fontSize: 13, color: theme.text.secondary, marginTop: 4 }}>ほかのレシピ</div>
                 )}
                 {shownRest.map(renderRecipe)}
-                {rest.length > 4 && (
+                {collapseRest && rest.length > 4 && (
                   <button type="button" style={{ ...btnGhost, width: "100%" }} onClick={() => setCraftShowAll((v) => !v)}>
                     {craftShowAll ? "とじる" : `もっとみる（あと${rest.length - 4}）`}
                   </button>
@@ -2736,6 +2876,7 @@ export function MiningScreen({
                         style={{ ...btnPrimary, width: "100%", marginTop: 12 }}
                         onClick={() => {
                           setOverlay(null);
+                          setCraftTab("facility");
                           setTab("craft");
                         }}
                       >
@@ -2938,6 +3079,7 @@ export function MiningScreen({
         result={lastDig}
         partyItems={partyDigItems}
         digHitPulse={digHitPulse}
+        ownedCount={have}
         canDigAgain={
           digFx === "reveal"
           && mining.tickets >= 1

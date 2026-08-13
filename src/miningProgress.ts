@@ -4,6 +4,7 @@ import { getBuddyEntry, type BuddyProgressMap } from "./buddyProgress";
 import { REWARD_LOOKUP } from "./stickerRewards";
 import {
   canAffordRecipe,
+  maxCraftTimes,
   NETHERITE_UPGRADE_REQUIRES,
   pickFuelOption,
   visibleRecipes,
@@ -861,8 +862,11 @@ export function resolveBucketFill(params: {
 export function tryCraft(
   state: MiningState,
   recipe: MiningRecipe,
-  opts?: { fuel?: RecipeCost },
+  opts?: { fuel?: RecipeCost; times?: number },
 ): { state: MiningState; error?: string } {
+  const times = recipe.craftFlag
+    ? 1
+    : Math.max(1, Math.floor(opts?.times ?? 1));
   if (recipe.needsWorkbench && !hasWorkbench(state)) {
     return { state, error: "先に作業台を作ってね" };
   }
@@ -893,7 +897,7 @@ export function tryCraft(
       const match = recipe.fuelOptions.find(
         (f) => f.material === opts.fuel!.material && f.amount === opts.fuel!.amount,
       );
-      if (!match || have(match.material) < match.amount) {
+      if (!match || have(match.material) < match.amount * times) {
         return { state, error: "選んだ燃料が足りないよ" };
       }
       fuel = match;
@@ -903,19 +907,27 @@ export function tryCraft(
     if (!fuel) return { state, error: "燃料が足りないよ" };
   }
 
+  const maxTimes = maxCraftTimes(recipe, have, {
+    fuel,
+    remainingBeds: recipe.grantsBed ? MAX_BEDS - partySlotCount(state) : undefined,
+  });
+  if (times > maxTimes) {
+    return { state, error: recipe.fuelOptions?.length ? "材料か燃料が足りないよ" : "材料が足りないよ" };
+  }
+
   const materials = { ...state.materials };
   for (const c of recipe.costs) {
-    materials[c.material] = getMaterialCount(state, c.material) - c.amount;
-    if ((materials[c.material] ?? 0) <= 0) delete materials[c.material];
+    materials[c.material] = (materials[c.material] ?? 0) - c.amount * times;
   }
   if (fuel) {
-    const left = (materials[fuel.material] ?? getMaterialCount(state, fuel.material)) - fuel.amount;
-    if (left > 0) materials[fuel.material] = left;
-    else delete materials[fuel.material];
+    materials[fuel.material] = (materials[fuel.material] ?? 0) - fuel.amount * times;
+  }
+  for (const key of Object.keys(materials) as MaterialId[]) {
+    if ((materials[key] ?? 0) <= 0) delete materials[key];
   }
   if (recipe.outputs) {
     for (const o of recipe.outputs) {
-      materials[o.material] = (materials[o.material] ?? 0) + o.amount;
+      materials[o.material] = (materials[o.material] ?? 0) + o.amount * times;
     }
   }
   const crafted = { ...state.crafted };
@@ -928,7 +940,7 @@ export function tryCraft(
 
   let bedCount = partySlotCount(state);
   if (recipe.grantsBed) {
-    bedCount = Math.min(MAX_BEDS, bedCount + 1);
+    bedCount = Math.min(MAX_BEDS, bedCount + times);
   }
 
   let next: MiningState = { ...state, materials, crafted, equipped, bedCount };
@@ -1110,5 +1122,5 @@ export function exchangeQuartzForPoints(state: MiningState): { state: MiningStat
   };
 }
 
-export { MINING_RECIPES, canAffordRecipe, recipeProgress } from "./miningRecipes";
-export type { MiningRecipe } from "./miningRecipes";
+export { MINING_RECIPES, canAffordRecipe, maxCraftTimes, recipeProgress } from "./miningRecipes";
+export type { CraftRecipeTab, MiningRecipe } from "./miningRecipes";
