@@ -38,7 +38,7 @@ import {
   type BuddyProgressMap,
 } from "./buddyProgress";
 import { normalizeMiningState, type MiningState } from "./miningTypes";
-import { addMiningPoints, addTickets, adjustTickets } from "./miningProgress";
+import { addMiningPoints, addTickets, adjustTickets, refreshUnlocks } from "./miningProgress";
 import {
   adjustRewardTicket,
   normalizeRewardTickets,
@@ -1588,7 +1588,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [buddyXpDate, setBuddyXpDate] = useState(stored.buddyXpDate ?? "");
   const [buddyXpEarnedToday, setBuddyXpEarnedToday] = useState(stored.buddyXpEarnedToday ?? 0);
   const [buddyXpStampedSessions, setBuddyXpStampedSessions] = useState<Record<string, boolean>>(stored.buddyXpStampedSessions ?? {});
-  const [mining, setMining] = useState<MiningState>(() => normalizeMiningState(stored.mining));
+  const [mining, setMining] = useState<MiningState>(() =>
+    refreshUnlocks(normalizeMiningState(stored.mining)),
+  );
   const miningRef = useRef(mining);
   useEffect(() => { miningRef.current = mining; }, [mining]);
   const [rewardTickets, setRewardTickets] = useState<RewardTicketInventory>(() =>

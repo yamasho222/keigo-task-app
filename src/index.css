@@ -1940,6 +1940,7 @@ button {
   margin-top: 4px;
   font-size: 11px;
   font-weight: 800;
+  line-height: 1.35;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
 }
 .mining-biome-card-badge.is-optional {
@@ -2125,12 +2126,20 @@ button {
   justify-content: center;
   width: 100%;
 }
+.mining-fp-result-got {
+  margin-top: 2px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffe566;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.85), 0 0 16px rgba(255,200,80,0.35);
+  letter-spacing: 0.02em;
+}
 .mining-fp-result-total {
   margin-top: 0;
-  font-size: 20px;
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.85), 0 0 16px rgba(255,200,80,0.35);
+  font-size: 16px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.85);
   letter-spacing: 0.02em;
 }
 .mining-fp-result-title {

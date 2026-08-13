@@ -232,6 +232,63 @@ export function refreshUnlocks(state: MiningState): MiningState {
   return { ...state, unlockedGachas: [...unlocked] };
 }
 
+const WOOD_UNLOCK_REQ: CraftedGearId[] = ["sword_wood", "axe_wood", "pickaxe_wood"];
+const STONE_UNLOCK_REQ: CraftedGearId[] = ["sword_stone", "axe_stone", "pickaxe_stone"];
+const IRON_UNLOCK_REQ: CraftedGearId[] = ["sword_iron", "axe_iron", "pickaxe_iron"];
+const NETHER_UNLOCK_REQ: CraftedGearId[] = [
+  "enchanting_table",
+  "sword_diamond",
+  "axe_diamond",
+  "pickaxe_diamond",
+];
+
+/** refreshUnlocks と同じ条件。ロック中の表示用 */
+export function gachaUnlockRequirementIds(gacha: GachaId): CraftedGearId[] {
+  switch (gacha) {
+    case "stone":
+    case "farm":
+    case "ranch":
+      return WOOD_UNLOCK_REQ;
+    case "iron":
+    case "coal":
+    case "gold":
+    case "river":
+      return STONE_UNLOCK_REQ;
+    case "diamond":
+    case "lava_cave":
+    case "lapis_cave":
+      return IRON_UNLOCK_REQ;
+    case "nether":
+      return NETHER_UNLOCK_REQ;
+    default:
+      return [];
+  }
+}
+
+function isGachaUnlockReqMet(state: MiningState, id: CraftedGearId): boolean {
+  if (id === "enchanting_table") return hasEnchantingTable(state);
+  const parsed = parseToolId(id);
+  if (parsed) return toolAtLeast(state, parsed.kind, parsed.tier);
+  return !!state.crafted[id];
+}
+
+export function gachaLockBadge(gacha: GachaId): string {
+  const ids = gachaUnlockRequirementIds(gacha);
+  if (!ids.length) return "まだひらいてない";
+  return ids.map(gearLabel).join("・");
+}
+
+export function gachaLockHint(gacha: GachaId, state: MiningState): string {
+  const ids = gachaUnlockRequirementIds(gacha);
+  const place = GACHA_META[gacha].label;
+  if (!ids.length) return `${place}はまだひらいてない`;
+  const lines = ids.map((id) => {
+    const done = isGachaUnlockReqMet(state, id);
+    return `${gearLabel(id)}（${done ? "できた" : "まだ"}）`;
+  });
+  return `${place}をひらくには\n${lines.join("\n")}`;
+}
+
 export function partySpecialtyBonus(
   state: MiningState,
   buddyProgress: BuddyProgressMap | undefined,

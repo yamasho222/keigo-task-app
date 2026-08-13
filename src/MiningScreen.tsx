@@ -21,6 +21,8 @@ import {
   exchangePointsForLog,
   exchangePointsForWool,
   exchangeQuartzForPoints,
+  gachaLockBadge,
+  gachaLockHint,
   hasBucket,
   hasEnchantingTable,
   hasFurnace,
@@ -31,6 +33,7 @@ import {
   previewDigBoost,
   recommendToolKind,
   recipesForState,
+  refreshUnlocks,
   resolveBucketFill,
   resolveDig,
   resolveHelmetRockHint,
@@ -218,6 +221,7 @@ function MiningDigRevealDrops({
               {overflow && <span className="mining-dig-reveal-more">ほか</span>}
             </div>
             <span className="mining-dig-slot-label">{label}</span>
+            <div className="mining-fp-result-got">+{d.amount}こゲット</div>
             <div className="mining-fp-result-total">いま {owned}こ</div>
           </div>
         );
@@ -790,18 +794,6 @@ function CraftSuccessPop({
   );
 }
 
-function gachaLockHint(gid: GachaId): string {
-  if (gid === "farm" || gid === "ranch") return "木のどうぐ3つでひらく";
-  if (gid === "stone") return "木の剣・斧・ツルハシでひらく";
-  if (gid === "river") return "石のどうぐ3つでひらく";
-  if (gid === "iron" || gid === "gold" || gid === "coal") return "石の剣・斧・ツルハシでひらく";
-  if (gid === "lava_cave" || gid === "lapis_cave" || gid === "diamond") {
-    return "鉄のどうぐ3つでひらく";
-  }
-  if (gid === "nether") return "テーブル＋ダイヤどうぐ3つでひらく";
-  return "まだひらいてない";
-}
-
 export function MiningScreen({
   mining,
   stickerAlbum,
@@ -1014,11 +1006,14 @@ export function MiningScreen({
     else if (tier === "good") navigator.vibrate?.([18, 28, 36]);
   }, [digFx, lastDig]);
 
-  const showToast = (msg: string, kind: ToastKind = "normal") => {
+  const showToast = (msg: string, kind: ToastKind = "normal", durationMs?: number) => {
     setToast(msg);
     setToastKind(kind);
     if (kind === "progress") void playMiningSfx("progress");
-    window.setTimeout(() => setToast(null), kind === "progress" ? 2600 : 2200);
+    window.setTimeout(
+      () => setToast(null),
+      durationMs ?? (kind === "progress" ? 2600 : 2200),
+    );
   };
 
   const have = useCallback((id: MaterialId) => getMaterialCount(mining, id), [mining]);
@@ -1127,7 +1122,7 @@ export function MiningScreen({
   const selectDigPlace = (gacha: GachaId) => {
     if (digBusy) return;
     if (!mining.unlockedGachas.includes(gacha)) {
-      showToast(`${GACHA_META[gacha].label}：${gachaLockHint(gacha)}`);
+      showToast(gachaLockHint(gacha, mining), "normal", 4000);
       return;
     }
     const kind = recommendToolKind(gacha);
@@ -1210,6 +1205,15 @@ export function MiningScreen({
       }
     }
   };
+
+  useEffect(() => {
+    const current = miningRef.current;
+    const next = refreshUnlocks(current);
+    const before = new Set(current.unlockedGachas);
+    if (!next.unlockedGachas.some((id) => !before.has(id))) return;
+    onChange(next);
+    announceUnlocks(before, next);
+  }, [mining.crafted, mining.unlockedGachas, onChange]);
 
   const enqueueChapters = (moments: ChapterMoment[]) => {
     if (!moments.length) return;
@@ -2782,13 +2786,13 @@ export function MiningScreen({
                           key={gid}
                           type="button"
                           className="mining-biome-card is-locked"
-                          onClick={() => showToast(`${meta.label}：${gachaLockHint(gid)}`)}
+                          onClick={() => showToast(gachaLockHint(gid, mining), "normal", 4000)}
                         >
                           <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
                           <div className="mining-biome-card-shade" />
                           <div className="mining-biome-card-body">
                             <div className="mining-biome-card-title">🔒 {meta.label}</div>
-                            <div className="mining-biome-card-badge">{gachaLockHint(gid)}</div>
+                            <div className="mining-biome-card-badge">{gachaLockBadge(gid)}</div>
                           </div>
                         </button>
                       );
@@ -3096,6 +3100,7 @@ export function MiningScreen({
             zIndex: 200,
             padding: "12px 16px", borderRadius: 14, background: "rgba(0,0,0,0.82)",
             color: "#fff", fontWeight: 800, textAlign: "center",
+            whiteSpace: "pre-line", lineHeight: 1.45,
           }}
         >
           {toast}
