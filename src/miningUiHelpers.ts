@@ -168,9 +168,9 @@ export function miningNextHero(mining: MiningState): NextHero {
       return {
         kind: "unlock",
         title: "本をつくろう",
-        subtitle: "農場の皮と、かわのさとうきび→紙でできるよ",
+        subtitle: "牧場の皮と、農場のさとうきび→紙でできるよ",
         jumpTab: "craft",
-        preferredGacha: "farm",
+        preferredGacha: getMaterialCount(mining, "leather") < 1 ? "ranch" : "farm",
       };
     }
     if (obs < 4) {
@@ -475,7 +475,7 @@ export function recipeEffectLine(recipe: MiningRecipe): string | null {
   if (recipe.id === "paper_batch") return "本の材料（さとうきび3で紙3）";
   if (recipe.id === "book_craft") return "エンチャントテーブルの材料";
   if (recipe.id === "obsidian_craft") return "水＋ようがんでテーブルの材料";
-  if (recipe.craftFlag === "bucket_iron") return "かわとようがんで液体をくめる";
+  if (recipe.craftFlag === "bucket_iron") return "うみとようがんで液体をくめる";
   if (recipe.craftFlag === "enchanting_table") return "まほうとダイヤどうぐがひらく";
   if (recipe.craftFlag) {
     const tool = parseToolId(recipe.craftFlag);
@@ -535,7 +535,7 @@ export function craftTutorialBanner(mining: MiningState): {
     return {
       title: "いまやること：エンチャントテーブル",
       steps: ["本・黒曜石・ダイヤ2でテーブル→まほうがつかえる"],
-      tip: "農場→かわ→ようがんで材料をあつめよう",
+      tip: "農場・牧場・うみ・ようがんで材料をあつめよう",
     };
   }
   if (!diamondToolsComplete(mining)) {
@@ -547,7 +547,7 @@ export function craftTutorialBanner(mining: MiningState): {
   if ((mining.bedCount ?? 1) < 3) {
     return {
       title: "いまやること：ベッド",
-      steps: ["農場で羊毛→ベッド（なかま+1）"],
+      steps: ["牧場で羊毛→ベッド（なかま+1）"],
     };
   }
   if (!netheriteFullComplete(mining)) {
@@ -758,7 +758,6 @@ export function gachaForMaterial(id: MaterialId): GachaId | null {
   switch (id) {
     case "log":
     case "stick":
-    case "wool":
     case "plank":
       return "wood";
     case "cobble":
@@ -781,8 +780,9 @@ export function gachaForMaterial(id: MaterialId): GachaId | null {
       return "nether";
     case "leather":
     case "wool":
-      return "farm";
+      return "ranch";
     case "sugar_cane":
+      return "farm";
     case "water":
       return "river";
     case "lava":
@@ -802,6 +802,7 @@ export function gachaForMaterial(id: MaterialId): GachaId | null {
 export const GACHA_SURFACE: Record<GachaId, string> = {
   wood: "#E8F5E9",
   farm: "#F1F8E9",
+  ranch: "#FFF3E0",
   stone: "#ECEFF1",
   river: "#E1F5FE",
   iron: "#E3F2FD",
@@ -841,16 +842,16 @@ export function detectChapterMoments(before: MiningState, after: MiningState): C
   };
 
   if (!woodToolsComplete(before) && woodToolsComplete(after)) {
-    push({ id: "wood_age", title: "きのじだい クリア！", sub: "いしのどうくつがひらいたよ" });
+    push({ id: "wood_age", title: "きのじだい クリア！", sub: "農場と牧場、いしのどうくつがひらいたよ" });
   }
   if (!stoneToolsComplete(before) && stoneToolsComplete(after)) {
-    push({ id: "stone_age", title: "いしのじだい クリア！", sub: "てつ・せきたん・きんへいこう" });
+    push({ id: "stone_age", title: "いしのじだい クリア！", sub: "てつ・せきたん・きん・うみへいこう" });
   }
   if (!ironToolsComplete(before) && ironToolsComplete(after)) {
     push({
       id: "iron_tools",
       title: "てつのどうぐ 完成！",
-      sub: "農場・かわ・ようがん・しんそう・ラピスがひらいたよ",
+      sub: "ようがん・しんそう・ラピスがひらいたよ",
     });
   }
   if (!ironFullComplete(before) && ironFullComplete(after)) {

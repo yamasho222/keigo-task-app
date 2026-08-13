@@ -12,6 +12,8 @@ interface Props {
   gear?: CraftedGearId;
   /** ベッド画像 */
   bed?: boolean;
+  /** 直接指定した画像（エンチャント本など） */
+  src?: string;
   /** 絵文字フォールバック */
   emoji?: string;
   size?: number;
@@ -24,28 +26,30 @@ export function MiningItemIcon({
   material,
   gear,
   bed,
+  src,
   emoji,
   size = 24,
   alt = "",
   style,
 }: Props) {
-  const src = bed
-    ? BED_IMAGE
-    : material
-      ? MATERIAL_META[material].image
-      : gear
-        ? GEAR_IMAGE[gear]
-        : undefined;
+  const resolved = src
+    ?? (bed
+      ? BED_IMAGE
+      : material
+        ? MATERIAL_META[material].image
+        : gear
+          ? GEAR_IMAGE[gear]
+          : undefined);
   const fallback = bed
     ? (emoji ?? "🛏️")
     : material
       ? MATERIAL_META[material].emoji
       : (emoji ?? "📦");
 
-  if (src) {
+  if (resolved) {
     return (
       <img
-        src={src}
+        src={resolved}
         alt={alt}
         width={size}
         height={size}

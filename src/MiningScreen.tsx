@@ -86,6 +86,7 @@ import {
   DIG_BLOCK_IMAGE,
   ENCHANT_META,
   ENCHANT_TARGET_LABEL,
+  ENCHANTED_BOOK_IMAGE,
   GACHA_META,
   GACHA_ORDER,
   MATERIAL_META,
@@ -96,6 +97,7 @@ import {
   specialtyOfCategory,
   gearLabel,
   getMaterialCount,
+  isBucketGacha,
   parseToolId,
   partySlotCount,
   type CraftedGearId,
@@ -118,6 +120,7 @@ interface Props {
 type TabId = "mine" | "craft" | "bag";
 type OverlayId = "party" | "equip" | "enchant" | "digDestination" | null;
 type DigFxPhase = "idle" | "crack" | "break" | "reveal";
+type DigDestStep = "place" | "rock";
 type ArmorSlot = "helmet" | "chest" | "leggings" | "boots";
 type ToastKind = "normal" | "progress";
 
@@ -422,6 +425,7 @@ function DigCrackOverlay({
 const BLOCK_TONE: Record<GachaId, { top: string; front: string; side: string; edge: string }> = {
   wood: { top: "#6d9b45", front: "#8f6a3e", side: "#6e4f2c", edge: "#3d2a16" },
   farm: { top: "#c8e6a0", front: "#8fbc5a", side: "#6a9a3a", edge: "#3d5a1a" },
+  ranch: { top: "#e8d090", front: "#c4a05a", side: "#9a7a3a", edge: "#5a4018" },
   stone: { top: "#9aa0a6", front: "#7d838a", side: "#5f646a", edge: "#2f3338" },
   river: { top: "#7ec8e8", front: "#4a9fc4", side: "#2a7a90", edge: "#0a3a48" },
   iron: { top: "#c4cdd6", front: "#8a959f", side: "#6a737c", edge: "#3a424a" },
@@ -787,7 +791,7 @@ function CraftSuccessPop({
 }
 
 function gachaLockHint(gid: GachaId): string {
-  if (gid === "farm") return "木のどうぐ3つでひらく";
+  if (gid === "farm" || gid === "ranch") return "木のどうぐ3つでひらく";
   if (gid === "stone") return "木の剣・斧・ツルハシでひらく";
   if (gid === "river") return "石のどうぐ3つでひらく";
   if (gid === "iron" || gid === "gold" || gid === "coal") return "石の剣・斧・ツルハシでひらく";
@@ -848,7 +852,7 @@ export function MiningScreen({
   const [highlightGacha, setHighlightGacha] = useState<GachaId | null>(null);
   const [highlightRocks, setHighlightRocks] = useState(false);
   const [rockLuckyIndex, setRockLuckyIndex] = useState(() => Math.floor(Math.random() * 3));
-  const [digDestStep, setDigDestStep] = useState<"place" | "rock">("place");
+  const [digDestStep, setDigDestStep] = useState<DigDestStep>("place");
   const [mineMoreOpen, setMineMoreOpen] = useState(false);
   const [bagNoticeOpen, setBagNoticeOpen] = useState(false);
   const [smeltingId, setSmeltingId] = useState<string | null>(null);
@@ -1072,7 +1076,7 @@ export function MiningScreen({
     if (next >= MAX_CRACK_STAGE) finishCrackToBreak();
   };
 
-  /** 掘り実行（岩3択のあと、またはバケツくみ） */
+  /** 掘り実行（岩3択のあと、またはバケツくみ3択のあと） */
   const performDig = (gacha: GachaId, kind: ToolKind, luckyRock: boolean) => {
     if (digBusy) return;
     void unlockAudio();
@@ -1081,13 +1085,13 @@ export function MiningScreen({
     const best = bestOwnedTool(stateForDig, kind);
     if (best) stateForDig = equipTool(stateForDig, best);
 
-    if (gacha === "lava_cave") {
+    if (isBucketGacha(gacha)) {
       if (!hasBucket(stateForDig)) {
         onChange(stateForDig);
         showToast("バケツをそうびしてから入るよ");
         return;
       }
-      const result = resolveBucketFill({ state: stateForDig, gacha: "lava_cave" });
+      const result = resolveBucketFill({ state: stateForDig, gacha, luckyRock });
       if ("error" in result) {
         onChange(stateForDig);
         showToast(result.error);
@@ -1113,7 +1117,13 @@ export function MiningScreen({
     beginDigFx(result);
   };
 
-  /** 行き先を確定 → シート内で岩ステップへ（ようがんはくみUI） */
+  const rollLuckySpots = () => {
+    const luckyIdx = Math.floor(Math.random() * 3);
+    setRockLuckyIndex(luckyIdx);
+    setRockHint(resolveHelmetRockHint(mining, luckyIdx));
+  };
+
+  /** 行き先を確定 → シート内で岩ステップへ（ようがんはくみ3択） */
   const selectDigPlace = (gacha: GachaId) => {
     if (digBusy) return;
     if (!mining.unlockedGachas.includes(gacha)) {
@@ -1123,16 +1133,14 @@ export function MiningScreen({
     const kind = recommendToolKind(gacha);
     setSelectedGacha(gacha);
     setToolKind(kind);
-    const luckyIdx = Math.floor(Math.random() * 3);
-    setRockLuckyIndex(luckyIdx);
-    setRockHint(resolveHelmetRockHint(mining, luckyIdx));
+    rollLuckySpots();
     setDigDestStep("rock");
-    if (gacha === "lava_cave" && !hasBucket(mining)) {
+    if (isBucketGacha(gacha) && !hasBucket(mining)) {
       showToast("鉄のバケツを作ってからね");
     }
   };
 
-  const openDigDestination = (step: "place" | "rock" = "place") => {
+  const openDigDestination = (step: DigDestStep = "place") => {
     if (digBusy) return;
     if (mining.tickets < 1) {
       onBack();
@@ -1140,29 +1148,9 @@ export function MiningScreen({
     }
     setDigDestStep(step);
     if (step === "rock") {
-      const luckyIdx = Math.floor(Math.random() * 3);
-      setRockLuckyIndex(luckyIdx);
-      setRockHint(resolveHelmetRockHint(mining, luckyIdx));
+      rollLuckySpots();
     }
     setOverlay("digDestination");
-  };
-
-  const scoopWater = () => {
-    if (digBusy) return;
-    if (!hasBucket(mining)) {
-      showToast("鉄のバケツを作ってからね");
-      return;
-    }
-    setSelectedGacha("river");
-    setOverlay(null);
-    void unlockAudio();
-    const stateForDig: MiningState = { ...mining, lastSelectedGacha: "river" };
-    const result = resolveBucketFill({ state: stateForDig, gacha: "river" });
-    if ("error" in result) {
-      showToast(result.error);
-      return;
-    }
-    beginDigFx(result);
   };
 
   const closeDigFx = () => {
@@ -1189,8 +1177,8 @@ export function MiningScreen({
     setCrackStage(0);
     crackStageRef.current = 0;
     crackDoneRef.current = false;
-    if (selectedGacha === "lava_cave") {
-      performDig("lava_cave", toolKind, false);
+    if (isBucketGacha(selectedGacha)) {
+      openDigDestination("rock");
       return;
     }
     openDigDestination("rock");
@@ -1199,8 +1187,9 @@ export function MiningScreen({
   const announceUnlocks = (before: Set<GachaId>, next: MiningState) => {
     const unlockMessages: { id: GachaId; label: string }[] = [
       { id: "farm", label: "農場 ひらいた！" },
+      { id: "ranch", label: "牧場 ひらいた！" },
       { id: "stone", label: "いしのどうくつ ひらいた！" },
-      { id: "river", label: "かわ ひらいた！" },
+      { id: "river", label: "うみ ひらいた！" },
       { id: "iron", label: "てつのこうざん ひらいた！" },
       { id: "coal", label: "せきたんのやま ひらいた！" },
       { id: "gold", label: "きんのこうざん ひらいた！" },
@@ -1543,7 +1532,10 @@ export function MiningScreen({
         {blockingOverlay ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <ScrollSafeBackButton onBack={() => setOverlay(null)} />
-            <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {overlay === "enchant" && (
+                <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={28} alt="" />
+              )}
               {blockingTitle}
             </div>
           </div>
@@ -2195,7 +2187,7 @@ export function MiningScreen({
                               燃料をえらぶ（どれか1つ）{recipe.needsFurnace ? "・かまど必要" : ""}
                             </div>
                             <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 6, lineHeight: 1.45 }}>
-                              石炭は「せきたんのやま」でほれるよ
+                              石炭は1つでせいれん2回できるよ。「せきたんのやま」でほれるよ
                               {mining.unlockedGachas.includes("coal") && (
                                 <button
                                   type="button"
@@ -2238,6 +2230,7 @@ export function MiningScreen({
                                     <MiningItemIcon material={f.material} size={18} alt="" />
                                     <span style={{ fontWeight: 800, fontSize: 12 }}>
                                       {MATERIAL_META[f.material].label}×{f.amount}
+                                      {f.crafts && f.crafts > 1 ? `（${f.crafts}回）` : ""}
                                     </span>
                                     <span style={{ fontSize: 11, color: theme.text.secondary }}>{h}個</span>
                                     {using && <span style={{ color: theme.accent.primary, fontWeight: 900 }}>選択中</span>}
@@ -2523,7 +2516,7 @@ export function MiningScreen({
             {bagNoticeOpen && (
               <div style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: theme.text.secondary, lineHeight: 1.5 }}>
                 岩がかたくなったよ。そのかわり、エンチャントと新しいほりばがふえた！
-                農場・かわ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
+                農場・牧場・うみ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
                 {tableReady && !mining.unlockedGachas.includes("nether") && (
                   <div style={{ marginTop: 8 }}>
                     テーブルのあと：はやくネザーへ／つよくなってから、どっちも正解だよ。
@@ -2724,7 +2717,10 @@ export function MiningScreen({
                 setOverlay("enchant");
               }}
             >
-              エンチャ
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={18} alt="" />
+                エンチャ
+              </span>
             </button>
           </div>
         </div>
@@ -2743,7 +2739,13 @@ export function MiningScreen({
             className="mining-dig-dest-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label={digDestStep === "place" ? "どこをほる？" : `${selectedMeta.label}でほる`}
+            aria-label={
+              digDestStep === "place"
+                ? "どこをほる？"
+                : isBucketGacha(selectedGacha)
+                  ? `${selectedMeta.label}でくむ`
+                  : `${selectedMeta.label}でほる`
+            }
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mining-dig-dest-handle" aria-hidden />
@@ -2839,9 +2841,11 @@ export function MiningScreen({
                   <div className="mining-rock-scene-caption">
                     <span aria-hidden>{selectedMeta.emoji}</span>
                     <span>
-                      {selectedGacha === "lava_cave"
-                        ? "ようがんでくむ"
-                        : `${selectedMeta.label}でほる`}
+                      {selectedGacha === "river"
+                        ? "うみで水をくむ"
+                        : selectedGacha === "lava_cave"
+                          ? "ようがんでくむ"
+                          : `${selectedMeta.label}でほる`}
                     </span>
                   </div>
                 </div>
@@ -2854,103 +2858,79 @@ export function MiningScreen({
                   ← 場所を選びなおす
                 </button>
 
-                {selectedGacha === "lava_cave" ? (
-                  hasBucket(mining) ? (
+                {isBucketGacha(selectedGacha) && !hasBucket(mining) ? (
+                  <div style={{ marginTop: 12, fontSize: 14, fontWeight: 800, color: theme.category.orange }}>
+                    鉄のバケツを作ってから入ろう
                     <button
                       type="button"
-                      className="mining-dig-cta is-ready"
-                      style={{ width: "100%", marginTop: 12 }}
-                      disabled={digBusy || mining.tickets < 1}
+                      style={{ ...btnPrimary, width: "100%", marginTop: 12 }}
                       onClick={() => {
                         setOverlay(null);
-                        performDig("lava_cave", toolKind, false);
+                        setCraftTab("facility");
+                        setTab("craft");
                       }}
                     >
-                      バケツでようがんをくむ · 🎫1
+                      クラフトへ
                     </button>
-                  ) : (
-                    <div style={{ marginTop: 12, fontSize: 14, fontWeight: 800, color: theme.category.orange }}>
-                      鉄のバケツを作ってから入ろう
-                      <button
-                        type="button"
-                        style={{ ...btnPrimary, width: "100%", marginTop: 12 }}
-                        onClick={() => {
-                          setOverlay(null);
-                          setCraftTab("facility");
-                          setTab("craft");
-                        }}
-                      >
-                        クラフトへ
-                      </button>
-                    </div>
-                  )
+                  </div>
                 ) : (
-                  <>
-                    <div className="mining-rock-pick-stage">
-                      <div className="mining-rock-pick-stage-title">どれをたたく？</div>
-                      <div className="mining-rock-pick-stage-sub">あたりはひみつ。すきなのを選ぼう</div>
-                      <div className="mining-rock-hero-row">
-                        {(["左", "まんなか", "みぎ"] as const).map((label, i) => {
-                          const isHitHint = rockHint.kind === "hit" && rockHint.index === i;
-                          const isMissHint = rockHint.kind === "miss" && rockHint.index === i;
-                          return (
-                            <button
-                              key={label}
-                              type="button"
-                              className={`mining-rock-tile v${i}${isHitHint ? " is-glow" : ""}${isMissHint ? " is-miss-hint" : ""}`}
-                              disabled={digBusy || mining.tickets < 1}
-                              onClick={() => pickRockInSheet(i)}
-                            >
-                              <span className="mining-rock-tile-face" aria-hidden>
-                                <img
-                                  className="mining-rock-tile-img"
-                                  src={DIG_BLOCK_IMAGE[selectedGacha]}
-                                  alt=""
-                                  draggable={false}
-                                />
-                                <span className="mining-rock-tile-crack" />
-                              </span>
-                              <span className="mining-rock-tile-label">{label}</span>
-                              {isMissHint && (
-                                <span className="mining-rock-tile-badge is-miss">はずれ</span>
-                              )}
-                              {isHitHint && (
-                                <span className="mining-rock-tile-badge is-hit">あたり</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {mining.tickets < 1 && (
-                        <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: theme.text.secondary }}>
-                          チケットが足りないよ
-                        </div>
-                      )}
-                      {rockHint.kind === "hit" && (
-                        <div className="mining-rock-pick-lucky-hint">
-                          ヘルメットのヒント：キラッと光る岩があたりだよ
-                        </div>
-                      )}
-                      {rockHint.kind === "miss" && (
-                        <div className="mining-rock-pick-lucky-hint">
-                          ヘルメットのヒント：うすい岩ははずれだよ
-                        </div>
-                      )}
+                  <div className="mining-rock-pick-stage">
+                    <div className="mining-rock-pick-stage-title">
+                      {isBucketGacha(selectedGacha) ? "どれをくむ？" : "どれをたたく？"}
                     </div>
-                    {selectedGacha === "river" && hasBucket(mining) && (
-                      <div className="mining-bucket-band">
-                        <button
-                          type="button"
-                          className="mining-bucket-btn"
-                          style={btnGhost}
-                          disabled={digBusy || mining.tickets < 1}
-                          onClick={scoopWater}
-                        >
-                          バケツで水をくむ · 🎫1
-                        </button>
+                    <div className="mining-rock-pick-stage-sub">あたりはひみつ。すきなのを選ぼう</div>
+                    <div className="mining-rock-hero-row">
+                      {(["左", "まんなか", "みぎ"] as const).map((label, i) => {
+                        const isHitHint = rockHint.kind === "hit" && rockHint.index === i;
+                        const isMissHint = rockHint.kind === "miss" && rockHint.index === i;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            className={`mining-rock-tile v${i}${isHitHint ? " is-glow" : ""}${isMissHint ? " is-miss-hint" : ""}`}
+                            disabled={digBusy || mining.tickets < 1}
+                            onClick={() => pickRockInSheet(i)}
+                          >
+                            <span className="mining-rock-tile-face" aria-hidden>
+                              <img
+                                className="mining-rock-tile-img"
+                                src={DIG_BLOCK_IMAGE[selectedGacha]}
+                                alt=""
+                                draggable={false}
+                              />
+                              <span className="mining-rock-tile-crack" />
+                            </span>
+                            <span className="mining-rock-tile-label">{label}</span>
+                            {isMissHint && (
+                              <span className="mining-rock-tile-badge is-miss">はずれ</span>
+                            )}
+                            {isHitHint && (
+                              <span className="mining-rock-tile-badge is-hit">あたり</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {mining.tickets < 1 && (
+                      <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: theme.text.secondary }}>
+                        チケットが足りないよ
                       </div>
                     )}
-                  </>
+                    {rockHint.kind === "hit" && (
+                      <div className="mining-rock-pick-lucky-hint">
+                        {isBucketGacha(selectedGacha)
+                          ? "ヘルメットのヒント：キラッと光るところがあたりだよ"
+                          : "ヘルメットのヒント：キラッと光る岩があたりだよ"}
+                      </div>
+                    )}
+                    {rockHint.kind === "miss" && (
+                      <div className="mining-rock-pick-lucky-hint">
+                        {isBucketGacha(selectedGacha)
+                          ? "ヘルメットのヒント：うすいところははずれだよ"
+                          : "ヘルメットのヒント：うすい岩ははずれだよ"}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -3055,7 +3035,7 @@ export function MiningScreen({
             <div className="mining-rock-pick-title">鉱山がバージョンアップ！</div>
             <div className="mining-rock-pick-sub" style={{ textAlign: "left", lineHeight: 1.55 }}>
               岩がかたくなったよ。そのかわり、エンチャントと新しいほりばがふえた！
-              農場・かわ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
+              農場・牧場・うみ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
             </div>
             <button
               type="button"

@@ -4,6 +4,7 @@ import { getBuddyEntry, type BuddyProgressMap } from "./buddyProgress";
 import { REWARD_LOOKUP } from "./stickerRewards";
 import {
   canAffordRecipe,
+  fuelAmountForTimes,
   maxCraftTimes,
   NETHERITE_UPGRADE_REQUIRES,
   pickFuelOption,
@@ -32,6 +33,8 @@ import {
   parseToolId,
   partySlotCount,
   tierRank,
+  isAxeGacha,
+  isBucketGacha,
   type ArmorKind,
   type CraftedGearId,
   type GachaId,
@@ -85,9 +88,10 @@ export const DEBRIS_RATE_CAP = 0.45;
 
 export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   wood: "log",
-  farm: "wool",
+  farm: "sugar_cane",
+  ranch: "wool",
   stone: "cobble",
-  river: "sugar_cane",
+  river: null,
   iron: "iron_ore",
   coal: "coal",
   gold: "gold_ore",
@@ -114,7 +118,7 @@ export function bestOwnedTool(
 }
 
 export function recommendToolKind(gacha: GachaId): ToolKind {
-  if (gacha === "wood" || gacha === "farm") return "axe";
+  if (isAxeGacha(gacha)) return "axe";
   return "pickaxe";
 }
 
@@ -209,6 +213,7 @@ export function refreshUnlocks(state: MiningState): MiningState {
   if (woodToolsComplete(state)) {
     unlocked.add("stone");
     unlocked.add("farm");
+    unlocked.add("ranch");
   }
   if (stoneToolsComplete(state)) {
     unlocked.add("iron");
@@ -265,14 +270,13 @@ export function partySpecialtyBonus(
 export function toolPlus1Chance(toolId: CraftedGearId | null, gacha: GachaId): number {
   const parsed = parseToolId(toolId);
   if (!parsed) return 0;
-  if (parsed.kind === "axe" && (gacha === "wood" || gacha === "farm")) {
+  if (parsed.kind === "axe" && isAxeGacha(gacha)) {
     return TIER_PLUS1[parsed.tier];
   }
   if (
     parsed.kind === "pickaxe"
-    && gacha !== "wood"
-    && gacha !== "farm"
-    && gacha !== "lava_cave"
+    && !isAxeGacha(gacha)
+    && !isBucketGacha(gacha)
   ) {
     return TIER_PLUS1[parsed.tier];
   }
@@ -303,9 +307,9 @@ export function leggingsByproductChance(state: MiningState): number {
 
 const LEGGINGS_BYPRODUCT_BASIC: Partial<Record<GachaId, MaterialId>> = {
   wood: "stick",
-  farm: "leather",
+  farm: "paper",
+  ranch: "leather",
   stone: "coal",
-  river: "paper",
   iron: "cobble",
   coal: "cobble",
   gold: "coal",
@@ -316,9 +320,9 @@ const LEGGINGS_BYPRODUCT_BASIC: Partial<Record<GachaId, MaterialId>> = {
 
 const LEGGINGS_BYPRODUCT_BETTER: Partial<Record<GachaId, MaterialId>> = {
   wood: "plank",
-  farm: "leather",
+  farm: "paper",
+  ranch: "leather",
   stone: "coal",
-  river: "paper",
   iron: "coal",
   coal: "cobble",
   gold: "iron_ore",
@@ -612,8 +616,8 @@ export function resolveDig(params: {
 
   if (state.tickets < 1) return { error: "チケットが足りないよ" };
   if (!state.unlockedGachas.includes(params.gacha)) return { error: "まだ解放されていないよ" };
-  if (params.gacha === "lava_cave") {
-    return { error: "バケツをそうびして、ようがんをくんでね" };
+  if (params.gacha === "lava_cave" || params.gacha === "river") {
+    return { error: "バケツをそうびして、くんでね" };
   }
 
   const usedTool = bestOwnedTool(state, params.toolKind);
@@ -707,8 +711,6 @@ export function resolveDig(params: {
     let lapisAmt = primaryAmount >= 2 ? 3 : 2;
     if (rand() < 0.2) lapisAmt += 2;
     drops.push({ material: "lapis", amount: lapisAmt });
-  } else if (params.gacha === "farm") {
-    drops.push({ material: "wool", amount: primaryAmount });
   } else if (params.gacha === "nether") {
     drops.push({ material: "nether_quartz", amount: primaryAmount });
     const setBonus = netheriteFullComplete(state);
@@ -770,7 +772,11 @@ export function resolveDig(params: {
       drops.push({ material: "coal", amount: 1 });
       breakdown.push("おまけ 石炭");
     }
-    if (params.gacha === "farm" && rand() < 0.2) {
+    if (params.gacha === "farm" && rand() < 0.15) {
+      drops.push({ material: "paper", amount: 1 });
+      breakdown.push("おまけ 紙");
+    }
+    if (params.gacha === "ranch" && rand() < 0.2) {
       drops.push({ material: "leather", amount: 1 });
       breakdown.push("皮ゲット");
     }
@@ -828,10 +834,11 @@ export function resolveDig(params: {
   };
 }
 
-/** かわ／ようがんでバケツくみ（🎫1） */
+/** うみ／ようがんでバケツくみ（🎫1）。3択のあたりで+1 */
 export function resolveBucketFill(params: {
   state: MiningState;
   gacha: "river" | "lava_cave";
+  luckyRock?: boolean;
 }): DigResult | { error: string } {
   let state = {
     ...params.state,
@@ -843,19 +850,27 @@ export function resolveBucketFill(params: {
   if (!hasBucket(state)) return { error: "鉄のバケツがひつようだよ" };
 
   const material: MaterialId = params.gacha === "river" ? "water" : "lava";
+  let amount = 1;
+  const breakdown = ["きほん 1"];
+  const hitReasons: string[] = [];
+  if (params.luckyRock) {
+    amount += 1;
+    breakdown.push("あたり +1");
+    hitReasons.push("あたり");
+  }
   state.tickets -= 1;
-  state.materials[material] = getMaterialCount(state, material) + 1;
+  state.materials[material] = getMaterialCount(state, material) + amount;
   state.miningPoints += 1;
   state = refreshUnlocks(state);
 
   return {
     state,
-    drops: [{ material, amount: 1 }],
-    breakdown: [params.gacha === "river" ? "水をくんだ！" : "ようがんをくんだ！"],
-    hitReasons: [],
+    drops: [{ material, amount }],
+    breakdown,
+    hitReasons,
     ticketRefunded: false,
     usedTool: null,
-    baseCount: 1,
+    baseCount: amount,
   };
 }
 
@@ -897,7 +912,7 @@ export function tryCraft(
       const match = recipe.fuelOptions.find(
         (f) => f.material === opts.fuel!.material && f.amount === opts.fuel!.amount,
       );
-      if (!match || have(match.material) < match.amount * times) {
+      if (!match || have(match.material) < fuelAmountForTimes(match, times)) {
         return { state, error: "選んだ燃料が足りないよ" };
       }
       fuel = match;
@@ -920,7 +935,7 @@ export function tryCraft(
     materials[c.material] = (materials[c.material] ?? 0) - c.amount * times;
   }
   if (fuel) {
-    materials[fuel.material] = (materials[fuel.material] ?? 0) - fuel.amount * times;
+    materials[fuel.material] = (materials[fuel.material] ?? 0) - fuelAmountForTimes(fuel, times);
   }
   for (const key of Object.keys(materials) as MaterialId[]) {
     if ((materials[key] ?? 0) <= 0) delete materials[key];

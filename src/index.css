@@ -1122,10 +1122,20 @@ button {
     radial-gradient(ellipse 80% 50% at 50% 35%, rgba(255,255,255,0.06), transparent 60%),
     linear-gradient(180deg, #1a222c 0%, #0c1016 55%, #07090c 100%);
 }
-.mining-fp-scene.biome-wood {
+.mining-fp-scene.biome-farm {
   background:
-    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(110,160,70,0.28), transparent 55%),
-    linear-gradient(180deg, #243820 0%, #141c10 55%, #0a1008 100%);
+    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(120,180,70,0.28), transparent 55%),
+    linear-gradient(180deg, #243818 0%, #141c0c 55%, #0a1006 100%);
+}
+.mining-fp-scene.biome-ranch {
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(200,160,70,0.26), transparent 55%),
+    linear-gradient(180deg, #2a2414 0%, #161208 55%, #0a0804 100%);
+}
+.mining-fp-scene.biome-river {
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 30%, rgba(70,160,210,0.28), transparent 55%),
+    linear-gradient(180deg, #143040 0%, #0a1820 55%, #040a10 100%);
 }
 .mining-fp-scene.biome-stone {
   background:
@@ -2567,10 +2577,25 @@ button {
   align-items: flex-start;
   margin-bottom: 12px;
 }
+.mining-enchant-head-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
 .mining-enchant-lapis {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
   font-weight: 900;
   white-space: nowrap;
+}
+.mining-enchant-offer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 .mining-enchant-section {
   font-size: 14px;

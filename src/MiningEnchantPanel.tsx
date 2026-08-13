@@ -15,6 +15,7 @@ import { MiningItemIcon } from "./MiningItemIcon";
 import {
   ENCHANT_META,
   ENCHANT_TARGET_LABEL,
+  ENCHANTED_BOOK_IMAGE,
   getMaterialCount,
   parseToolId,
   type CraftedGearId,
@@ -217,11 +218,7 @@ export function MiningEnchantPanel({
         <div className="mining-enchant-success" role="status" aria-live="polite">
           <div className="mining-enchant-success-sparkle" aria-hidden />
           <div className="mining-enchant-success-icon" aria-hidden>
-            {applySuccess.gear ? (
-              <MiningItemIcon gear={applySuccess.gear} size={56} alt="" />
-            ) : (
-              <span className="mining-enchant-target-placeholder">✨</span>
-            )}
+            <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={64} alt="" />
           </div>
           <div className="mining-enchant-success-title">エンチャントがついた！</div>
           <div className="mining-enchant-success-sub">
@@ -261,13 +258,19 @@ export function MiningEnchantPanel({
       )}
 
       <div className="mining-enchant-head">
-        <div>
-          <div className="mining-enchant-sub">どうぐやぼうぐに効果をつけるよ</div>
-          <div className="mining-enchant-slot-note">
-            剣なら、木でもネザライトでも同じ効果がつくよ
+        <div className="mining-enchant-head-copy">
+          <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={36} alt="" />
+          <div>
+            <div className="mining-enchant-sub">どうぐやぼうぐに効果をつけるよ</div>
+            <div className="mining-enchant-slot-note">
+              剣なら、木でもネザライトでも同じ効果がつくよ
+            </div>
           </div>
         </div>
-        <div className="mining-enchant-lapis">🔵 ラピス {lapis}</div>
+        <div className="mining-enchant-lapis">
+          <MiningItemIcon material="lapis" size={20} alt="" />
+          ラピス {lapis}
+        </div>
       </div>
 
       {!target && (
@@ -367,7 +370,10 @@ export function MiningEnchantPanel({
                 className="mining-enchant-offer is-primary-pick"
                 onClick={() => onApply(id)}
               >
-                <div className="mining-enchant-offer-name">{ENCHANT_META[id].label}</div>
+                <div className="mining-enchant-offer-head">
+                  <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={28} alt="" />
+                  <div className="mining-enchant-offer-name">{ENCHANT_META[id].label}</div>
+                </div>
                 <div className="mining-enchant-offer-blurb">{ENCHANT_META[id].blurb}</div>
                 <div className="mining-enchant-offer-cta">
                   これにきめる（ラピス{applyCost}）

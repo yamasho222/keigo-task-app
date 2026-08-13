@@ -491,6 +491,7 @@ export function playGachaAmbient(gacha: GachaIdLike): void {
 type GachaIdLike =
   | "wood"
   | "farm"
+  | "ranch"
   | "stone"
   | "river"
   | "iron"

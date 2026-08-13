@@ -29,10 +29,12 @@ export type MaterialId =
 /** パーティ枠＝ベッド数（1〜3） */
 export const MAX_BEDS = 3;
 export const BED_IMAGE = "/mining/White_Bed.png";
+export const ENCHANTED_BOOK_IMAGE = "/mining/Enchanted_Book.gif";
 
 export type GachaId =
   | "wood"
   | "farm"
+  | "ranch"
   | "stone"
   | "river"
   | "iron"
@@ -149,14 +151,14 @@ export const MATERIAL_META: Record<
   nether_quartz: { label: "ネザークォーツ", emoji: "⬜", image: "/mining/Nether_Quartz.png" },
   netherite_scrap: { label: "ネザライトの欠片", emoji: "📎", image: "/mining/Netherite_Scrap.webp" },
   netherite_ingot: { label: "ネザライトインゴット", emoji: "🛡️", image: "/mining/Netherite_Ingot.png" },
-  sugar_cane: { label: "さとうきび", emoji: "🎋" },
-  paper: { label: "紙", emoji: "📄" },
-  leather: { label: "皮", emoji: "🟤" },
-  water: { label: "水", emoji: "💧" },
-  lava: { label: "ようがん", emoji: "🌋" },
-  obsidian: { label: "黒曜石", emoji: "⬛" },
-  lapis: { label: "ラピスラズリ", emoji: "🔵" },
-  book: { label: "本", emoji: "📖" },
+  sugar_cane: { label: "さとうきび", emoji: "🎋", image: "/mining/Sugar_Cane.webp" },
+  paper: { label: "紙", emoji: "📄", image: "/mining/Paper.webp" },
+  leather: { label: "皮", emoji: "🟤", image: "/mining/Leather.webp" },
+  water: { label: "水", emoji: "💧", image: "/mining/Water.png" },
+  lava: { label: "ようがん", emoji: "🌋", image: "/mining/Lava.gif" },
+  obsidian: { label: "黒曜石", emoji: "⬛", image: "/mining/Obsidian.png" },
+  lapis: { label: "ラピスラズリ", emoji: "🔵", image: "/mining/Lapis_Lazuli.webp" },
+  book: { label: "本", emoji: "📖", image: "/mining/Book.webp" },
 };
 
 /** 装備・設備の画像（あれば表示） */
@@ -212,6 +214,7 @@ export function gearImage(id: CraftedGearId): string | undefined {
 export const GACHA_ORDER: GachaId[] = [
   "wood",
   "farm",
+  "ranch",
   "stone",
   "river",
   "iron",
@@ -224,16 +227,25 @@ export const GACHA_ORDER: GachaId[] = [
 ];
 
 /** こううん日の抽選から外す（バケツ専用など） */
-export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set(["lava_cave"]);
+export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set(["lava_cave", "river"]);
+
+export function isBucketGacha(gacha: GachaId): gacha is "river" | "lava_cave" {
+  return gacha === "river" || gacha === "lava_cave";
+}
+
+export function isAxeGacha(gacha: GachaId): boolean {
+  return gacha === "wood" || gacha === "farm" || gacha === "ranch";
+}
 
 export const GACHA_META: Record<
   GachaId,
   { label: string; emoji: string; specialty: MiningSpecialty; badge?: string }
 > = {
   wood: { label: "もり", emoji: "🌲", specialty: "wood" },
-  farm: { label: "農場", emoji: "🌾", specialty: "wood", badge: "羊毛・皮" },
+  farm: { label: "農場", emoji: "🌾", specialty: "wood", badge: "さとうきび" },
+  ranch: { label: "牧場", emoji: "🐄", specialty: "wood", badge: "羊毛・皮" },
   stone: { label: "いしのどうくつ", emoji: "⛰️", specialty: "cobble" },
-  river: { label: "かわ", emoji: "🌊", specialty: "cobble", badge: "さとうきび／水" },
+  river: { label: "うみ", emoji: "🌊", specialty: "cobble", badge: "水・バケツ" },
   iron: { label: "てつのこうざん", emoji: "⛏️", specialty: "iron" },
   coal: { label: "せきたんのやま", emoji: "⬛", specialty: "coal" },
   gold: { label: "きんのこうざん", emoji: "🌟", specialty: "gold" },
@@ -249,15 +261,16 @@ export const GACHA_META: Record<
  */
 export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
   wood: "/mining/tree.png",
-  farm: "/mining/White_Wool.png",
+  farm: "/mining/Sugar_Cane.webp",
+  ranch: "/mining/White_Wool.png",
   stone: "/mining/Stone.png",
-  river: "/mining/Oak_Genboku.png",
+  river: "/mining/Water.png",
   iron: "/mining/Iron_Ore.png",
   coal: "/mining/Coal_Ore.png",
   gold: "/mining/Gold_Ore.webp",
-  lava_cave: "/mining/Netherrack.webp",
+  lava_cave: "/mining/Lava.gif",
   diamond: "/mining/Diamond_Ore.png",
-  lapis_cave: "/mining/Diamond_Ore.png",
+  lapis_cave: "/mining/Lapis_Lazuli_Ore.webp",
   nether: "/mining/Netherrack.webp",
 };
 
@@ -291,7 +304,7 @@ export const TOOL_KIND_LABEL: Record<ToolKind, string> = {
 
 /** ほるどうぐ（剣・斧・ツルハシ）の効果説明（クラフトカード・そうび用・子ども向け） */
 export const TOOL_EFFECT_BLURB: Record<ToolKind, string> = {
-  axe: "もりでたくさんほれやすい",
+  axe: "もり・農場・牧場でたくさんほれやすい",
   sword: "たまにたくさん／レアが出やすい",
   pickaxe: "こうざんでたくさんほれやすい",
 };
@@ -352,12 +365,14 @@ export function armorTierFromGearId(id: CraftedGearId): GearTier | null {
 /** いま掘る場所に対して、そのほるどうぐが効くか一言 */
 export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (kind === "axe") {
-    if (gacha === "wood" || gacha === "farm") return "いま効く：たくさんほれる";
-    return "もり・農場のときだけ効く";
+    if (isAxeGacha(gacha)) return "いま効く：たくさんほれる";
+    return "もり・農場・牧場のときだけ効く";
   }
   if (kind === "pickaxe") {
-    if (gacha === "wood" || gacha === "farm") return "こうざんのときだけ効く";
-    if (gacha === "lava_cave") return "バケツでようがんをくむ";
+    if (isBucketGacha(gacha)) {
+      return gacha === "river" ? "バケツで水をくむ" : "バケツでようがんをくむ";
+    }
+    if (isAxeGacha(gacha)) return "こうざんのときだけ効く";
     if (gacha === "nether") return "いま効く：残骸が出やすい";
     if (gacha === "coal") return "いま効く：石炭+1";
     if (gacha === "lapis_cave") return "いま効く：ラピス";
@@ -453,6 +468,7 @@ export function emptyMiningState(): MiningState {
 const ALL_GACHA_IDS: GachaId[] = [
   "wood",
   "farm",
+  "ranch",
   "stone",
   "river",
   "iron",

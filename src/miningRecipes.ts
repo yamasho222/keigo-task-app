@@ -5,6 +5,8 @@ import type { CraftedGearId, GachaId, MaterialId } from "./miningTypes";
 export interface RecipeCost {
   material: MaterialId;
   amount: number;
+  /** この燃料1つで何回精錬できるか。未指定は1 */
+  crafts?: number;
 }
 
 export type RecipeId =
@@ -39,7 +41,7 @@ export interface MiningRecipe {
   /** エンチャントテーブルが必要（ダイヤどうぐ） */
   needsEnchantingTable?: boolean;
   /**
-   * 精錬の燃料（いずれか1つ）。石炭1／板材2／原木2 など。
+   * 精錬の燃料（いずれか1つ）。石炭1で2回／板材2／原木2 など。
    * ある場合は costs に燃料を含めず、こちらで支払う。
    */
   fuelOptions?: RecipeCost[];
@@ -50,12 +52,22 @@ export interface MiningRecipe {
   requiresUnlock?: GachaId;
 }
 
-/** 精錬燃料の標準（石炭1、なければ板材2か原木2） */
+/** 精錬燃料の標準（石炭1で2回、なければ板材2か原木2） */
 export const SMELT_FUEL_OPTIONS: RecipeCost[] = [
-  { material: "coal", amount: 1 },
+  { material: "coal", amount: 1, crafts: 2 },
   { material: "plank", amount: 2 },
   { material: "log", amount: 2 },
 ];
+
+export function fuelCraftsPerUnit(fuel: RecipeCost): number {
+  return Math.max(1, Math.floor(fuel.crafts ?? 1));
+}
+
+/** 精錬 times 回に必要な燃料の個数 */
+export function fuelAmountForTimes(fuel: RecipeCost, times: number): number {
+  const n = Math.max(1, Math.floor(times));
+  return Math.ceil((n * fuel.amount) / fuelCraftsPerUnit(fuel));
+}
 
 /** 持てる燃料を優先順（石炭→板材→原木）で選ぶ */
 export function pickFuelOption(
@@ -185,7 +197,7 @@ export const MINING_RECIPES: MiningRecipe[] = [
     emoji: "📄",
     outputs: [{ material: "paper", amount: 3 }],
     costs: [{ material: "sugar_cane", amount: 3 }],
-    requiresUnlock: "river",
+    requiresUnlock: "farm",
   },
   {
     id: "book_craft",
@@ -197,7 +209,7 @@ export const MINING_RECIPES: MiningRecipe[] = [
       { material: "leather", amount: 1 },
     ],
     needsWorkbench: true,
-    requiresUnlock: "farm",
+    requiresUnlock: "ranch",
   },
   {
     id: "bucket_iron",
@@ -382,13 +394,17 @@ export function maxCraftTimes(
   if (recipe.fuelOptions?.length) {
     fuel = opts?.fuel ?? pickFuelOption(recipe.fuelOptions, have);
     if (!fuel) return 0;
-    per.set(fuel.material, (per.get(fuel.material) ?? 0) + fuel.amount);
   }
 
   let times = Number.POSITIVE_INFINITY;
   for (const [material, amount] of per) {
     if (amount <= 0) continue;
     times = Math.min(times, Math.floor(have(material) / amount));
+  }
+  if (fuel) {
+    const fuelHave = have(fuel.material);
+    const fromFuel = Math.floor(fuelHave / fuel.amount) * fuelCraftsPerUnit(fuel);
+    times = Math.min(times, fromFuel);
   }
   if (!Number.isFinite(times)) times = 0;
   times = Math.max(0, times);
