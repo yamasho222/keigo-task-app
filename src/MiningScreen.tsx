@@ -1137,10 +1137,6 @@ export function MiningScreen({
 
   const openDigDestination = (step: DigDestStep = "place") => {
     if (digBusy) return;
-    if (mining.tickets < 1) {
-      onBack();
-      return;
-    }
     setDigDestStep(step);
     if (step === "rock") {
       rollLuckySpots();
@@ -1578,7 +1574,7 @@ export function MiningScreen({
         )}
       </div>
 
-      {!blockingOverlay && (
+      {!blockingOverlay && tab !== "mine" && (
       <>
       <div style={{ ...card, padding: "10px 12px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
@@ -1638,36 +1634,16 @@ export function MiningScreen({
             </div>
           )}
         </div>
-
-        {mining.tickets < 1 && (
-          <div style={{
-            marginTop: 8,
-            padding: "8px 10px",
-            borderRadius: 10,
-            backgroundColor: `${theme.category.orange}18`,
-            fontSize: 13,
-            fontWeight: 800,
-            color: theme.text.primary,
-            lineHeight: 1.45,
-          }}>
-            チケットは親のハンコでもらえるよ。もどってタスクをクリアしよう！
-            <button
-              type="button"
-              onClick={onBack}
-              style={{ ...btnGhost, marginTop: 6, fontWeight: 900, borderColor: theme.category.orange }}
-            >
-              タスクにもどる
-            </button>
-          </div>
-        )}
         {netheriteFullComplete(mining) && (
           <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: theme.category.green }}>
             ネザライトそろい：残骸が出やすいよ
           </div>
         )}
       </div>
+      </>
+      )}
 
-      {progressNudge && !blockingOverlay && (
+      {!blockingOverlay && progressNudge && (
         <div style={{
           ...card,
           padding: 12,
@@ -1689,8 +1665,6 @@ export function MiningScreen({
             </button>
           </div>
         </div>
-      )}
-      </>
       )}
 
       {!blockingOverlay && tab === "mine" && (
@@ -2685,7 +2659,7 @@ export function MiningScreen({
               onClick={() => openDigDestination("place")}
             >
               {mining.tickets < 1
-                ? "ほれる回数がありません · タスクへ"
+                ? "ほる場所をみる"
                 : `ほる場所をえらぶ · あと${mining.tickets}回`}
             </button>
           )}
@@ -2769,6 +2743,9 @@ export function MiningScreen({
 
             {digDestStep === "place" && (
               <>
+                {mining.tickets < 1 && (
+                  <div className="mining-dig-dest-hint">チケットがないよ。みるだけできるよ</div>
+                )}
                 {ironRoute && (
                   <div className="mining-dig-dest-hint">おすすめ: せきたん → かまど → てつ</div>
                 )}
