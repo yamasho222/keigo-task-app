@@ -45,6 +45,7 @@ import {
   type DigResult,
   type HelmetRockHint,
   type MiningRecipe,
+  type OddsSegment,
 } from "./miningProgress";
 import {
   CRAFT_RECIPE_TABS,
@@ -89,7 +90,9 @@ import {
   DIG_BLOCK_IMAGE,
   ENCHANT_META,
   ENCHANT_TARGET_LABEL,
-  ENCHANTED_BOOK_IMAGE,
+  ENCHANTING_TABLE_IMAGE,
+  CHEST_IMAGE,
+  STEVE_IMAGE,
   GACHA_META,
   GACHA_ORDER,
   MATERIAL_META,
@@ -181,6 +184,60 @@ function MiningSlot({
 }
 
 const DIG_REVEAL_ICON_CAP = 5;
+
+const ODDS_BAR_COLORS: Record<string, string> = {
+  "1": "#78909C",
+  "+1": "#43A047",
+  "+3": "#FB8C00",
+  "2": "#43A047",
+  "3": "#FB8C00",
+  "4+": "#F9A825",
+};
+
+function oddsPct(rate: number): string {
+  const n = Math.round(rate * 100);
+  if (n <= 0 && rate > 0) return "1%";
+  return `${n}%`;
+}
+
+function MiningOddsBar({ title, segments }: { title: string; segments: OddsSegment[] }) {
+  const visible = segments.filter((s) => s.rate > 0.002);
+  if (!visible.length) return null;
+  const aria = `${title} ${visible.map((s) => `${s.label} ${oddsPct(s.rate)}`).join(" ")}`;
+  return (
+    <div className="mining-odds">
+      <div className="mining-odds-title">{title}</div>
+      <div className="mining-odds-bar" role="img" aria-label={aria}>
+        {visible.map((s) => (
+          <div
+            key={s.key}
+            className="mining-odds-seg"
+            style={{
+              flexGrow: Math.max(s.rate, 0.03),
+              flexBasis: 0,
+              flexShrink: 1,
+              background: ODDS_BAR_COLORS[s.key] ?? "#90A4AE",
+              color: s.key === "4+" ? "#3E2723" : "#fff",
+            }}
+          >
+            {s.rate >= 0.16 ? s.label : ""}
+          </div>
+        ))}
+      </div>
+      <div className="mining-odds-legend">
+        {visible.map((s) => (
+          <span key={s.key} className="mining-odds-legend-item">
+            <span
+              className="mining-odds-dot"
+              style={{ background: ODDS_BAR_COLORS[s.key] ?? "#90A4AE" }}
+            />
+            {s.label} {oddsPct(s.rate)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function MiningDigRevealDrops({
   drops,
@@ -1401,10 +1458,10 @@ export function MiningScreen({
     });
   }, [fuelChoice, have, recipes, slots]);
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: "mine", label: "ほる" },
-    { id: "craft", label: "クラフト" },
-    { id: "bag", label: "もちもの" },
+  const tabs: { id: TabId; label: string; icon: string }[] = [
+    { id: "mine", label: "ほる", icon: "/mining/Stone_Pickaxe.png" },
+    { id: "craft", label: "クラフト", icon: "/mining/Crafting_Table.png" },
+    { id: "bag", label: "もちもの", icon: CHEST_IMAGE },
   ];
   const unlockCard = nextGachaUnlock(mining);
 
@@ -1534,7 +1591,7 @@ export function MiningScreen({
             <ScrollSafeBackButton onBack={() => setOverlay(null)} />
             <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, display: "inline-flex", alignItems: "center", gap: 8 }}>
               {overlay === "enchant" && (
-                <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={28} alt="" />
+                <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={28} alt="" />
               )}
               {blockingTitle}
             </div>
@@ -1552,21 +1609,9 @@ export function MiningScreen({
                   type="button"
                   onClick={() => setTab(t.id)}
                   className={`mining-main-tab${tab === t.id ? " is-active" : ""}`}
-                  style={
-                    tab === t.id
-                      ? {
-                          backgroundColor: `${theme.accent.primary}18`,
-                          borderColor: theme.accent.primary,
-                          color: theme.accent.primary,
-                        }
-                      : {
-                          backgroundColor: theme.fill.secondary,
-                          borderColor: theme.stroke.secondary,
-                          color: theme.text.primary,
-                        }
-                  }
                 >
-                  {t.label}
+                  <MiningItemIcon src={t.icon} size={22} alt="" />
+                  <span className="mining-main-tab-label">{t.label}</span>
                 </button>
               ))}
             </div>
@@ -1736,11 +1781,42 @@ export function MiningScreen({
                     <div style={{ fontWeight: 800, fontSize: 13 }}>いまのつよさ</div>
                     <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>{strength.label}</div>
                   </div>
-                  {boost.lines.filter((l) => l.active).slice(0, 3).map((line) => (
-                    <div key={line.label} style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 4 }}>
-                      {line.label}: {line.value}
+                  <div className="mining-odds-place">
+                    {GACHA_META[selectedGacha].label}
+                    {boost.usedTool ? ` ・ ${gearLabel(boost.usedTool)}` : " ・ どうぐなし"}
+                  </div>
+                  <MiningOddsBar title="きほん" segments={boost.baseOdds} />
+                  {boost.bucketMode ? (
+                    <div className="mining-odds-note">あたりを選ぶと +1こ</div>
+                  ) : (
+                    <>
+                    <MiningOddsBar title="そうび・なかまこみ（最終）" segments={boost.finalOdds} />
+                    <div className="mining-odds-armor">
+                      <div className="mining-odds-title">なかま</div>
+                      <div className="mining-odds-armor-row">
+                        <span className="mining-odds-armor-slot">+1こ</span>
+                        <span className="mining-odds-armor-text">
+                          {boost.partyPlus1Rate > 0
+                            ? `${oddsPct(boost.partyPlus1Rate)}${boost.partyDetail.length ? ` ・ ${boost.partyDetail.join(" / ")}` : ""}`
+                            : mining.partyIds.some(Boolean)
+                              ? "いまの場所では効かない"
+                              : "なかまがいないよ"}
+                        </span>
+                      </div>
                     </div>
-                  ))}
+                    </>
+                  )}
+                  {boost.armorNotes.length > 0 && (
+                    <div className="mining-odds-armor">
+                      <div className="mining-odds-title">ほかのぼうぐ</div>
+                      {boost.armorNotes.map((note) => (
+                        <div key={note.slot} className="mining-odds-armor-row">
+                          <span className="mining-odds-armor-slot">{ARMOR_KIND_LABEL[note.slot]}</span>
+                          <span className="mining-odds-armor-text">{note.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {lastDig && digFx === "idle" && (
                   <div>
@@ -2669,7 +2745,8 @@ export function MiningScreen({
               className="mining-main-tab"
               onClick={() => setOverlay("equip")}
             >
-              そうび
+              <MiningItemIcon src="/mining/Iron_Chestplate.webp" size={22} alt="" />
+              <span className="mining-main-tab-label">そうび</span>
             </button>
             <button
               type="button"
@@ -2681,7 +2758,8 @@ export function MiningScreen({
                 setPartyCategoryFilter(null);
               }}
             >
-              なかま
+              <MiningItemIcon src={STEVE_IMAGE} size={22} alt="" />
+              <span className="mining-main-tab-label">なかま</span>
             </button>
             <button
               type="button"
@@ -2695,10 +2773,8 @@ export function MiningScreen({
                 setOverlay("enchant");
               }}
             >
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={18} alt="" />
-                エンチャ
-              </span>
+              <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={22} alt="" />
+              <span className="mining-main-tab-label">エンチャ</span>
             </button>
           </div>
         </div>

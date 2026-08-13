@@ -30,6 +30,9 @@ export type MaterialId =
 export const MAX_BEDS = 3;
 export const BED_IMAGE = "/mining/White_Bed.png";
 export const ENCHANTED_BOOK_IMAGE = "/mining/Enchanted_Book.gif";
+export const ENCHANTING_TABLE_IMAGE = "/mining/Enchanting_Table.png";
+export const CHEST_IMAGE = "/mining/Chest.png";
+export const STEVE_IMAGE = "/mining/Steve.png";
 
 export type GachaId =
   | "wood"
@@ -166,7 +169,7 @@ export const GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
   workbench: "/mining/Crafting_Table.png",
   furnace: "/mining/Furnace.png",
   bucket_iron: "/mining/Iron_Ingot.png",
-  enchanting_table: "/mining/Crafting_Table.png",
+  enchanting_table: "/mining/Enchanting_Table.png",
   sword_wood: "/mining/Wooden_Sword.png",
   axe_wood: "/mining/Wooden_Axe.png",
   pickaxe_wood: "/mining/Wooden_Pickaxe.webp",

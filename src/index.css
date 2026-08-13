@@ -1052,23 +1052,54 @@ button {
 .mining-main-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
 }
 .mining-main-tab {
-  border: 1.5px solid #dddddd;
-  border-radius: 12px;
-  padding: 10px 8px;
-  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 2px solid #373737;
+  border-top-color: #f4f4f4;
+  border-left-color: #f4f4f4;
+  border-bottom-color: #555555;
+  border-right-color: #555555;
+  border-radius: 4px;
+  padding: 8px 6px 6px;
+  font-size: 12px;
   min-width: 0;
   font-weight: 900;
   cursor: pointer;
-  background-color: #f0f0f0;
+  background-color: #8b8b8b;
+  background-image: linear-gradient(180deg, #c6c6c6 0%, #8b8b8b 100%);
   color: #1a1a1a;
+  box-shadow: inset 1px 1px 0 #e8e8e8, inset -1px -1px 0 #5a5a5a;
 }
 .mining-main-tab.is-active {
-  background-color: rgba(91, 142, 255, 0.14);
-  border-color: #5B8EFF;
-  color: #5B8EFF;
+  background-color: #c6a44a;
+  background-image: linear-gradient(180deg, #f8e08a 0%, #c6a44a 100%);
+  border-color: #3d2e0a;
+  border-top-color: #fff3c4;
+  border-left-color: #fff3c4;
+  border-bottom-color: #8a6a12;
+  border-right-color: #8a6a12;
+  box-shadow: 0 0 0 2px #f1c232, 0 0 0 3px #3d2e0a;
+  color: #3d2e0a;
+}
+.mining-main-tab-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.mining-main-tab-label {
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .mining-craft-tabs {
@@ -3552,4 +3583,82 @@ button {
   border-radius: 12px;
   padding: 8px 10px;
   background: transparent;
+}
+.mining-odds {
+  margin-top: 10px;
+}
+.mining-odds-place {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #78909C;
+}
+.mining-odds-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #455A64;
+  margin-bottom: 4px;
+}
+.mining-odds-bar {
+  display: flex;
+  height: 26px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ECEFF1;
+}
+.mining-odds-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mining-odds-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.mining-odds-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #546E7A;
+}
+.mining-odds-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mining-odds-note {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #546E7A;
+}
+.mining-odds-armor {
+  margin-top: 12px;
+}
+.mining-odds-armor-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.mining-odds-armor-slot {
+  flex: 0 0 5.5em;
+  color: #78909C;
+}
+.mining-odds-armor-text {
+  flex: 1;
+  color: #37474F;
 }

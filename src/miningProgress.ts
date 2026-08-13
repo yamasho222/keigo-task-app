@@ -33,6 +33,7 @@ import {
   parseToolId,
   partySlotCount,
   tierRank,
+  armorTierEffectCopy,
   isAxeGacha,
   isBucketGacha,
   type ArmorKind,
@@ -467,6 +468,17 @@ export interface DigBoostLine {
   active: boolean;
 }
 
+export interface OddsSegment {
+  key: string;
+  label: string;
+  rate: number;
+}
+
+export interface ArmorOddsNote {
+  slot: ArmorKind;
+  text: string;
+}
+
 export interface DigBoostPreview {
   usedTool: CraftedGearId | null;
   recommended: boolean;
@@ -480,6 +492,71 @@ export interface DigBoostPreview {
   luckyToday: boolean;
   expectedExtra: number;
   lines: DigBoostLine[];
+  bucketMode: boolean;
+  baseOdds: OddsSegment[];
+  finalOdds: OddsSegment[];
+  armorNotes: ArmorOddsNote[];
+}
+
+function poissonBinomial(probs: number[]): number[] {
+  let dp = [1];
+  for (const raw of probs) {
+    const p = Math.min(1, Math.max(0, raw));
+    if (p <= 0) continue;
+    const next = Array.from({ length: dp.length + 1 }, () => 0);
+    for (let k = 0; k < dp.length; k++) {
+      next[k] += dp[k] * (1 - p);
+      next[k + 1] += dp[k] * p;
+    }
+    dp = next;
+  }
+  return dp;
+}
+
+function keepOdds(segments: OddsSegment[]): OddsSegment[] {
+  return segments.filter((s) => s.rate >= 0.005);
+}
+
+function buildArmorNotes(
+  state: MiningState,
+  gacha: GachaId,
+  lucky: GachaId | null,
+  leggingsByproductRate: number,
+  bootsRefundRate: number,
+): ArmorOddsNote[] {
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const notes: ArmorOddsNote[] = [];
+  const helm = equippedArmorTier(state, "helmet");
+  if (helm) {
+    let text = armorTierEffectCopy("helmet", helm);
+    if (lucky) {
+      text += lucky === gacha
+        ? "（きょうはここ）"
+        : `（きょうは${GACHA_META[lucky].label}）`;
+    }
+    notes.push({ slot: "helmet", text });
+  }
+  const chest = equippedArmorTier(state, "chest");
+  if (chest) {
+    notes.push({ slot: "chest", text: armorTierEffectCopy("chest", chest) });
+  }
+  const legs = equippedArmorTier(state, "leggings");
+  if (legs) {
+    const copy = armorTierEffectCopy("leggings", legs);
+    notes.push({
+      slot: "leggings",
+      text: leggingsByproductRate > 0 ? `${copy} ${pct(leggingsByproductRate)}` : copy,
+    });
+  }
+  const boots = equippedArmorTier(state, "boots");
+  if (boots) {
+    const copy = armorTierEffectCopy("boots", boots);
+    notes.push({
+      slot: "boots",
+      text: bootsRefundRate > 0 ? `${copy} ${pct(bootsRefundRate)}` : copy,
+    });
+  }
+  return notes;
 }
 
 /** 掘る直前のパーティ＋装備補正プレビュー */
@@ -496,14 +573,16 @@ export function previewDigBoost(params: {
     swordJackpotRate(usedTool)
       + sumEnchantBonus(params.state, "fortune", fortuneBonus, params.toolKind),
   );
-  const toolPlus1Rate = toolPlus1Chance(usedTool, params.gacha);
-  const enchantPlus1 = Math.min(
+  const toolPlus1Rate = isBucketGacha(params.gacha) ? 0 : toolPlus1Chance(usedTool, params.gacha);
+  const enchantPlus1 = isBucketGacha(params.gacha) ? 0 : Math.min(
     0.35,
     sumEnchantBonus(params.state, "efficiency", efficiencyBonus, params.toolKind),
   );
-  const leggingsByproductRate = leggingsByproductChance(params.state);
-  const party = partySpecialtyBonus(params.state, params.buddyProgress, params.gacha);
-  const bootsRefundRate = Math.min(
+  const leggingsByproductRate = isBucketGacha(params.gacha) ? 0 : leggingsByproductChance(params.state);
+  const party = isBucketGacha(params.gacha)
+    ? { bonusChance: 0, matchCount: 0, detail: [] as string[] }
+    : partySpecialtyBonus(params.state, params.buddyProgress, params.gacha);
+  const bootsRefundRate = isBucketGacha(params.gacha) ? 0 : Math.min(
     0.25,
     bootsRefundChance(params.state)
       + sumEnchantBonus(params.state, "refund", refundBonus, params.toolKind),
@@ -511,18 +590,25 @@ export function previewDigBoost(params: {
   const hasHelmet = !!(params.state.equipped.helmet && params.state.crafted[params.state.equipped.helmet]);
   const lucky = luckyGachaForDate(params.dateKey, params.state.unlockedGachas, hasHelmet);
   const luckyToday =
-    lucky === params.gacha
+    !isBucketGacha(params.gacha)
+    && lucky === params.gacha
     && hasHelmet
     && params.state.luckyBonusClaimedDate !== params.dateKey;
+  const prospectPlus1 = (
+    !isBucketGacha(params.gacha) && lucky === params.gacha
+  )
+    ? Math.min(0.35, sumEnchantBonus(params.state, "prospect", prospectBonus, params.toolKind))
+    : 0;
   const expectedExtra =
-    toolPlus1Rate + enchantPlus1 + party.bonusChance + (luckyToday ? 1 : 0);
+    toolPlus1Rate + enchantPlus1 + party.bonusChance + prospectPlus1 + (luckyToday ? 1 : 0);
   const pct = (n: number) => `${Math.round(n * 100)}%`;
-  const twoRate = DIG_TWO_RATE;
-  const oneRate = Math.max(0, 1 - jackpotRate - twoRate);
+  const twoRate = isBucketGacha(params.gacha) ? 0 : DIG_TWO_RATE;
+  const oneRate = isBucketGacha(params.gacha) ? 1 : Math.max(0, 1 - jackpotRate - twoRate);
+  const shownJackpot = isBucketGacha(params.gacha) ? 0 : jackpotRate;
   const lines: DigBoostLine[] = [
     {
       label: "きほん個数",
-      value: `1個 ${pct(oneRate)} / +1 ${pct(twoRate)} / +3 ${pct(jackpotRate)}`,
+      value: `1個 ${pct(oneRate)} / +1 ${pct(twoRate)} / +3 ${pct(shownJackpot)}`,
       hint: parseToolId(usedTool)?.kind === "sword" ? "剣でたまに素材+3（+1より弱め）" : "剣なしは素材+3が5%",
       active: true,
     },
@@ -556,10 +642,63 @@ export function previewDigBoost(params: {
       active: bootsRefundRate > 0,
     },
   ];
+
+  const armorNotes = buildArmorNotes(
+    params.state,
+    params.gacha,
+    lucky,
+    leggingsByproductRate,
+    bootsRefundRate,
+  );
+
+  if (isBucketGacha(params.gacha)) {
+    const one = [{ key: "1", label: "1こ", rate: 1 }];
+    return {
+      usedTool,
+      recommended: recommendToolKind(params.gacha) === params.toolKind,
+      jackpotRate: 0,
+      twoRate: 0,
+      toolPlus1Rate: 0,
+      leggingsPlus1Rate: 0,
+      partyPlus1Rate: 0,
+      partyDetail: [],
+      bootsRefundRate: 0,
+      luckyToday: false,
+      expectedExtra: 0,
+      lines,
+      bucketMode: true,
+      baseOdds: one,
+      finalOdds: one,
+      armorNotes,
+    };
+  }
+
+  const plus1s = [toolPlus1Rate, enchantPlus1, party.bonusChance, prospectPlus1];
+  const bonusDist = poissonBinomial(plus1s);
+  const luckyShift = luckyToday ? 1 : 0;
+  const countRate: number[] = [];
+  const addCount = (n: number, p: number) => {
+    if (p <= 0) return;
+    countRate[n] = (countRate[n] ?? 0) + p;
+  };
+  for (const [base, pBase] of [[1, oneRate], [2, twoRate], [3, shownJackpot]] as const) {
+    for (let k = 0; k < bonusDist.length; k++) {
+      addCount(base + k + luckyShift, pBase * bonusDist[k]);
+    }
+  }
+  let fourPlus = 0;
+  const finalOdds: OddsSegment[] = [];
+  for (let n = 1; n < countRate.length; n++) {
+    const p = countRate[n] ?? 0;
+    if (n >= 4) fourPlus += p;
+    else if (p >= 0.005) finalOdds.push({ key: String(n), label: `${n}こ`, rate: p });
+  }
+  if (fourPlus >= 0.005) finalOdds.push({ key: "4+", label: "4こ+", rate: fourPlus });
+
   return {
     usedTool,
     recommended: recommendToolKind(params.gacha) === params.toolKind,
-    jackpotRate,
+    jackpotRate: shownJackpot,
     twoRate,
     toolPlus1Rate,
     leggingsPlus1Rate: enchantPlus1,
@@ -569,6 +708,14 @@ export function previewDigBoost(params: {
     luckyToday,
     expectedExtra,
     lines,
+    bucketMode: false,
+    baseOdds: keepOdds([
+      { key: "1", label: "1こ", rate: oneRate },
+      { key: "+1", label: "+1", rate: twoRate },
+      { key: "+3", label: "+3", rate: shownJackpot },
+    ]),
+    finalOdds,
+    armorNotes,
   };
 }
 
