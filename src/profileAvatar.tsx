@@ -50,7 +50,7 @@ interface ProfileAvatarProps {
 }
 
 export function ProfileAvatar({ value, size = 28, alt = "", style }: ProfileAvatarProps) {
-  const src = value.trim();
+  const src = (value ?? "").trim();
   if (isProfileAvatarImage(src)) {
     return <MiningItemIcon src={src} size={size} alt={alt} style={style} />;
   }

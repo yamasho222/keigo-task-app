@@ -83,30 +83,34 @@ function summarizeSnapshot(snapshot: LocalAppStateSnapshot): string {
 
 /** いまのクラウドプロフィールに属さない、端末に残った子別セーブ */
 export function listOrphanedLocalSnapshots(liveChildIds: string[]): OrphanedLocalSnapshot[] {
-  const live = new Set(liveChildIds);
-  const prefixes = [`${LEGACY_STORAGE_KEY}:`, `${LEGACY_STICKER_ALBUM_KEY}:`];
-  const ids = new Set<string>();
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    for (const prefix of prefixes) {
-      if (!key.startsWith(prefix)) continue;
-      const id = key.slice(prefix.length);
-      if (!id || live.has(id)) continue;
-      ids.add(id);
+  try {
+    const live = new Set(liveChildIds);
+    const prefixes = [`${LEGACY_STORAGE_KEY}:`, `${LEGACY_STICKER_ALBUM_KEY}:`];
+    const ids = new Set<string>();
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      for (const prefix of prefixes) {
+        if (!key.startsWith(prefix)) continue;
+        const id = key.slice(prefix.length);
+        if (!id || live.has(id)) continue;
+        ids.add(id);
+      }
     }
+    const out: OrphanedLocalSnapshot[] = [];
+    for (const childId of ids) {
+      const snapshot = loadLocalAppStateSnapshot(childId);
+      if (!hasLocalAppState(snapshot)) continue;
+      out.push({
+        childId,
+        snapshot,
+        summary: summarizeSnapshot(snapshot),
+      });
+    }
+    return out;
+  } catch {
+    return [];
   }
-  const out: OrphanedLocalSnapshot[] = [];
-  for (const childId of ids) {
-    const snapshot = loadLocalAppStateSnapshot(childId);
-    if (!hasLocalAppState(snapshot)) continue;
-    out.push({
-      childId,
-      snapshot,
-      summary: summarizeSnapshot(snapshot),
-    });
-  }
-  return out;
 }
 
 export function writeLocalAppStateSnapshot(

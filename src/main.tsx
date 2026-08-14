@@ -5,12 +5,16 @@ import "./index.css";
 import App from "./App.tsx";
 import { CloudAppShell } from "./CloudAppShell.tsx";
 
-// iOS ホーム画面PWAは更新が残りやすい。
-// injectRegister: null のため、新SW検知時のリロードはここで明示する（取らないと古い画面のまま）。
+// iOS ホーム画面PWAは、起動時の SW 初回制御でも controllerchange が飛ぶ。
+// そこで無条件リロードすると、閉じて開き直すたびに真っ白のまま回り続ける。
+const RELOAD_GUARD_KEY = "pwa-sw-reload-at";
+const RELOAD_GUARD_MS = 15_000;
+let pendingReload = false;
 let refreshing = false;
+
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (refreshing) return;
+    if (!pendingReload || refreshing) return;
     refreshing = true;
     window.location.reload();
   });
@@ -19,6 +23,10 @@ if ("serviceWorker" in navigator) {
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
+    const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) ?? "0");
+    if (Date.now() - last < RELOAD_GUARD_MS) return;
+    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
+    pendingReload = true;
     void updateSW(true);
   },
   onRegisteredSW(_swUrl, registration) {
@@ -31,7 +39,6 @@ const updateSW = registerSW({
     });
     window.addEventListener("focus", check);
     window.setInterval(check, 30 * 60 * 1000);
-    // 起動直後にも一度取りにいく（バックグラウンド起動対策）
     check();
   },
 });
