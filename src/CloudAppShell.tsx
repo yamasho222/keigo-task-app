@@ -15,6 +15,8 @@ import {
   markLocalImportSeen,
   saveSelectedChildId,
   writeLocalAppStateSnapshot,
+  listOrphanedLocalSnapshots,
+  clearLocalAppStateSnapshot,
   type LocalAppStateSnapshot,
 } from "./appStateStorage";
 import {
@@ -86,6 +88,8 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
   const [legacyImportAvailable, setLegacyImportAvailable] = useState(false);
   /** 初回「つなぐ」を出してよい childId（クラウド未作成の子だけ） */
   const [importableChildIds, setImportableChildIds] = useState<string[]>([]);
+  /** クラウドに無い子IDの端末セーブ（削除済みプロフィールの拾い直し用） */
+  const [orphans, setOrphans] = useState<{ childId: string; summary: string }[]>([]);
 
   const applyChildSnapshot = useCallback((childId: string, snapshot: LocalAppStateSnapshot) => {
     writeLocalAppStateSnapshot(snapshot, childId);
@@ -177,12 +181,22 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
     setLegacyImportAvailable(importable.length > 0);
   }, []);
 
+  const commitProfiles = useCallback((nextProfiles: ChildProfile[]) => {
+    setProfiles(nextProfiles);
+    setOrphans(
+      listOrphanedLocalSnapshots(nextProfiles.map((profile) => profile.id)).map(({ childId, summary }) => ({
+        childId,
+        summary,
+      })),
+    );
+  }, []);
+
   const refreshProfiles = useCallback(async (currentUser = user) => {
     if (!currentUser) return;
     const nextProfiles = await listChildProfiles(currentUser.uid);
-    setProfiles(nextProfiles);
+    commitProfiles(nextProfiles);
     await reconcileImportEligibility(currentUser.uid, nextProfiles);
-  }, [reconcileImportEligibility, user]);
+  }, [commitProfiles, reconcileImportEligibility, user]);
 
   const openProfile = useCallback(async (
     currentUser: FirebaseUser,
@@ -281,6 +295,37 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
     }
   }, [deviceId, flushPendingSave, reconcileImportEligibility, rememberLoaded, rememberWritten]);
 
+  const restoreOrphan = useCallback(async (orphanChildId: string, target: ChildProfile) => {
+    const currentUser = userRef.current;
+    if (!currentUser) return;
+    const snapshot = loadLocalAppStateSnapshot(orphanChildId);
+    if (!isMeaningfulSnapshot(snapshot)) {
+      setError("このスマホに残っている記録が見つかりませんでした。けんごのスマホでもう一度開いてみてください。");
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    try {
+      const existingCloud = await loadCloudAppState(currentUser.uid, target.id);
+      const hasCloud = isMeaningfulSnapshot(existingCloud?.snapshot ?? null);
+      const message = hasCloud
+        ? `このスマホに残っている削除済みの記録で、「${target.name}」のクラウド記録を上書きします。\nけいごなど別の子にはつながないでください。\nよろしいですか？`
+        : `このスマホに残っている削除済みの記録を「${target.name}」につなぎます。\nけいごなど別の子にはつながないでください。\nよろしいですか？`;
+      if (!window.confirm(message)) return;
+      await saveCloudAppState(currentUser.uid, target.id, snapshot, deviceId);
+      markLocalImportSeen(target.id);
+      clearLocalAppStateSnapshot(orphanChildId);
+      const nextProfiles = await listChildProfiles(currentUser.uid);
+      commitProfiles(nextProfiles);
+      openedChildIdRef.current = null;
+      await openProfile(currentUser, target, "cloud");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "記録のつなぎに失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  }, [commitProfiles, deviceId, openProfile]);
+
   const openProfileRef = useRef(openProfile);
   openProfileRef.current = openProfile;
 
@@ -306,6 +351,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
       setAuthLoading(false);
       if (!nextUser) {
         setProfiles([]);
+        setOrphans([]);
         setActiveProfile(null);
         openedChildIdRef.current = null;
         seenUpdatedAtMsRef.current = 0;
@@ -318,12 +364,14 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         await ensureParentUser(nextUser.uid, nextUser.email);
         const nextProfiles = await listChildProfiles(nextUser.uid);
         if (cancelled) return;
-        setProfiles(nextProfiles);
+        commitProfiles(nextProfiles);
         await reconcileImportEligibility(nextUser.uid, nextProfiles);
         if (cancelled) return;
         const selectedId = loadSelectedChildId();
         const selected = nextProfiles.find((profile) => profile.id === selectedId);
-        if (selected) await openProfileRef.current(nextUser, selected, "cloud");
+        const hasOrphans = listOrphanedLocalSnapshots(nextProfiles.map((profile) => profile.id)).length > 0;
+        // 削除済みの端末記録があるときは選択画面を出して、つなぎ直しを先にできるようにする
+        if (selected && !hasOrphans) await openProfileRef.current(nextUser, selected, "cloud");
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "プロフィールの読み込みに失敗しました。");
@@ -422,7 +470,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
       setAppKey("profile-select");
       if (user) {
         void listChildProfiles(user.uid).then((nextProfiles) => {
-          setProfiles(nextProfiles);
+          commitProfiles(nextProfiles);
           return reconcileImportEligibility(user.uid, nextProfiles);
         });
       } else {
@@ -430,7 +478,7 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         setLegacyImportAvailable(false);
       }
     });
-  }, [flushPendingSave, reconcileImportEligibility, user]);
+  }, [commitProfiles, flushPendingSave, reconcileImportEligibility, user]);
 
   const onSignOut = useCallback(async () => {
     await flushPendingSave();
@@ -552,6 +600,8 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
           }
         }}
         onOpen={(profile, mode) => openProfile(user, profile, mode)}
+        onRestoreOrphan={restoreOrphan}
+        orphans={orphans}
         onDelete={async (profile) => {
           if (!window.confirm(`「${profile.name}」プロフィールを削除します。クラウド上のデータも削除されます。よろしいですか？`)) return;
           setLoading(true);

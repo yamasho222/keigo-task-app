@@ -15,6 +15,8 @@ interface ChildProfileScreenProps {
   onCreate: (name: string, avatarEmoji: string) => void;
   onOpen: (profile: ChildProfile, mode: "cloud" | "importLocal") => void;
   onDelete: (profile: ChildProfile) => void;
+  onRestoreOrphan: (orphanChildId: string, target: ChildProfile) => void;
+  orphans: { childId: string; summary: string }[];
   onSignOut: () => void;
   onContinueLocal: () => void;
 }
@@ -38,6 +40,8 @@ export function ChildProfileScreen({
   onCreate,
   onOpen,
   onDelete,
+  onRestoreOrphan,
+  orphans,
   onSignOut,
   onContinueLocal,
 }: ChildProfileScreenProps) {
@@ -121,6 +125,60 @@ export function ChildProfileScreen({
             fontSize: 13,
           }}>
             {error}
+          </div>
+        )}
+
+        {orphans.length > 0 && (
+          <div style={{
+            borderRadius: 18,
+            padding: 14,
+            backgroundColor: `${theme.category.orange}14`,
+            border: `1.5px solid ${theme.category.orange}`,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: theme.text.primary }}>
+              削除した記録が、このスマホに残っています
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.6, color: theme.text.secondary }}>
+              先に下で「けんご」などのプロフィールを追加してから、正しい子へつないでください。
+              けいごなど別の子にはつながないでください。
+            </div>
+            {orphans.map((orphan) => (
+              <div
+                key={orphan.childId}
+                style={{
+                  borderRadius: 12,
+                  padding: 12,
+                  backgroundColor: theme.bg.editor,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 800, color: theme.text.primary }}>
+                  {orphan.summary}
+                </div>
+                {profiles.length === 0 ? (
+                  <div style={{ fontSize: 12, color: theme.text.secondary }}>
+                    つなぐ先のプロフィールを、下から追加してください。
+                  </div>
+                ) : (
+                  profiles.map((profile) => (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => onRestoreOrphan(orphan.childId, profile)}
+                      style={{ ...buttonBase, backgroundColor: theme.category.orange, color: "#fff" }}
+                    >
+                      「{profile.name}」につなぐ
+                    </button>
+                  ))
+                )}
+              </div>
+            ))}
           </div>
         )}
 

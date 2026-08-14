@@ -55,6 +55,60 @@ export function hasLegacyUnscopedLocalData(): boolean {
   return hasLocalAppState(loadLegacyUnscopedSnapshot());
 }
 
+export interface OrphanedLocalSnapshot {
+  childId: string;
+  snapshot: LocalAppStateSnapshot;
+  summary: string;
+}
+
+function summarizeSnapshot(snapshot: LocalAppStateSnapshot): string {
+  const parts: string[] = [];
+  const state = snapshot.state && typeof snapshot.state === "object"
+    ? snapshot.state as Record<string, unknown>
+    : null;
+  if (state && typeof state.date === "string" && state.date) {
+    parts.push(`日付 ${state.date}`);
+  }
+  const mining = state?.mining && typeof state.mining === "object"
+    ? state.mining as Record<string, unknown>
+    : null;
+  if (mining && typeof mining.tickets === "number") {
+    parts.push(`こうざん🎫 ${mining.tickets}`);
+  }
+  if (snapshot.stickerAlbum.length > 0) {
+    parts.push(`シール ${snapshot.stickerAlbum.length}`);
+  }
+  return parts.length > 0 ? parts.join(" / ") : "記録あり";
+}
+
+/** いまのクラウドプロフィールに属さない、端末に残った子別セーブ */
+export function listOrphanedLocalSnapshots(liveChildIds: string[]): OrphanedLocalSnapshot[] {
+  const live = new Set(liveChildIds);
+  const prefixes = [`${LEGACY_STORAGE_KEY}:`, `${LEGACY_STICKER_ALBUM_KEY}:`];
+  const ids = new Set<string>();
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    for (const prefix of prefixes) {
+      if (!key.startsWith(prefix)) continue;
+      const id = key.slice(prefix.length);
+      if (!id || live.has(id)) continue;
+      ids.add(id);
+    }
+  }
+  const out: OrphanedLocalSnapshot[] = [];
+  for (const childId of ids) {
+    const snapshot = loadLocalAppStateSnapshot(childId);
+    if (!hasLocalAppState(snapshot)) continue;
+    out.push({
+      childId,
+      snapshot,
+      summary: summarizeSnapshot(snapshot),
+    });
+  }
+  return out;
+}
+
 export function writeLocalAppStateSnapshot(
   snapshot: LocalAppStateSnapshot,
   childId?: string | null,
