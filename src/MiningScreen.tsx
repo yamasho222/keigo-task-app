@@ -2573,7 +2573,7 @@ export function MiningScreen({
                 農場・牧場・うみ・ようがん・ラピスどうくつと、エンチャントテーブルに挑戦しよう。
                 {tableReady && !mining.unlockedGachas.includes("nether") && (
                   <div style={{ marginTop: 8 }}>
-                    テーブルのあと：はやくネザーへ／つよくなってから、どっちも正解だよ。
+                    ダイヤどうぐ3つでネザーがひらくよ。エンチャントはすきなときに。
                   </div>
                 )}
               </div>
@@ -2725,7 +2725,7 @@ export function MiningScreen({
         <div
           ref={setBottomChromeEl}
           className="mining-bottom-chrome"
-          aria-label="ほる・そうび・なかま・エンチャ"
+          aria-label="ほる・そうび・なかま・エンチャント"
         >
           {tab === "mine" && overlay !== "digDestination" && (
             <button
@@ -2739,7 +2739,7 @@ export function MiningScreen({
                 : `ほる場所をえらぶ · あと${mining.tickets}回`}
             </button>
           )}
-          <div className="mining-main-tabs mining-bottom-tabs" aria-label="そうび・なかま・エンチャ">
+          <div className="mining-main-tabs mining-bottom-tabs" aria-label="そうび・なかま・エンチャント">
             <button
               type="button"
               className="mining-main-tab"
@@ -2763,8 +2763,8 @@ export function MiningScreen({
             </button>
             <button
               type="button"
-              className="mining-main-tab"
-              disabled={!tableReady}
+              className={`mining-main-tab${!tableReady ? " is-locked" : ""}`}
+              aria-disabled={!tableReady}
               onClick={() => {
                 if (!tableReady) {
                   showToast("テーブルができたら使えるよ");
@@ -2774,7 +2774,7 @@ export function MiningScreen({
               }}
             >
               <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={22} alt="" />
-              <span className="mining-main-tab-label">エンチャ</span>
+              <span className="mining-main-tab-label">エンチャント</span>
             </button>
           </div>
         </div>
@@ -3042,7 +3042,7 @@ export function MiningScreen({
           <div className="mining-rock-pick-sheet">
             <div className="mining-rock-pick-title">どっちも正解！</div>
             <div className="mining-rock-pick-sub" style={{ textAlign: "left", lineHeight: 1.5 }}>
-              テーブルができたら、すきな進み方でOKだよ
+              エンチャントも、ネザーも、すきな順でOKだよ
             </div>
             <div className="mining-route-branch">
               <button

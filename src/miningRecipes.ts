@@ -38,7 +38,7 @@ export interface MiningRecipe {
   needsWorkbench?: boolean;
   /** かまどが必要 */
   needsFurnace?: boolean;
-  /** エンチャントテーブルが必要（ダイヤどうぐ） */
+  /** エンチャントテーブルが必要 */
   needsEnchantingTable?: boolean;
   /**
    * 精錬の燃料（いずれか1つ）。石炭1で2回／板材2／原木2 など。
@@ -326,16 +326,10 @@ export const MINING_RECIPES: MiningRecipe[] = [
   armorRecipe("leggings_gold", "金のレギンス", "gold_ingot", 7, "gold"),
   armorRecipe("boots_gold", "金のブーツ", "gold_ingot", 4, "gold"),
 
-  // ダイヤ（どうぐはテーブル必須）
-  toolRecipe("sword_diamond", "ダイヤの剣", "⚔️", "diamond", 2, "diamond", {
-    needsEnchantingTable: true,
-  }),
-  toolRecipe("axe_diamond", "ダイヤの斧", "🪓", "diamond", 3, "diamond", {
-    needsEnchantingTable: true,
-  }),
-  toolRecipe("pickaxe_diamond", "ダイヤのツルハシ", "⛏️", "diamond", 3, "diamond", {
-    needsEnchantingTable: true,
-  }),
+  // ダイヤ（鉄どうぐでしんそう解放後）
+  toolRecipe("sword_diamond", "ダイヤの剣", "⚔️", "diamond", 2, "diamond"),
+  toolRecipe("axe_diamond", "ダイヤの斧", "🪓", "diamond", 3, "diamond"),
+  toolRecipe("pickaxe_diamond", "ダイヤのツルハシ", "⛏️", "diamond", 3, "diamond"),
   armorRecipe("helmet_diamond", "ダイヤのヘルメット", "diamond", 5, "diamond"),
   armorRecipe("chest_diamond", "ダイヤのむねあて", "diamond", 8, "diamond"),
   armorRecipe("leggings_diamond", "ダイヤのレギンス", "diamond", 7, "diamond"),

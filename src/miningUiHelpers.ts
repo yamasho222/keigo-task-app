@@ -160,6 +160,35 @@ export function miningNextHero(mining: MiningState): NextHero {
       };
     }
   }
+  if (!diamondToolsComplete(mining)) {
+    const tools = toolTrio(
+      mining,
+      "sword_diamond",
+      "axe_diamond",
+      "pickaxe_diamond",
+      ["ダイヤの剣", "ダイヤの斧", "ダイヤのツルハシ"],
+    );
+    const doneCount = tools.filter((t) => t.done).length;
+    const next = tools.find((t) => !t.done);
+    return {
+      kind: "tools",
+      title: next ? `${next.label}をつくろう` : "ダイヤのどうぐをそろえよう",
+      subtitle: "しんそうで欠片をあつめよう",
+      tools,
+      doneCount,
+      totalCount: 3,
+      jumpTab: "craft",
+      preferredGacha: "diamond",
+    };
+  }
+  if (!mining.unlockedGachas.includes("nether")) {
+    return {
+      kind: "unlock",
+      title: "ネザーまであと少し",
+      subtitle: "ダイヤのどうぐ3つでひらくよ",
+      jumpTab: "craft",
+    };
+  }
   if (!hasEnchantingTable(mining)) {
     const obs = getMaterialCount(mining, "obsidian");
     const books = getMaterialCount(mining, "book");
@@ -194,38 +223,9 @@ export function miningNextHero(mining: MiningState): NextHero {
     return {
       kind: "unlock",
       title: "エンチャントテーブルをつくろう",
-      subtitle: "黒曜石4・ダイヤ2・本1でできるよ",
+      subtitle: "エンチャントがつかえるようになるよ",
       jumpTab: "craft",
       preferredGacha: "diamond",
-    };
-  }
-  if (!diamondToolsComplete(mining)) {
-    const tools = toolTrio(
-      mining,
-      "sword_diamond",
-      "axe_diamond",
-      "pickaxe_diamond",
-      ["ダイヤの剣", "ダイヤの斧", "ダイヤのツルハシ"],
-    );
-    const doneCount = tools.filter((t) => t.done).length;
-    const next = tools.find((t) => !t.done);
-    return {
-      kind: "tools",
-      title: next ? `${next.label}をつくろう` : "ダイヤのどうぐをそろえよう",
-      subtitle: "テーブルができたら、しんそうで欠片をあつめよう",
-      tools,
-      doneCount,
-      totalCount: 3,
-      jumpTab: "craft",
-      preferredGacha: "diamond",
-    };
-  }
-  if (!mining.unlockedGachas.includes("nether")) {
-    return {
-      kind: "unlock",
-      title: "ネザーまであと少し",
-      subtitle: "ダイヤのどうぐ3つでひらくよ",
-      jumpTab: "craft",
     };
   }
   if ((mining.bedCount ?? 1) < 3) {
@@ -402,6 +402,23 @@ export function recommendedCraftRecipeIds(mining: MiningState): RecipeId[] {
     return ids;
   }
 
+  if (!diamondToolsComplete(mining)) {
+    const missing = (
+      [
+        "sword_diamond",
+        "axe_diamond",
+        "pickaxe_diamond",
+      ] as const
+    ).filter((id) => !mining.crafted[id]);
+    if (getMaterialCount(mining, "diamond") < 3
+      && getMaterialCount(mining, "diamond_shard") >= 9) {
+      push("diamond_from_shards");
+    }
+    if (sticks < 2 && missing.length > 0) push("stick_batch");
+    for (const id of missing) push(id);
+    return ids;
+  }
+
   if (!hasEnchantingTable(mining)) {
     if (!hasBucket(mining)) push("bucket_iron");
     const books = getMaterialCount(mining, "book");
@@ -417,23 +434,6 @@ export function recommendedCraftRecipeIds(mining: MiningState): RecipeId[] {
       push("diamond_from_shards");
     }
     push("enchanting_table");
-    return ids;
-  }
-
-  if (!diamondToolsComplete(mining)) {
-    const missing = (
-      [
-        "sword_diamond",
-        "axe_diamond",
-        "pickaxe_diamond",
-      ] as const
-    ).filter((id) => !mining.crafted[id]);
-    if (getMaterialCount(mining, "diamond") < 3
-      && getMaterialCount(mining, "diamond_shard") >= 9) {
-      push("diamond_from_shards");
-    }
-    if (sticks < 2 && missing.length > 0) push("stick_batch");
-    for (const id of missing) push(id);
     return ids;
   }
 
@@ -476,7 +476,7 @@ export function recipeEffectLine(recipe: MiningRecipe): string | null {
   if (recipe.id === "book_craft") return "エンチャントテーブルの材料";
   if (recipe.id === "obsidian_craft") return "水＋ようがんでテーブルの材料";
   if (recipe.craftFlag === "bucket_iron") return "うみとようがんで液体をくめる";
-  if (recipe.craftFlag === "enchanting_table") return "まほうとダイヤどうぐがひらく";
+  if (recipe.craftFlag === "enchanting_table") return "エンチャントがつかえる";
   if (recipe.craftFlag) {
     const tool = parseToolId(recipe.craftFlag);
     if (tool) return TOOL_EFFECT_BLURB[tool.kind];
@@ -531,17 +531,17 @@ export function craftTutorialBanner(mining: MiningState): {
       steps: ["てつをほる→インゴット→どうぐ3つ"],
     };
   }
-  if (!hasEnchantingTable(mining)) {
-    return {
-      title: "いまやること：エンチャントテーブル",
-      steps: ["本・黒曜石・ダイヤ2でテーブル→まほうがつかえる"],
-      tip: "農場・牧場・うみ・ようがんで材料をあつめよう",
-    };
-  }
   if (!diamondToolsComplete(mining)) {
     return {
       title: "いまやること：ダイヤ",
-      steps: ["しんそうで欠片→ダイヤ→どうぐ3つ（テーブルひつよう）"],
+      steps: ["しんそうで欠片→ダイヤ→どうぐ3つ"],
+    };
+  }
+  if (!hasEnchantingTable(mining)) {
+    return {
+      title: "いまやること：エンチャントテーブル",
+      steps: ["本・黒曜石・ダイヤ2でテーブル→エンチャントがつかえる"],
+      tip: "農場・牧場・うみ・ようがんで材料をあつめよう",
     };
   }
   if ((mining.bedCount ?? 1) < 3) {
@@ -861,7 +861,7 @@ export function detectChapterMoments(before: MiningState, after: MiningState): C
     push({
       id: "enchant_table",
       title: "エンチャントテーブル！",
-      sub: "まほうがかけられるよ。ダイヤどうぐもつくれる！",
+      sub: "エンチャントがかけられるよ",
     });
   }
   if (!diamondToolsComplete(before) && diamondToolsComplete(after)) {
@@ -914,7 +914,7 @@ export function digRevealTitle(
     return { title: "羊毛ゲット！", sub: "ベッドの材料だよ" };
   }
   if (materials.includes("lapis")) {
-    return { title: "ラピスゲット！", sub: "まほうのかけらだよ" };
+    return { title: "ラピスゲット！", sub: "エンチャントのかけらだよ" };
   }
   if (materials.includes("leather")) {
     return { title: "皮ゲット！", sub: "本の材料だよ" };

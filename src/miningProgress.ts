@@ -227,7 +227,7 @@ export function refreshUnlocks(state: MiningState): MiningState {
     unlocked.add("lava_cave");
     unlocked.add("lapis_cave");
   }
-  if (diamondToolsComplete(state) && hasEnchantingTable(state)) {
+  if (diamondToolsComplete(state)) {
     unlocked.add("nether");
   }
   return { ...state, unlockedGachas: [...unlocked] };
@@ -237,7 +237,6 @@ const WOOD_UNLOCK_REQ: CraftedGearId[] = ["sword_wood", "axe_wood", "pickaxe_woo
 const STONE_UNLOCK_REQ: CraftedGearId[] = ["sword_stone", "axe_stone", "pickaxe_stone"];
 const IRON_UNLOCK_REQ: CraftedGearId[] = ["sword_iron", "axe_iron", "pickaxe_iron"];
 const NETHER_UNLOCK_REQ: CraftedGearId[] = [
-  "enchanting_table",
   "sword_diamond",
   "axe_diamond",
   "pickaxe_diamond",
@@ -864,7 +863,7 @@ export function resolveDig(params: {
   );
   if (plus1Pool > 0 && rand() < plus1Pool) {
     bonus += 1;
-    breakdown.push("まほう +1");
+    breakdown.push("エンチャント +1");
   }
 
   const party = partySpecialtyBonus(state, params.buddyProgress, params.gacha);
@@ -890,8 +889,8 @@ export function resolveDig(params: {
     const prospect = Math.min(0.35, sumEnchantBonus(state, "prospect", prospectBonus, digKind));
     if (prospect > 0 && rand() < prospect) {
       bonus += 1;
-      breakdown.push("あたり日まほう +1");
-      hitReasons.push("あたり日まほう");
+      breakdown.push("あたり日エンチャント +1");
+      hitReasons.push("あたり日エンチャント");
     }
   }
 

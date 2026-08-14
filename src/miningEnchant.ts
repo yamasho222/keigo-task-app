@@ -126,7 +126,7 @@ export function levelUpEnchant(
   target: EnchantTarget,
 ): { state: MiningState; error?: string } {
   const cur = state.enchants[target];
-  if (!cur) return { state, error: "まほうがついていないよ" };
+  if (!cur) return { state, error: "エンチャントがついていないよ" };
   if (cur.level >= 3) return { state, error: "もうさいきょうだよ" };
   const nextLevel = (cur.level + 1) as EnchantLevel;
   const cost = ENCHANT_LEVEL_UP_COST[nextLevel as 2 | 3];
@@ -193,7 +193,7 @@ export function demoDigLines(id: EnchantId): { title: string; lines: string[]; h
     case "efficiency":
       return {
         title: "デモほり：こうりつ",
-        lines: ["きほん 1", "まほう +1"],
+        lines: ["きほん 1", "エンチャント +1"],
         highlight: "こうりつで素材がもう1こ！",
       };
     case "fortune":
@@ -217,7 +217,7 @@ export function demoDigLines(id: EnchantId): { title: string; lines: string[]; h
     case "prospect":
       return {
         title: "デモほり：あたり日",
-        lines: ["きほん 1", "あたり日まほう +1"],
+        lines: ["きほん 1", "あたり日エンチャント +1"],
         highlight: "こううんのほりばで得しやすい！",
       };
     case "bonus_star":
