@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization, react-hooks/refs, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import { AuthScreen } from "./AuthScreen";
 import { ChildProfileScreen } from "./ChildProfileScreen";
 import {
@@ -27,8 +28,10 @@ import {
   ensureParentUser,
   listChildProfiles,
   loadCloudAppState,
+  reorderChildProfiles,
   saveCloudAppState,
   touchChildProfile,
+  updateChildProfile,
   type ActiveChildContext,
   type ChildProfile,
   type LoadedCloudAppState,
@@ -591,7 +594,11 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
           setLoading(true);
           setError(undefined);
           try {
-            await createChildProfile(user.uid, name, avatarEmoji);
+            const nextOrder = profiles.reduce(
+              (max, profile, index) => Math.max(max, profile.sortOrder ?? index),
+              -1,
+            ) + 1;
+            await createChildProfile(user.uid, name, avatarEmoji, nextOrder);
             await refreshProfiles(user);
           } catch (err) {
             setError(err instanceof Error ? err.message : "プロフィール作成に失敗しました。");
@@ -602,6 +609,36 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         onOpen={(profile, mode) => openProfile(user, profile, mode)}
         onRestoreOrphan={restoreOrphan}
         orphans={orphans}
+        onUpdate={async (profile, name, avatarEmoji) => {
+          setLoading(true);
+          setError(undefined);
+          try {
+            await updateChildProfile(user.uid, profile.id, name, avatarEmoji);
+            await refreshProfiles(user);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "プロフィールの変更に失敗しました。");
+          } finally {
+            setLoading(false);
+          }
+        }}
+        onMoveProfile={async (profileId, direction) => {
+          const from = profiles.findIndex((profile) => profile.id === profileId);
+          const to = from + direction;
+          if (from < 0 || to < 0 || to >= profiles.length) return;
+          const next = arrayMove(profiles, from, to);
+          commitProfiles(next);
+          setLoading(true);
+          setError(undefined);
+          try {
+            await reorderChildProfiles(user.uid, next.map((profile) => profile.id));
+            await refreshProfiles(user);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "順番の保存に失敗しました。");
+            await refreshProfiles(user);
+          } finally {
+            setLoading(false);
+          }
+        }}
         onDelete={async (profile) => {
           setLoading(true);
           setError(undefined);

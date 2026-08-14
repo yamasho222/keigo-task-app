@@ -9,6 +9,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { theme } from "./theme";
+import { ProfileAvatar } from "./profileAvatar";
 import { AppScroll } from "./AppScroll";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { TimerDurationPanel } from "./TimerControls";
@@ -4336,7 +4337,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             borderBottom: `1px solid ${theme.stroke.secondary}`,
           }}
         >
-          <span style={{ fontSize: 18 }} aria-hidden>{cloud.avatarEmoji}</span>
+          <ProfileAvatar value={cloud.avatarEmoji} size={22} alt="" />
           <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: theme.text.primary }}>
             {cloud.childName}
           </span>

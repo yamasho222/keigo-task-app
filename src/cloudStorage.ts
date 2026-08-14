@@ -20,6 +20,7 @@ export interface ChildProfile {
   id: string;
   name: string;
   avatarEmoji: string;
+  sortOrder?: number;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   lastOpenedAt?: Timestamp;
@@ -100,30 +101,44 @@ export async function ensureParentUser(userId: string, email: string | null): Pr
 export async function listChildProfiles(userId: string): Promise<ChildProfile[]> {
   const firestore = assertDb();
   const snapshot = await getDocs(query(collection(firestore, "users", userId, "children"), orderBy("createdAt", "asc")));
-  return snapshot.docs.map((childDoc) => {
+  const mapped = snapshot.docs.map((childDoc) => {
     const data = childDoc.data();
     return {
       id: childDoc.id,
       name: typeof data.name === "string" ? data.name : "プロフィール",
       avatarEmoji: typeof data.avatarEmoji === "string" ? data.avatarEmoji : "🙂",
+      sortOrder: typeof data.sortOrder === "number" ? data.sortOrder : undefined,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
       lastOpenedAt: data.lastOpenedAt,
     };
   });
+  return mapped
+    .map((profile, index) => ({
+      profile,
+      key: typeof profile.sortOrder === "number" ? profile.sortOrder : index,
+    }))
+    .sort((a, b) => a.key - b.key)
+    .map((entry) => entry.profile);
 }
 
-export async function createChildProfile(userId: string, name: string, avatarEmoji: string): Promise<ChildProfile> {
+export async function createChildProfile(
+  userId: string,
+  name: string,
+  avatarEmoji: string,
+  sortOrder = 0,
+): Promise<ChildProfile> {
   const firestore = assertDb();
   const ref = doc(collection(firestore, "users", userId, "children"));
   const profile = {
     name: name.trim() || "プロフィール",
     avatarEmoji: avatarEmoji.trim() || "🙂",
+    sortOrder,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
   await setDoc(ref, profile);
-  return { id: ref.id, name: profile.name, avatarEmoji: profile.avatarEmoji };
+  return { id: ref.id, name: profile.name, avatarEmoji: profile.avatarEmoji, sortOrder };
 }
 
 export async function touchChildProfile(userId: string, childId: string): Promise<void> {
@@ -132,6 +147,40 @@ export async function touchChildProfile(userId: string, childId: string): Promis
     doc(firestore, "users", userId, "children", childId),
     { lastOpenedAt: serverTimestamp(), updatedAt: serverTimestamp() },
     { merge: true },
+  );
+}
+
+export async function updateChildProfile(
+  userId: string,
+  childId: string,
+  name: string,
+  avatarEmoji: string,
+): Promise<ChildProfile> {
+  const firestore = assertDb();
+  const nextName = name.trim() || "プロフィール";
+  const nextEmoji = avatarEmoji.trim() || "🙂";
+  await setDoc(
+    doc(firestore, "users", userId, "children", childId),
+    {
+      name: nextName,
+      avatarEmoji: nextEmoji,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return { id: childId, name: nextName, avatarEmoji: nextEmoji };
+}
+
+export async function reorderChildProfiles(userId: string, orderedIds: string[]): Promise<void> {
+  const firestore = assertDb();
+  await Promise.all(
+    orderedIds.map((childId, index) =>
+      setDoc(
+        doc(firestore, "users", userId, "children", childId),
+        { sortOrder: index, updatedAt: serverTimestamp() },
+        { merge: true },
+      ),
+    ),
   );
 }
 

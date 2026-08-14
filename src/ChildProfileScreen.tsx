@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 import type { ChildProfile } from "./cloudStorage";
 import { AppScroll } from "./AppScroll";
+import { AvatarPicker, ProfileAvatar } from "./profileAvatar";
 
 interface ChildProfileScreenProps {
   profiles: ChildProfile[];
@@ -14,6 +15,8 @@ interface ChildProfileScreenProps {
   userLabel: string;
   onCreate: (name: string, avatarEmoji: string) => void;
   onOpen: (profile: ChildProfile, mode: "cloud" | "importLocal") => void;
+  onUpdate: (profile: ChildProfile, name: string, avatarEmoji: string) => void;
+  onMoveProfile: (profileId: string, direction: -1 | 1) => void;
   onDelete: (profile: ChildProfile) => void;
   onRestoreOrphan: (orphanChildId: string, target: ChildProfile) => void;
   orphans: { childId: string; summary: string }[];
@@ -39,6 +42,8 @@ export function ChildProfileScreen({
   userLabel,
   onCreate,
   onOpen,
+  onUpdate,
+  onMoveProfile,
   onDelete,
   onRestoreOrphan,
   orphans,
@@ -48,6 +53,9 @@ export function ChildProfileScreen({
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("🙂");
   const [manageOpen, setManageOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<ChildProfile | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("🙂");
   const [deletingProfile, setDeletingProfile] = useState<ChildProfile | null>(null);
   const [deleteNameInput, setDeleteNameInput] = useState("");
 
@@ -61,6 +69,33 @@ export function ChildProfileScreen({
   const closeDeleteModal = () => {
     setDeletingProfile(null);
     setDeleteNameInput("");
+  };
+
+  const closeEditModal = () => {
+    setEditingProfile(null);
+    setEditName("");
+    setEditEmoji("🙂");
+  };
+
+  const openEditModal = (profile: ChildProfile) => {
+    closeDeleteModal();
+    setEditingProfile(profile);
+    setEditName(profile.name);
+    setEditEmoji(profile.avatarEmoji);
+  };
+
+  const editChanged = editingProfile !== null && (
+    editName.trim() !== editingProfile.name.trim()
+    || (editEmoji.trim() || "🙂") !== editingProfile.avatarEmoji
+  );
+
+  const confirmEdit = () => {
+    if (!editingProfile || !editName.trim() || !editChanged || loading) return;
+    const target = editingProfile;
+    const nextName = editName.trim();
+    const nextEmoji = editEmoji.trim() || "🙂";
+    closeEditModal();
+    onUpdate(target, nextName, nextEmoji);
   };
 
   const nameMatchesDeleteTarget =
@@ -217,7 +252,7 @@ export function ChildProfileScreen({
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 28 }}>{profile.avatarEmoji}</span>
+                <ProfileAvatar value={profile.avatarEmoji} size={32} alt="" />
                 <span style={{ flex: 1, fontSize: 18, fontWeight: 900, color: theme.text.primary }}>
                   {profile.name}
                 </span>
@@ -265,21 +300,14 @@ export function ChildProfileScreen({
           gap: 10,
         }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: theme.text.primary }}>プロフィールを追加</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={emoji}
-              onChange={(e) => setEmoji(e.target.value.slice(0, 4))}
-              style={{ width: 54, borderRadius: 12, border: `1px solid ${theme.stroke.secondary}`, padding: "9px 8px", fontSize: 18, textAlign: "center" }}
-              aria-label="プロフィール絵文字"
-            />
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="名前"
-              style={{ flex: 1, borderRadius: 12, border: `1px solid ${theme.stroke.secondary}`, padding: "9px 10px", fontSize: 15 }}
-              aria-label="プロフィール名"
-            />
-          </div>
+          <AvatarPicker value={emoji} onChange={setEmoji} disabled={loading} />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="名前"
+            style={{ borderRadius: 12, border: `1px solid ${theme.stroke.secondary}`, padding: "9px 10px", fontSize: 15 }}
+            aria-label="プロフィール名"
+          />
           <button
             type="button"
             onClick={submit}
@@ -316,34 +344,79 @@ export function ChildProfileScreen({
             {manageOpen && (
               <>
                 <div style={{ fontSize: 12, lineHeight: 1.6, color: theme.text.secondary }}>
-                  ふだんは開きません。消すと、その子のクラウド記録も消えます。
+                  名前やアイコンを変えられます。▲▼で順番も変えられます。消すと、その子のクラウド記録も消えます。
                 </div>
-                {profiles.map((profile) => (
+                {profiles.map((profile, index) => (
                   <div
                     key={profile.id}
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "8px 0",
+                      flexDirection: "column",
+                      gap: 8,
+                      padding: "10px 0 2px",
                       borderTop: `1px solid ${theme.stroke.tertiary}`,
                     }}
                   >
-                    <span style={{ fontSize: 20 }}>{profile.avatarEmoji}</span>
-                    <span style={{ flex: 1, fontSize: 15, fontWeight: 800, color: theme.text.primary }}>
-                      {profile.name}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => {
-                        setDeletingProfile(profile);
-                        setDeleteNameInput("");
-                      }}
-                      style={{ ...buttonBase, backgroundColor: `${theme.category.pink}14`, color: theme.category.pink }}
-                    >
-                      削除する
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <button
+                          type="button"
+                          disabled={loading || index === 0}
+                          onClick={() => onMoveProfile(profile.id, -1)}
+                          aria-label={`${profile.name}を上へ`}
+                          style={{
+                            ...buttonBase,
+                            padding: "4px 8px",
+                            fontSize: 12,
+                            backgroundColor: theme.fill.secondary,
+                            color: index === 0 ? theme.text.tertiary : theme.text.secondary,
+                          }}
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          disabled={loading || index === profiles.length - 1}
+                          onClick={() => onMoveProfile(profile.id, 1)}
+                          aria-label={`${profile.name}を下へ`}
+                          style={{
+                            ...buttonBase,
+                            padding: "4px 8px",
+                            fontSize: 12,
+                            backgroundColor: theme.fill.secondary,
+                            color: index === profiles.length - 1 ? theme.text.tertiary : theme.text.secondary,
+                          }}
+                        >
+                          ▼
+                        </button>
+                      </div>
+                      <ProfileAvatar value={profile.avatarEmoji} size={28} alt="" />
+                      <span style={{ flex: 1, fontSize: 15, fontWeight: 800, color: theme.text.primary }}>
+                        {profile.name}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => openEditModal(profile)}
+                        style={{ ...buttonBase, flex: 1, backgroundColor: theme.fill.secondary, color: theme.text.secondary }}
+                      >
+                        名前・アイコンを変える
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => {
+                          closeEditModal();
+                          setDeletingProfile(profile);
+                          setDeleteNameInput("");
+                        }}
+                        style={{ ...buttonBase, backgroundColor: `${theme.category.pink}14`, color: theme.category.pink }}
+                      >
+                        削除する
+                      </button>
+                    </div>
                   </div>
                 ))}
               </>
@@ -362,6 +435,83 @@ export function ChildProfileScreen({
       </div>
     </div>
     </AppScroll>
+    {editingProfile && (
+      <div
+        data-modal-overlay
+        onClick={closeEditModal}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 140,
+          backgroundColor: "rgba(0,0,0,0.55)",
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "100%",
+            maxWidth: 420,
+            maxHeight: "min(90dvh, 720px)",
+            overflowY: "auto",
+            borderRadius: "20px 20px 0 0",
+            backgroundColor: theme.bg.editor,
+            padding: "20px 18px max(env(safe-area-inset-bottom, 16px), 16px)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: 900, color: theme.text.primary }}>
+            名前・アイコンを変える
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: theme.text.secondary }}>
+            見た目だけ変わります。宿題やこうざんの記録はそのままです。
+          </div>
+          <input
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") confirmEdit();
+            }}
+            placeholder="名前"
+            autoFocus
+            aria-label="プロフィール名"
+            style={{ borderRadius: 12, border: `1px solid ${theme.stroke.secondary}`, padding: "12px 10px", fontSize: 16 }}
+          />
+          <AvatarPicker value={editEmoji} onChange={setEditEmoji} disabled={loading} />
+          <button
+            type="button"
+            onClick={confirmEdit}
+            disabled={loading || !editName.trim() || !editChanged}
+            style={{
+              ...buttonBase,
+              padding: "14px 12px",
+              fontSize: 15,
+              backgroundColor: editName.trim() && editChanged ? theme.accent.primary : theme.fill.secondary,
+              color: editName.trim() && editChanged ? "#fff" : theme.text.tertiary,
+            }}
+          >
+            保存する
+          </button>
+          <button
+            type="button"
+            onClick={closeEditModal}
+            style={{
+              ...buttonBase,
+              padding: "12px 12px",
+              fontSize: 14,
+              backgroundColor: theme.fill.secondary,
+              color: theme.text.secondary,
+            }}
+          >
+            やめる
+          </button>
+        </div>
+      </div>
+    )}
     {deletingProfile && (
       <div
         data-modal-overlay
