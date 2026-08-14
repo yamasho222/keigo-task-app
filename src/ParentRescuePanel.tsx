@@ -7,6 +7,7 @@ import {
   verifyParentRescuePassword,
 } from "./parentRescueAuth";
 import {
+  EMPTY_REWARD_TICKETS,
   REWARD_TICKET_KINDS,
   rewardTicketLabel,
   type RewardTicketInventory,
@@ -57,11 +58,50 @@ export function ParentRescuePanel({
   const [pwConfirm, setPwConfirm] = useState("");
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwOk, setPwOk] = useState<string | null>(null);
+  const [pendingMining, setPendingMining] = useState(0);
+  const [pendingRewards, setPendingRewards] = useState<RewardTicketInventory>({
+    ...EMPTY_REWARD_TICKETS,
+  });
+  const [applyOk, setApplyOk] = useState<string | null>(null);
 
   const amount = (() => {
     const n = Math.floor(Number(customAmount));
     return Number.isFinite(n) && n > 0 ? n : 1;
   })();
+  const hasPending =
+    pendingMining !== 0
+    || REWARD_TICKET_KINDS.some((kind) => pendingRewards[kind] !== 0);
+
+  const stageMining = (delta: number) => {
+    setApplyOk(null);
+    setPendingMining((prev) => Math.max(-miningTickets, prev + delta));
+  };
+
+  const stageReward = (kind: RewardTicketKind, delta: number) => {
+    setApplyOk(null);
+    setPendingRewards((prev) => ({
+      ...prev,
+      [kind]: Math.max(-rewardTickets[kind], prev[kind] + delta),
+    }));
+  };
+
+  const clearPending = () => {
+    setPendingMining(0);
+    setPendingRewards({ ...EMPTY_REWARD_TICKETS });
+    setApplyOk(null);
+  };
+
+  const applyPending = () => {
+    if (!hasPending) return;
+    if (pendingMining !== 0) onAdjustMiningTickets(pendingMining);
+    for (const kind of REWARD_TICKET_KINDS) {
+      const delta = pendingRewards[kind];
+      if (delta !== 0) onAdjustRewardTicket(kind, delta);
+    }
+    setPendingMining(0);
+    setPendingRewards({ ...EMPTY_REWARD_TICKETS });
+    setApplyOk("反映したよ");
+  };
 
   const tryUnlock = () => {
     if (verifyParentRescuePassword(gateInput, currentPassword)) {
@@ -233,14 +273,18 @@ export function ParentRescuePanel({
             }}
           />
         </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, margin: "-6px 0 12px", lineHeight: 1.45 }}>
+          ＋/− はまだ仮の変更です。下の「この内容で反映する」を押すと確定します。
+        </div>
 
         <AdjustRow
           title="こうざんチケット"
           count={miningTickets}
+          pending={pendingMining}
           accent={theme.category.orange}
           amount={amount}
-          onPlus={() => onAdjustMiningTickets(amount)}
-          onMinus={() => onAdjustMiningTickets(-amount)}
+          onPlus={() => stageMining(amount)}
+          onMinus={() => stageMining(-amount)}
         />
 
         <div style={{ fontSize: 13, fontWeight: 900, color: theme.text.secondary, margin: "16px 0 8px" }}>
@@ -251,12 +295,58 @@ export function ParentRescuePanel({
             key={kind}
             title={rewardTicketLabel(kind)}
             count={rewardTickets[kind]}
+            pending={pendingRewards[kind]}
             accent={RARITY_META[kind].color}
             amount={amount}
-            onPlus={() => onAdjustRewardTicket(kind, amount)}
-            onMinus={() => onAdjustRewardTicket(kind, -amount)}
+            onPlus={() => stageReward(kind, amount)}
+            onMinus={() => stageReward(kind, -amount)}
           />
         ))}
+
+        {applyOk && (
+          <div style={{ fontSize: 13, fontWeight: 800, color: theme.category.green, margin: "4px 0 8px" }}>
+            {applyOk}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={applyPending}
+          disabled={!hasPending}
+          style={{
+            width: "100%",
+            padding: "14px 0",
+            borderRadius: 12,
+            border: "none",
+            backgroundColor: hasPending ? theme.accent.primary : theme.fill.secondary,
+            color: hasPending ? "#fff" : theme.text.tertiary,
+            fontSize: 15,
+            fontWeight: 900,
+            cursor: hasPending ? "pointer" : "default",
+            marginTop: 8,
+          }}
+        >
+          この内容で反映する
+        </button>
+        <button
+          type="button"
+          onClick={clearPending}
+          disabled={!hasPending}
+          style={{
+            width: "100%",
+            padding: "12px 0",
+            borderRadius: 12,
+            border: `1.5px solid ${theme.stroke.secondary}`,
+            backgroundColor: theme.fill.secondary,
+            color: theme.text.secondary,
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: hasPending ? "pointer" : "default",
+            opacity: hasPending ? 1 : 0.5,
+            marginTop: 8,
+          }}
+        >
+          やりなおす
+        </button>
 
         <div style={{
           marginTop: 18,
@@ -343,6 +433,7 @@ export function ParentRescuePanel({
 function AdjustRow({
   title,
   count,
+  pending,
   accent,
   amount,
   onPlus,
@@ -350,11 +441,19 @@ function AdjustRow({
 }: {
   title: string;
   count: number;
+  pending: number;
   accent: string;
   amount: number;
   onPlus: () => void;
   onMinus: () => void;
 }) {
+  const after = count + pending;
+  const minusDisabled = after <= 0;
+  const pendingLabel = pending === 0
+    ? null
+    : pending > 0
+      ? `+${pending}`
+      : String(pending);
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 8,
@@ -364,13 +463,20 @@ function AdjustRow({
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 900, color: theme.text.primary }}>{title}</div>
-        <div style={{ fontSize: 18, fontWeight: 900, color: accent }}>{count}</div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: accent }}>
+          {pending === 0 ? count : `${count} → ${after}`}
+        </div>
+        {pendingLabel && (
+          <div style={{ fontSize: 12, fontWeight: 800, color: theme.text.secondary }}>
+            変更 {pendingLabel}（まだ反映してない）
+          </div>
+        )}
       </div>
       <button
         type="button"
         onClick={onMinus}
-        disabled={count <= 0}
-        style={adjustBtnStyle(count <= 0)}
+        disabled={minusDisabled}
+        style={adjustBtnStyle(minusDisabled)}
       >
         −{amount}
       </button>
