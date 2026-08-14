@@ -137,6 +137,7 @@ export interface ActiveChildContext {
   avatarEmoji: string;
   syncStatus: string;
   saveState: (state: unknown, stickerAlbum: string[]) => void;
+  reloadFromCloud: () => void;
   onSwitchProfile: () => void;
   onSignOut: () => void;
 }
@@ -4645,7 +4646,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 {
                   icon: "☁",
                   label: `同期: ${cloud.syncStatus}`,
-                  action: () => { setShowMenu(false); },
+                  action: () => {
+                    setShowMenu(false);
+                    void cloud.reloadFromCloud();
+                  },
                 },
                 {
                   icon: "🚪",

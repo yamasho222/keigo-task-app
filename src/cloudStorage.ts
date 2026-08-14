@@ -8,7 +8,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  type Timestamp,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type { LocalAppStateSnapshot } from "./appStateStorage";
@@ -31,6 +31,31 @@ export interface CloudAppStateDocument {
   stickerAlbum: string[];
   updatedAt?: Timestamp;
   updatedByDeviceId?: string;
+}
+
+export interface LoadedCloudAppState {
+  snapshot: LocalAppStateSnapshot;
+  updatedAtMs: number;
+  updatedByDeviceId?: string;
+}
+
+export class CloudConflictError extends Error {
+  constructor() {
+    super("別の端末の新しい記録があるので、上書きしませんでした");
+    this.name = "CloudConflictError";
+  }
+}
+
+function timestampToMs(value: unknown): number {
+  if (
+    value
+    && typeof value === "object"
+    && "toMillis" in value
+    && typeof (value as Timestamp).toMillis === "function"
+  ) {
+    return (value as Timestamp).toMillis();
+  }
+  return 0;
 }
 
 export function createDeviceId(): string {
@@ -110,16 +135,20 @@ export async function touchChildProfile(userId: string, childId: string): Promis
   );
 }
 
-export async function loadCloudAppState(userId: string, childId: string): Promise<LocalAppStateSnapshot | null> {
+export async function loadCloudAppState(userId: string, childId: string): Promise<LoadedCloudAppState | null> {
   const firestore = assertDb();
   const snapshot = await getDoc(doc(firestore, "users", userId, "children", childId, "appState", "main"));
   if (!snapshot.exists()) return null;
   const data = snapshot.data() as Partial<CloudAppStateDocument>;
   return {
-    state: data.state ?? null,
-    stickerAlbum: Array.isArray(data.stickerAlbum)
-      ? data.stickerAlbum.filter((id): id is string => typeof id === "string")
-      : [],
+    snapshot: {
+      state: data.state ?? null,
+      stickerAlbum: Array.isArray(data.stickerAlbum)
+        ? data.stickerAlbum.filter((id): id is string => typeof id === "string")
+        : [],
+    },
+    updatedAtMs: timestampToMs(data.updatedAt),
+    updatedByDeviceId: typeof data.updatedByDeviceId === "string" ? data.updatedByDeviceId : undefined,
   };
 }
 
@@ -128,24 +157,37 @@ export async function saveCloudAppState(
   childId: string,
   snapshot: LocalAppStateSnapshot,
   deviceId: string,
-): Promise<void> {
+  expectedUpdatedAtMs?: number,
+): Promise<number> {
   const firestore = assertDb();
+  const ref = doc(firestore, "users", userId, "children", childId, "appState", "main");
+  if (expectedUpdatedAtMs !== undefined) {
+    const remote = await getDoc(ref);
+    if (remote.exists()) {
+      const remoteMs = timestampToMs((remote.data() as Partial<CloudAppStateDocument>).updatedAt);
+      if (remoteMs > expectedUpdatedAtMs) {
+        throw new CloudConflictError();
+      }
+    }
+  }
   const state = stripUndefinedDeep(snapshot.state) ?? null;
   const stickerAlbum = Array.isArray(snapshot.stickerAlbum)
     ? snapshot.stickerAlbum.filter((id): id is string => typeof id === "string")
     : [];
+  const updatedAt = Timestamp.now();
   await setDoc(
-    doc(firestore, "users", userId, "children", childId, "appState", "main"),
+    ref,
     {
       schemaVersion: 1,
       state,
       stickerAlbum,
-      updatedAt: serverTimestamp(),
+      updatedAt,
       updatedByDeviceId: deviceId,
     },
     { merge: true },
   );
   await touchChildProfile(userId, childId);
+  return updatedAt.toMillis();
 }
 
 export async function deleteChildProfile(userId: string, childId: string): Promise<void> {
