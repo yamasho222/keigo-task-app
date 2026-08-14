@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { theme } from "./theme";
 import type { ChildProfile } from "./cloudStorage";
+import { AppScroll } from "./AppScroll";
 
 interface ChildProfileScreenProps {
   profiles: ChildProfile[];
@@ -54,10 +55,10 @@ export function ChildProfileScreen({
     legacyImportAvailable && profiles.some((profile) => canImportToChild(profile.id));
 
   return (
+    <AppScroll style={{ backgroundColor: theme.fill.secondary }}>
     <div style={{
-      minHeight: "100dvh",
-      padding: "max(env(safe-area-inset-top, 16px), 16px) 16px 24px",
-      backgroundColor: theme.fill.secondary,
+      minHeight: "100%",
+      padding: "max(env(safe-area-inset-top, 16px), 16px) 16px max(env(safe-area-inset-bottom, 24px), 24px)",
       display: "flex",
       justifyContent: "center",
     }}>
@@ -238,5 +239,6 @@ export function ChildProfileScreen({
         </div>
       </div>
     </div>
+    </AppScroll>
   );
 }
