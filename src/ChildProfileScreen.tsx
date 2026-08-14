@@ -52,6 +52,7 @@ export function ChildProfileScreen({
 }: ChildProfileScreenProps) {
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("🙂");
+  const [addOpen, setAddOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<ChildProfile | null>(null);
   const [editName, setEditName] = useState("");
@@ -299,23 +300,44 @@ export function ChildProfileScreen({
           flexDirection: "column",
           gap: 10,
         }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: theme.text.primary }}>プロフィールを追加</div>
-          <AvatarPicker value={emoji} onChange={setEmoji} disabled={loading} />
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="名前"
-            style={{ borderRadius: 12, border: `1px solid ${theme.stroke.secondary}`, padding: "9px 10px", fontSize: 15 }}
-            aria-label="プロフィール名"
-          />
           <button
             type="button"
-            onClick={submit}
-            disabled={loading || !name.trim()}
-            style={{ ...buttonBase, backgroundColor: name.trim() ? theme.category.green : theme.fill.secondary, color: name.trim() ? "#fff" : theme.text.tertiary }}
+            onClick={() => {
+              if (profiles.length === 0) return;
+              setAddOpen((open) => !open);
+            }}
+            style={{
+              ...buttonBase,
+              backgroundColor: "transparent",
+              color: theme.text.primary,
+              textAlign: "left",
+              padding: 0,
+              fontSize: 15,
+              fontWeight: 900,
+            }}
           >
-            追加する
+            プロフィールを追加 {(profiles.length === 0 || addOpen) ? "▲" : "▼"}
           </button>
+          {(profiles.length === 0 || addOpen) && (
+            <>
+              <AvatarPicker value={emoji} onChange={setEmoji} disabled={loading} />
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="名前"
+                style={{ borderRadius: 12, border: `1px solid ${theme.stroke.secondary}`, padding: "9px 10px", fontSize: 15 }}
+                aria-label="プロフィール名"
+              />
+              <button
+                type="button"
+                onClick={submit}
+                disabled={loading || !name.trim()}
+                style={{ ...buttonBase, backgroundColor: name.trim() ? theme.category.green : theme.fill.secondary, color: name.trim() ? "#fff" : theme.text.tertiary }}
+              >
+                追加する
+              </button>
+            </>
+          )}
         </div>
 
         {profiles.length > 0 && (
