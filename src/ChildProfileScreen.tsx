@@ -47,6 +47,9 @@ export function ChildProfileScreen({
 }: ChildProfileScreenProps) {
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("🙂");
+  const [manageOpen, setManageOpen] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState<ChildProfile | null>(null);
+  const [deleteNameInput, setDeleteNameInput] = useState("");
 
   const submit = () => {
     if (!name.trim()) return;
@@ -55,10 +58,26 @@ export function ChildProfileScreen({
     setEmoji("🙂");
   };
 
+  const closeDeleteModal = () => {
+    setDeletingProfile(null);
+    setDeleteNameInput("");
+  };
+
+  const nameMatchesDeleteTarget =
+    deletingProfile !== null && deleteNameInput.trim() === deletingProfile.name.trim();
+
+  const confirmDelete = () => {
+    if (!deletingProfile || !nameMatchesDeleteTarget || loading) return;
+    const target = deletingProfile;
+    closeDeleteModal();
+    onDelete(target);
+  };
+
   const showLegacyImportHelp =
     legacyImportAvailable && profiles.some((profile) => canImportToChild(profile.id));
 
   return (
+    <>
     <AppScroll style={{ backgroundColor: theme.fill.secondary }}>
     <div style={{
       minHeight: "100%",
@@ -232,22 +251,6 @@ export function ChildProfileScreen({
                   この子の記録を開く
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => onDelete(profile)}
-                disabled={loading}
-                style={{
-                  border: "none",
-                  backgroundColor: "transparent",
-                  color: theme.text.tertiary,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  alignSelf: "flex-end",
-                }}
-              >
-                プロフィール削除
-              </button>
             </div>
           );
         })}
@@ -287,6 +290,67 @@ export function ChildProfileScreen({
           </button>
         </div>
 
+        {profiles.length > 0 && (
+          <div style={{
+            borderRadius: 18,
+            padding: 14,
+            backgroundColor: theme.bg.editor,
+            border: `1.5px solid ${theme.stroke.secondary}`,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}>
+            <button
+              type="button"
+              onClick={() => setManageOpen((open) => !open)}
+              style={{
+                ...buttonBase,
+                backgroundColor: "transparent",
+                color: theme.text.secondary,
+                textAlign: "left",
+                padding: 0,
+              }}
+            >
+              プロフィールの管理 {manageOpen ? "▲" : "▼"}
+            </button>
+            {manageOpen && (
+              <>
+                <div style={{ fontSize: 12, lineHeight: 1.6, color: theme.text.secondary }}>
+                  ふだんは開きません。消すと、その子のクラウド記録も消えます。
+                </div>
+                {profiles.map((profile) => (
+                  <div
+                    key={profile.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 0",
+                      borderTop: `1px solid ${theme.stroke.tertiary}`,
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{profile.avatarEmoji}</span>
+                    <span style={{ flex: 1, fontSize: 15, fontWeight: 800, color: theme.text.primary }}>
+                      {profile.name}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setDeletingProfile(profile);
+                        setDeleteNameInput("");
+                      }}
+                      style={{ ...buttonBase, backgroundColor: `${theme.category.pink}14`, color: theme.category.pink }}
+                    >
+                      削除する
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={onContinueLocal} style={{ ...buttonBase, flex: 1, backgroundColor: theme.fill.secondary, color: theme.text.secondary }}>
             ローカル保存で使う
@@ -298,5 +362,89 @@ export function ChildProfileScreen({
       </div>
     </div>
     </AppScroll>
+    {deletingProfile && (
+      <div
+        data-modal-overlay
+        onClick={closeDeleteModal}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 140,
+          backgroundColor: "rgba(0,0,0,0.55)",
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "100%",
+            maxWidth: 420,
+            borderRadius: "20px 20px 0 0",
+            backgroundColor: theme.bg.editor,
+            padding: "20px 18px max(env(safe-area-inset-bottom, 16px), 16px)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: 900, color: theme.text.primary }}>
+            「{deletingProfile.name}」を削除します
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: theme.text.secondary }}>
+            クラウドの記録も消えます。もどすボタンはありません。
+            消すには、下に「{deletingProfile.name}」と入力してください。
+          </div>
+          <input
+            value={deleteNameInput}
+            onChange={(e) => setDeleteNameInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") confirmDelete();
+            }}
+            placeholder={`${deletingProfile.name} と入力`}
+            autoFocus
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-label="削除するプロフィール名"
+            style={{
+              borderRadius: 12,
+              border: `1px solid ${theme.stroke.secondary}`,
+              padding: "12px 10px",
+              fontSize: 16,
+            }}
+          />
+          <button
+            type="button"
+            onClick={confirmDelete}
+            disabled={loading || !nameMatchesDeleteTarget}
+            style={{
+              ...buttonBase,
+              padding: "14px 12px",
+              fontSize: 15,
+              backgroundColor: nameMatchesDeleteTarget ? theme.category.pink : theme.fill.secondary,
+              color: nameMatchesDeleteTarget ? "#fff" : theme.text.tertiary,
+            }}
+          >
+            削除する
+          </button>
+          <button
+            type="button"
+            onClick={closeDeleteModal}
+            style={{
+              ...buttonBase,
+              padding: "12px 12px",
+              fontSize: 14,
+              backgroundColor: theme.fill.secondary,
+              color: theme.text.secondary,
+            }}
+          >
+            やめる
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

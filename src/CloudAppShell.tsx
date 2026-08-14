@@ -603,7 +603,6 @@ export function CloudAppShell({ children }: CloudAppShellProps) {
         onRestoreOrphan={restoreOrphan}
         orphans={orphans}
         onDelete={async (profile) => {
-          if (!window.confirm(`「${profile.name}」プロフィールを削除します。クラウド上のデータも削除されます。よろしいですか？`)) return;
           setLoading(true);
           setError(undefined);
           try {
