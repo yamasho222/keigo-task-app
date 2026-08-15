@@ -19,7 +19,7 @@ import {
   unlockAudio, retryAlarmSound, setSoundBlockedListener,
   type AlarmSettings,
 } from "./alarm";
-import { RecordScreen, getStreak, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, isFifteenDayMilestoneStreak, isThirtyDayMilestoneStreak, buildLateDaysMap, isFullDayCompletionOnTime, isPastFullDayDeadline, dayHasActiveSickSkip, isTrueFullDay, type DayHistory } from "./RecordCalendar";
+import { RecordScreen, getStreak, getFullDayStreak, isThreeDayMilestoneStreak, isSevenDayMilestoneStreak, isFifteenDayMilestoneStreak, isThirtyDayMilestoneStreak, buildLateDaysMap, isFullDayCompletionOnTime, isPastFullDayDeadline, dayHasActiveSickSkip, isTrueFullDay, isFullDay, type DayHistory } from "./RecordCalendar";
 import {
   NewRecordOverlay, TreatOverlay, StickerFrameWithBadge, StickerImg,
   type NewRecordCelebration, type TreatMode,
@@ -93,6 +93,7 @@ import {
   isCatchUpSessionResolved,
   patchCatchUpSession,
   visibleCatchUpTasksForSession,
+  bulkCompleteCatchUpDay,
 } from "./catchUp";
 import {
   type DailyMission, type FavoriteMission, type MissionCardStatus,
@@ -3994,16 +3995,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     }, 950);
   };
 
-  const handleCatchUpApprove = () => {
-    if (!activeCatchUpDate || approved) return;
-    const dateKey = activeCatchUpDate;
-    const prev = history[dateKey] ?? emptyDayHistory();
-    setContextApproved(parentSession, true);
-    const updatedDay = { ...prev, [parentSession]: true };
-    const newHistory = { ...history, [dateKey]: updatedDay };
-    setHistory(newHistory);
+  const applyCatchUpStreakRewards = (dateKey: string, newHistory: Record<string, DayHistory>) => {
     triggerStamp();
-
     const lateDays = buildLateDaysMap(fullDayFirstCompletedAt);
     const milestone = evaluateStreakMilestones(
       newHistory,
@@ -4052,6 +4045,37 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => {
       if (treatQueueToOpen.length > 0) openTreatQueue(treatQueueToOpen);
     }, 950);
+  };
+
+  const handleCatchUpApprove = () => {
+    if (!activeCatchUpDate || approved) return;
+    const dateKey = activeCatchUpDate;
+    const prev = history[dateKey] ?? emptyDayHistory();
+    setContextApproved(parentSession, true);
+    const updatedDay = { ...prev, [parentSession]: true };
+    const newHistory = { ...history, [dateKey]: updatedDay };
+    setHistory(newHistory);
+    applyCatchUpStreakRewards(dateKey, newHistory);
+  };
+
+  const completeAllCatchUpDay = () => {
+    if (!activeCatchUpDate || !catchUpDate) return;
+    if (isFullDay(history[activeCatchUpDate], catchUpDate)) return;
+    const ok = window.confirm(
+      "この日のやることを全部できたにして、記録をつけます。\nきょう限定・特別ミッションは対象外です。日次ごほうびは出ません。よろしいですか？",
+    );
+    if (!ok) return;
+    const dateKey = activeCatchUpDate;
+    const sessions = contextActiveSessionIds;
+    updateCatchUpDay(dateKey, (day) =>
+      bulkCompleteCatchUpDay(day, sessionTasksRecord, catchUpDate, sessions),
+    );
+    const prev = history[dateKey] ?? emptyDayHistory();
+    const updatedDay = { ...prev };
+    for (const sid of sessions) updatedDay[sid] = true;
+    const newHistory = { ...history, [dateKey]: updatedDay };
+    setHistory(newHistory);
+    applyCatchUpStreakRewards(dateKey, newHistory);
   };
 
   const handleParentApprove = () => {
@@ -5178,17 +5202,32 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                     日次ごほうびなし
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={exitCatchUpMode}
-                  style={{
-                    flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "none",
-                    backgroundColor: theme.fill.secondary, color: theme.text.secondary,
-                    fontSize: 11, fontWeight: 700, cursor: "pointer",
-                  }}
-                >
-                  記録へ
-                </button>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {catchUpDate && !isFullDay(history[activeCatchUpDate], catchUpDate) && (
+                    <button
+                      type="button"
+                      onClick={completeAllCatchUpDay}
+                      style={{
+                        padding: "6px 10px", borderRadius: 8, border: "none",
+                        backgroundColor: theme.category.green, color: "#fff",
+                        fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      }}
+                    >
+                      全部できたにする
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={exitCatchUpMode}
+                    style={{
+                      padding: "6px 10px", borderRadius: 8, border: "none",
+                      backgroundColor: theme.fill.secondary, color: theme.text.secondary,
+                      fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    }}
+                  >
+                    記録へ
+                  </button>
+                </div>
               </div>
             )}
             <InAppTabs screen={screen} onSwitch={goToScreen} disabled={isWorkTimerLocked} contextDate={catchUpDate ?? undefined} />

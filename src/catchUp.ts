@@ -194,6 +194,32 @@ export function isCatchUpSessionResolved(
   return visible.every((t) => done.has(t.id) || skipped.has(t.id));
 }
 
+/** やり直し日の表示対象タスクを全部できた＋親はんこ済みにする */
+export function bulkCompleteCatchUpDay(
+  day: CatchUpDayState,
+  sessionTasks: Record<SessionId, Task[]>,
+  date: Date,
+  activeSessionIds: SessionId[],
+): CatchUpDayState {
+  let next = day;
+  for (const sid of activeSessionIds) {
+    const candidates = sessionTasks[sid].filter((t) => {
+      if (t.scope === "today" || t.scope === "special") return false;
+      if (!isTaskVisibleToday(t, date)) return false;
+      return true;
+    });
+    const toComplete = tasksForProgress(candidates);
+    const done = catchUpDoneSet(next, sid);
+    const skipped = catchUpSkippedSet(next, sid);
+    for (const t of toComplete) {
+      done.add(t.id);
+      skipped.delete(t.id);
+    }
+    next = patchCatchUpSession(next, sid, { done, skipped, approved: true });
+  }
+  return next;
+}
+
 function normalizeStreakRewardBaseline(
   fullDayStreak: number,
   lastThreeDay: number,
