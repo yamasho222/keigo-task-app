@@ -568,6 +568,67 @@ function isAllResolved(session: SessionId, allSessions: AllSessionTasks) {
   return visible.every((t) => isTaskResolved(done, skipped, t.id));
 }
 
+function isParentCheckSessionComplete(
+  session: SessionId,
+  allSessions: AllSessionTasks,
+  opts: { catchUpDate?: Date | null; sickSkip?: boolean },
+): boolean {
+  if (opts.sickSkip) return true;
+  return opts.catchUpDate
+    ? isCatchUpSessionResolved(session, allSessions, opts.catchUpDate)
+    : isAllResolved(session, allSessions);
+}
+
+function latestSessionCompletedAt(
+  session: SessionId,
+  tasks: Task[],
+  done: Set<number>,
+  taskCompletedAt: Record<string, string>,
+): string {
+  let latestMs = 0;
+  for (const t of tasks) {
+    if (!done.has(t.id)) continue;
+    const iso = taskCompletedAt[taskTimeKey(session, t.id, t)];
+    if (!iso) continue;
+    const ms = new Date(iso).getTime();
+    if (!Number.isNaN(ms) && ms > latestMs) latestMs = ms;
+  }
+  return latestMs ? fmtTime(new Date(latestMs)) : "";
+}
+
+function resolveCurrentViewSession(
+  screen: ScreenId,
+  activeSessionIds: SessionId[],
+  clockSession: SessionId,
+  contextSession?: SessionId,
+): SessionId {
+  const active = activeSessionIds.length > 0 ? activeSessionIds : SESSION_IDS;
+  if (isSessionScreen(screen) && active.includes(screen)) return screen;
+  if (contextSession && active.includes(contextSession)) return contextSession;
+  if (active.includes(clockSession)) return clockSession;
+  return active[0] ?? "morning";
+}
+
+function pickParentCheckSession(opts: {
+  preferred?: SessionId;
+  currentScreen: ScreenId;
+  activeSessionIds: SessionId[];
+  isComplete: (sid: SessionId) => boolean;
+  isApproved: (sid: SessionId) => boolean;
+  clockSession: SessionId;
+}): SessionId {
+  const { preferred, currentScreen, activeSessionIds, isComplete, isApproved, clockSession } = opts;
+  const active = activeSessionIds.length > 0 ? activeSessionIds : SESSION_IDS;
+  if (preferred && active.includes(preferred)) return preferred;
+  if (isSessionScreen(currentScreen) && active.includes(currentScreen)) return currentScreen;
+  const awaiting = active.find((sid) => isComplete(sid) && !isApproved(sid));
+  if (awaiting) return awaiting;
+  const completed = active.find((sid) => isComplete(sid));
+  if (completed) return completed;
+  if (active.includes(clockSession)) return clockSession;
+  return active[0] ?? "morning";
+}
+
 function isAllDayResolved(allSessions: AllSessionTasks, date = new Date()) {
   return SESSION_IDS.every((sid) => (
     !isSessionActiveOnDate(sid, date) || isAllResolved(sid, allSessions)
@@ -1668,11 +1729,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [deferHintVisible, setDeferHintVisible] = useState(false);
   const [taskListSession, setTaskListSession] = useState<SessionId>(getSessionScreen());
   const [parentSession, setParentSession] = useState<SessionId>("morning");
-  const [parentCtx, setParentCtx] = useState<{ label: string; taskNames: string[]; completedAt: string }>({
-    label: "朝のやること",
-    taskNames: MORNING_TASKS_DEFAULT.map((t) => t.title),
-    completedAt: "",
-  });
+  const [timerSession, setTimerSession] = useState<SessionId>(getSessionScreen());
   const [timerDuration, setTimerDuration] = useState(30); // 分単位
   const timerEndRef = useRef<number | null>(null);
   const [timerSecondsLeft, setTimerSecondsLeft] = useState(0);
@@ -1886,6 +1943,15 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const contextActiveSessionIds = catchUpDate
     ? getVisibleSessionTabs(catchUpDate).map((t) => t.id)
     : activeSessionIds;
+  const clockSession = inCatchUp && catchUpDate
+    ? (getVisibleSessionTabs(catchUpDate)[0]?.id ?? "morning")
+    : getSessionScreen();
+  const contextSession =
+    screen === "show_parent" ? parentSession
+    : screen === "task_list" ? taskListSession
+    : (screen === "timer" || screen === "timer_end") ? timerSession
+    : undefined;
+  const viewSession = resolveCurrentViewSession(screen, contextActiveSessionIds, clockSession, contextSession);
 
   const openCatchUpDay = (dateKey: string) => {
     if (!isCatchUpEligible(dateKey, history)) return;
@@ -1906,6 +1972,31 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const approved = getContextApproved(parentSession);
+
+  const parentCheckAll = getContextAllSessionTasks();
+  const parentSickSkip = !inCatchUp && !!sessionSickSkip[todayKey()]?.[parentSession];
+  const parentComplete = isParentCheckSessionComplete(parentSession, parentCheckAll, {
+    catchUpDate: inCatchUp ? catchUpDate : null,
+    sickSkip: parentSickSkip,
+  });
+  const parentVisible = parentSickSkip
+    ? []
+    : (inCatchUp && catchUpDate
+      ? visibleCatchUpTasksForSession(parentSession, parentCheckAll, catchUpDate)
+      : visibleTasksForSession(parentSession, parentCheckAll));
+  const parentSkipped = getContextSkipped(parentSession);
+  const parentDone = getContextDone(parentSession);
+  const parentCheckTasks = parentSickSkip
+    ? [{ id: 0, name: "体調のため休み", resolved: true }]
+    : parentVisible.map((t) => ({
+      id: t.id,
+      name: parentSkipped.has(t.id) ? `${t.title}（あとで）` : t.title,
+      resolved: parentDone.has(t.id) || parentSkipped.has(t.id),
+    }));
+  const parentCompletedAt = parentComplete
+    ? (parentSickSkip ? "" : latestSessionCompletedAt(parentSession, parentVisible, parentDone, taskCompletedAt))
+    : "";
+  const parentCheckLabel = SESSION_META[parentSession].label;
 
   useEffect(() => {
     if (inCatchUp && catchUpDate) {
@@ -2126,6 +2217,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       if (screenRef.current === "daytime" && !isDaytimeSessionDay()) {
         setScreen(getSessionScreen());
       }
+      setParentSession(getSessionScreen());
       setTaskListSession((s) => (s === "daytime" && !isDaytimeSessionDay() ? getSessionScreen() : s));
     };
 
@@ -2269,11 +2361,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     sessionState[session].setApproved(true);
     setStampVisible(false);
     setParentSession(session);
-    setParentCtx({
-      label: SESSION_META[session].label,
-      taskNames: ["体調のため休み"],
-      completedAt: fmtTime(new Date()),
-    });
     if (isSessionScreen(screen)) setPrevScreen(screen);
     setScreen("show_parent");
   };
@@ -2569,22 +2656,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     session: SessionId,
     done: Set<number>,
     skipped: Set<number>,
-    label: string,
   ) => {
     const allSessions = getContextAllSessionTasks({ [session]: { done, skipped } });
     const resolved = inCatchUp && catchUpDate
       ? isCatchUpSessionResolved(session, allSessions, catchUpDate)
       : isAllResolved(session, allSessions);
     if (!resolved) return;
-    const visible = inCatchUp && catchUpDate
-      ? visibleCatchUpTasksForSession(session, allSessions, catchUpDate)
-      : visibleTasksForSession(session, allSessions);
-    const names = visible.map((t) => {
-      if (skipped.has(t.id)) return `${t.title}（あとで）`;
-      return t.title;
-    });
     setAnticipating(true);
-    setTimeout(() => fireCelebration({ label, taskNames: names }, session), 750);
+    setTimeout(() => fireCelebration(session), 750);
   };
 
   const applyTaskDone = (
@@ -2594,7 +2673,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     skipped: Set<number>,
     setDone: (s: Set<number>) => void,
     setSkipped: (s: Set<number>) => void,
-    label: string,
+    _label: string,
   ) => {
     let nextDone = done;
     let nextSkipped = skipped;
@@ -2627,7 +2706,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           [session]: { done: nextDone, skipped: nextSkipped },
         }));
       }
-      maybeCelebrate(session, nextDone, nextSkipped, label);
+      maybeCelebrate(session, nextDone, nextSkipped);
     }
   };
 
@@ -2789,7 +2868,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       pausedTotal += Date.now() - gameTimerPauseStartRef.current;
     }
     const totalSec = Math.max(1, Math.floor((Date.now() - gameTimerStartRef.current - pausedTotal) / 1000));
-    const key = gamePlayKey(todayKey(), parentSession);
+    const key = gamePlayKey(todayKey(), timerSession);
     setGamePlayTimes((prev) => ({ ...prev, [key]: totalSec }));
     stopAlarmNow();
     resetGameTimerState();
@@ -2805,14 +2884,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   // ── celebration ──
-  const fireCelebration = (
-    ctx: { label: string; taskNames: string[] },
-    session: SessionId,
-  ) => {
+  const fireCelebration = (session: SessionId) => {
     setAnticipating(false);
     setStampVisible(false);
     setParentSession(session);
-    setParentCtx({ ...ctx, completedAt: fmtTime(new Date()) });
     const picked = CELEB_TYPES[Math.floor(Math.random() * CELEB_TYPES.length)];
     setCelebKey((k) => k + 1);
     setCelebType(picked);
@@ -3024,7 +3099,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const dismissBuddyPrompt = () => {
     try {
-      localStorage.setItem(`keigo-buddy-prompt-dismissed-${todayKey()}`, "1");
+      localStorage.setItem(`keigo-buddy-prompt-dismissed-${storageChildId ?? "local"}-${todayKey()}`, "1");
     } catch { /* ignore */ }
     setShowBuddyPrompt(false);
   };
@@ -3035,10 +3110,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (buddyId) return;
     if (stickerAlbum.length === 0) return;
     try {
-      if (localStorage.getItem(`keigo-buddy-prompt-dismissed-${todayKey()}`) === "1") return;
+      if (localStorage.getItem(`keigo-buddy-prompt-dismissed-${storageChildId ?? "local"}-${todayKey()}`) === "1") return;
     } catch { /* ignore */ }
     setShowBuddyPrompt(true);
-  }, [screen, buddyId, stickerAlbum.length, inCatchUp]);
+  }, [screen, buddyId, stickerAlbum.length, inCatchUp, storageChildId]);
 
   const trainBuddyWithToken = (stickerId: string) => {
     if (!stickerAlbumRef.current.includes(stickerId)) return;
@@ -3460,6 +3535,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const openOneOffParentCheck = () => {
     if (!oneOffSpecialAwaitingParent) return;
+    const s = screenRef.current;
+    if (isSessionScreen(s)) setPrevScreen(s);
+    else setPrevScreen(screen);
     setScreen("show_parent_oneoff");
   };
 
@@ -3793,10 +3871,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   useEffect(() => {
     if (!todayMission || activeMissionOverall !== "pending") return;
-    if (isMissionBriefingSeen(currentTaskDay)) return;
+    if (isMissionBriefingSeen(currentTaskDay, storageChildId)) return;
     if (!isSessionScreen(screen)) return;
     setShowMissionBriefing(true);
-  }, [todayMission, activeMissionOverall, currentTaskDay, screen]);
+  }, [todayMission, activeMissionOverall, currentTaskDay, screen, storageChildId]);
 
   useEffect(() => {
     if (screen !== "evening") return;
@@ -3977,6 +4055,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const handleParentApprove = () => {
+    if (!parentComplete) return;
     if (activeCatchUpDate) handleCatchUpApprove();
     else handleApprove();
   };
@@ -4005,16 +4084,26 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setStampVisible(false);
   };
 
-  const goToTimer = () => {
-    setPrevScreen(screen);
-    if (!timerRunning) {
-      setTimerSecondsLeft(timerDuration * 60);
-      setTimerSessionTotal(timerDuration * 60);
+  const goToTimer = (session?: SessionId) => {
+    if (timerRunning) {
+      setPrevScreen(screen);
+      setScreen(gameTimerOvertime ? "timer_end" : "timer");
+      return;
     }
+    const sid = session ?? viewSession;
+    if (!getContextApproved(sid)) {
+      openParentCheck(sid);
+      return;
+    }
+    setTimerSession(sid);
+    setPrevScreen(screen);
+    setTimerSecondsLeft(timerDuration * 60);
+    setTimerSessionTotal(timerDuration * 60);
     setScreen("timer");
   };
 
   const startAndGoTimer = () => {
+    setTimerSession(parentSession);
     setPrevScreen(screen);
     startTimer(timerDuration);
     setScreen("timer");
@@ -4040,6 +4129,24 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (isWorkTimerLocked) return;
     setPrevScreen(screen);
     setScreen(next);
+  };
+
+  const openParentCheck = (preferred?: SessionId) => {
+    const allSessions = getContextAllSessionTasks();
+    const isComplete = (sid: SessionId) => isParentCheckSessionComplete(sid, allSessions, {
+      catchUpDate: inCatchUp ? catchUpDate : null,
+      sickSkip: !inCatchUp && !!sessionSickSkip[todayKey()]?.[sid],
+    });
+    const sid = pickParentCheckSession({
+      preferred,
+      currentScreen: screen,
+      activeSessionIds: contextActiveSessionIds,
+      isComplete,
+      isApproved: (s) => getContextApproved(s),
+      clockSession,
+    });
+    setParentSession(sid);
+    navigateToScreen("show_parent");
   };
 
   const goHome = () => {
@@ -4267,7 +4374,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     skipped: Set<number>,
     setDone: (s: Set<number>) => void,
     setSkipped: (s: Set<number>) => void,
-    label: string,
+    _label: string,
   ) => {
     if (celebType || anticipating) return;
 
@@ -4304,7 +4411,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         [session]: { done: nextDone, skipped: nextSkipped },
       }));
     }
-    maybeCelebrate(session, nextDone, nextSkipped, label);
+    maybeCelebrate(session, nextDone, nextSkipped);
   };
 
   const dayLabel = getDayLabel();
@@ -4410,7 +4517,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         <MissionBriefingOverlay
           mission={todayMission}
           onDismiss={() => {
-            markMissionBriefingSeen(currentTaskDay);
+            markMissionBriefingSeen(currentTaskDay, storageChildId);
             setShowMissionBriefing(false);
           }}
         />
@@ -4600,28 +4707,20 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 label: `もらえるごほうび (${unclaimedRewardCount})`,
                 action: () => { setShowPendingRewardsSheet(true); setShowMenu(false); },
               }] : []),
-              ...activeSessionIds.map((sid) => ({
+              ...contextActiveSessionIds.map((sid) => ({
                 icon: SESSION_META[sid].menuIcon,
                 label: SESSION_META[sid].menuLabel,
                 action: () => { setScreen(sid); setShowMenu(false); },
               })),
-              { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(getSessionScreen()); navigateToScreen("task_list"); setShowMenu(false); } },
-              { icon: "✅", label: "親チェック画面", action: () => { navigateToScreen("show_parent"); setShowMenu(false); } },
+              { icon: "📋", label: "タスク一覧", action: () => { setTaskListSession(viewSession); navigateToScreen("task_list"); setShowMenu(false); } },
+              { icon: "✅", label: "親チェック画面", action: () => { openParentCheck(screen === "show_parent" ? parentSession : undefined); setShowMenu(false); } },
               ...(missionPhaseAwaitingParent ? [{
                 icon: "⭐",
                 label: "ミッション親チェック",
                 action: () => { openMissionParentCheck(missionPhaseAwaitingParent); setShowMenu(false); },
               }] : []),
               { icon: "⏱", label: "タイマー",
-                action: () => {
-                  if (approved) {
-                    if (timerRunning) navigateToScreen(gameTimerOvertime ? "timer_end" : "timer");
-                    else goToTimer();
-                  } else {
-                    navigateToScreen("show_parent");
-                  }
-                  setShowMenu(false);
-                },
+                action: () => { goToTimer(viewSession); setShowMenu(false); },
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
@@ -5298,8 +5397,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
         {screen === "show_parent" && (
           <ShowParentScreen
-            context={parentCtx}
+            label={parentCheckLabel}
+            tasks={parentCheckTasks}
+            completedAt={parentCompletedAt}
+            complete={parentComplete}
             approved={approved}
+            sessions={contextActiveSessionIds}
+            activeSession={parentSession}
+            onSelectSession={setParentSession}
             timerDuration={timerDuration}
             onSetDuration={setTimerDuration}
             onApprove={handleParentApprove}
@@ -8534,12 +8639,20 @@ function HanamaruStamp({ message }: { message: string }) {
 // ── Show Parent Screen ────────────────────────────────
 
 function ShowParentScreen({
-  context, approved, timerDuration, onSetDuration,
+  label, tasks, completedAt, complete, approved,
+  sessions, activeSession, onSelectSession,
+  timerDuration, onSetDuration,
   onApprove, onReset, onGoTimer, onHome,
   catchUpMode = false,
 }: {
-  context: { label: string; taskNames: string[]; completedAt: string };
+  label: string;
+  tasks: { id: number; name: string; resolved: boolean }[];
+  completedAt: string;
+  complete: boolean;
   approved: boolean;
+  sessions: SessionId[];
+  activeSession: SessionId;
+  onSelectSession: (sid: SessionId) => void;
   timerDuration: number;
   onSetDuration: (m: number) => void;
   onApprove: () => void;
@@ -8548,6 +8661,7 @@ function ShowParentScreen({
   onHome: () => void;
   catchUpMode?: boolean;
 }) {
+  const canStamp = complete && !approved;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
       {/* ホームボタン */}
@@ -8563,29 +8677,75 @@ function ShowParentScreen({
           </svg>
           ホーム
         </div>
-        <div style={{ fontSize: 12, color: theme.text.tertiary }}>{context.completedAt} 完了</div>
-      </div>
-
-      <div style={{ textAlign: "center", paddingTop: 4 }}>
-        <div style={{ fontSize: 21, fontWeight: 800, color: theme.text.primary }}>ぜんぶできたよ！</div>
-        <div style={{ display: "inline-flex", marginTop: 6, padding: "3px 12px", borderRadius: 100, backgroundColor: theme.fill.secondary }}>
-          <span style={{ fontSize: 12, color: theme.text.tertiary }}>{context.label}</span>
+        <div style={{ fontSize: 12, color: theme.text.tertiary }}>
+          {complete && completedAt ? `${completedAt} 完了` : ""}
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {context.taskNames.map((name) => (
-          <div key={name} style={{
+      <div style={{ textAlign: "center", paddingTop: 4 }}>
+        <div style={{ fontSize: 21, fontWeight: 800, color: theme.text.primary }}>
+          {complete ? "ぜんぶできたよ！" : "まだ終わっていません"}
+        </div>
+        <div style={{ display: "inline-flex", marginTop: 6, padding: "3px 12px", borderRadius: 100, backgroundColor: theme.fill.secondary }}>
+          <span style={{ fontSize: 12, color: theme.text.tertiary }}>{label}</span>
+        </div>
+      </div>
+
+      {sessions.length > 1 && (
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+          {sessions.map((sid) => {
+            const active = sid === activeSession;
+            return (
+              <button
+                key={sid}
+                type="button"
+                onClick={() => onSelectSession(sid)}
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: 100,
+                  border: active ? `1.5px solid ${theme.stroke.secondary}` : "1.5px solid transparent",
+                  backgroundColor: active ? theme.fill.secondary : theme.fill.quaternary,
+                  color: theme.text.secondary,
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  cursor: "pointer",
+                }}
+              >
+                {SESSION_META[sid].timeSuffix}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, width: "100%" }}>
+        {tasks.length === 0 && (
+          <div style={{ fontSize: 13, color: theme.text.tertiary, textAlign: "center", padding: "8px 0" }}>
+            この時間帯のやることはありません
+          </div>
+        )}
+        {tasks.map((task) => (
+          <div key={`${task.id}-${task.name}`} style={{
             display: "flex", alignItems: "center", gap: 10, padding: "9px 14px",
-            borderRadius: 12, backgroundColor: `${theme.category.green}14`,
-            border: `1.5px solid ${theme.category.green}44`,
+            width: "100%", boxSizing: "border-box",
+            borderRadius: 12,
+            backgroundColor: task.resolved ? `${theme.category.green}14` : theme.fill.quaternary,
+            border: task.resolved
+              ? `1.5px solid ${theme.category.green}44`
+              : `1.5px solid ${theme.stroke.secondary}`,
           }}>
-            <div style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: theme.category.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            <div style={{
+              width: 20, height: 20, borderRadius: 10, flexShrink: 0,
+              backgroundColor: task.resolved ? theme.category.green : theme.fill.secondary,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {task.resolved && (
+                <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                  <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
             </div>
-            <span style={{ fontSize: 13, color: theme.text.secondary }}>{name}</span>
+            <span style={{ fontSize: 13, color: theme.text.secondary }}>{task.name}</span>
           </div>
         ))}
       </div>
@@ -8608,16 +8768,25 @@ function ShowParentScreen({
       {/* ── 親のチェック（上に配置） */}
       <div style={{ padding: 14, borderRadius: 14, border: `1.5px solid ${theme.stroke.secondary}`, backgroundColor: theme.fill.quaternary }}>
         <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 10, textAlign: "center" }}>ここは親がかくにんするところ</div>
+        {!complete && (
+          <div style={{ fontSize: 12, color: theme.category.orange, marginBottom: 10, textAlign: "center" }}>
+            やることを終わらせると、はんこが押せます
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8 }}>
-          <div onClick={onApprove} style={{
+          <div onClick={canStamp ? onApprove : undefined} style={{
             flex: 2, padding: "12px", borderRadius: 10, textAlign: "center",
-            backgroundColor: approved ? `${theme.category.green}33` : theme.category.green,
-            color: approved ? theme.category.green : "white",
+            backgroundColor: approved
+              ? `${theme.category.green}33`
+              : canStamp ? theme.category.green : theme.fill.secondary,
+            color: approved
+              ? theme.category.green
+              : canStamp ? "white" : theme.text.tertiary,
             fontSize: 14, fontWeight: 700,
-            cursor: approved ? "default" : "pointer",
+            cursor: canStamp ? "pointer" : "default",
             border: approved ? `1.5px solid ${theme.category.green}66` : "none",
           }}>
-            {approved ? "かくにん済み ✓" : "はんこを押す！"}
+            {approved ? "かくにん済み ✓" : complete ? "はんこを押す！" : "まだ終わっていません"}
           </div>
           {approved && (
             <div onClick={onReset} style={{
@@ -8636,7 +8805,7 @@ function ShowParentScreen({
           duration={timerDuration}
           onSetDuration={onSetDuration}
           disabled={!approved}
-          needsApprovalMessage={!approved}
+          needsApprovalMessage={complete && !approved}
           showStartButton
           onStart={onGoTimer}
         />

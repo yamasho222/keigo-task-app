@@ -30,9 +30,13 @@ export type { MissionCardStatus, MissionOverallStatus };
 
 const MISSION_BRIEFING_KEY = "keigo-mission-briefing-v1";
 
-export function isMissionBriefingSeen(dateKey: string): boolean {
+function missionBriefingStorageKey(childId?: string) {
+  return childId ? `${MISSION_BRIEFING_KEY}:${childId}` : `${MISSION_BRIEFING_KEY}:local`;
+}
+
+export function isMissionBriefingSeen(dateKey: string, childId?: string): boolean {
   try {
-    const raw = localStorage.getItem(MISSION_BRIEFING_KEY);
+    const raw = localStorage.getItem(missionBriefingStorageKey(childId));
     if (!raw) return false;
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && dateKey in (parsed as Record<string, boolean>)) {
@@ -42,12 +46,13 @@ export function isMissionBriefingSeen(dateKey: string): boolean {
   return false;
 }
 
-export function markMissionBriefingSeen(dateKey: string): void {
+export function markMissionBriefingSeen(dateKey: string, childId?: string): void {
   try {
-    const raw = localStorage.getItem(MISSION_BRIEFING_KEY);
+    const key = missionBriefingStorageKey(childId);
+    const raw = localStorage.getItem(key);
     const prev: Record<string, boolean> = raw ? JSON.parse(raw) : {};
     prev[dateKey] = true;
-    localStorage.setItem(MISSION_BRIEFING_KEY, JSON.stringify(prev));
+    localStorage.setItem(key, JSON.stringify(prev));
   } catch { /* ignore */ }
 }
 
@@ -728,7 +733,9 @@ export function ShowParentMissionScreen({
           </svg>
           ホーム
         </div>
-        <div style={{ fontSize: 12, color: theme.text.tertiary }}>{completedAt} 完了</div>
+        <div style={{ fontSize: 12, color: theme.text.tertiary }}>
+          {completedAt ? `${completedAt} 完了` : ""}
+        </div>
       </div>
 
       <div style={{ textAlign: "center", paddingTop: 4 }}>
@@ -745,6 +752,7 @@ export function ShowParentMissionScreen({
 
       <div style={{
         display: "flex", alignItems: "center", gap: 12, padding: "14px 16px",
+        width: "100%", boxSizing: "border-box",
         borderRadius: 14, backgroundColor: `${theme.category.purple}14`,
         border: `1.5px solid ${theme.category.purple}44`,
       }}>
@@ -856,7 +864,9 @@ export function ShowParentOneOffScreen({
           </svg>
           ホーム
         </div>
-        <div style={{ fontSize: 12, color: theme.text.tertiary }}>{completedAt} 完了</div>
+        <div style={{ fontSize: 12, color: theme.text.tertiary }}>
+          {completedAt ? `${completedAt} 完了` : ""}
+        </div>
       </div>
 
       <div style={{ textAlign: "center", paddingTop: 4 }}>
@@ -873,6 +883,7 @@ export function ShowParentOneOffScreen({
 
       <div style={{
         display: "flex", alignItems: "center", gap: 12, padding: "14px 16px",
+        width: "100%", boxSizing: "border-box",
         borderRadius: 14, backgroundColor: `${theme.category.orange}14`,
         border: `1.5px solid ${theme.category.orange}44`,
       }}>
