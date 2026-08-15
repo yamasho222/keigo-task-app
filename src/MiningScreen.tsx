@@ -55,6 +55,9 @@ import {
   maxCraftTimes,
   recipeMatchesCraftTab,
   recipeProgress,
+  smeltQtyStep,
+  alignCraftTimes,
+  coalSmeltRemainderWarning,
   type CraftRecipeTab,
   type RecipeId,
 } from "./miningRecipes";
@@ -1448,7 +1451,7 @@ export function MiningScreen({
           fuel,
           remainingBeds: recipe.grantsBed ? MAX_BEDS - slots : undefined,
         });
-        const clamped = Math.max(1, Math.min(n, Math.max(1, max)));
+        const clamped = alignCraftTimes(n, max, smeltQtyStep(fuel));
         if (clamped !== n) {
           next[id] = clamped;
           changed = true;
@@ -2083,7 +2086,11 @@ export function MiningScreen({
                 fuel: fuelPicked,
                 remainingBeds: recipe.grantsBed ? MAX_BEDS - slots : undefined,
               });
-              const times = Math.max(1, Math.min(craftQty[recipe.id] ?? 1, Math.max(1, maxTimes)));
+              const qtyStep = smeltQtyStep(fuelPicked);
+              const defaultTimes = qtyStep > 1 && maxTimes >= qtyStep ? qtyStep : 1;
+              const times = alignCraftTimes(craftQty[recipe.id] ?? defaultTimes, maxTimes, qtyStep);
+              const oreCount = isSmelt && recipe.costs[0] ? have(recipe.costs[0].material) : 0;
+              const coalWarn = fuelPicked?.material === "coal" ? coalSmeltRemainderWarning(oreCount) : null;
               return (
                 <div
                   key={recipe.id}
@@ -2241,7 +2248,7 @@ export function MiningScreen({
                               燃料をえらぶ（どれか1つ）{recipe.needsFurnace ? "・かまど必要" : ""}
                             </div>
                             <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 6, lineHeight: 1.45 }}>
-                              石炭は1つでせいれん2回できるよ。「せきたんのやま」でほれるよ
+                              石炭は1つでせいれん2回できるよ。2こずつせいれんするよ。「せきたんのやま」でほれるよ
                               {mining.unlockedGachas.includes("coal") && (
                                 <button
                                   type="button"
@@ -2292,6 +2299,21 @@ export function MiningScreen({
                                 );
                               })}
                             </div>
+                            {coalWarn && (
+                              <div style={{
+                                marginTop: 8,
+                                padding: "8px 10px",
+                                borderRadius: 10,
+                                backgroundColor: `${theme.category.orange}18`,
+                                border: `1.5px solid ${theme.category.orange}66`,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                color: theme.category.orange,
+                                lineHeight: 1.45,
+                              }}>
+                                {coalWarn}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2302,21 +2324,27 @@ export function MiningScreen({
                           <button
                             type="button"
                             className="mining-craft-qty-btn"
-                            disabled={times <= 1 || !!smeltingId}
-                            aria-label="へらす"
-                            onClick={() => setCraftQty((prev) => ({ ...prev, [recipe.id]: Math.max(1, times - 1) }))}
+                            disabled={times <= qtyStep || !!smeltingId}
+                            aria-label={qtyStep > 1 ? `${qtyStep}こへらす` : "へらす"}
+                            onClick={() => setCraftQty((prev) => ({
+                              ...prev,
+                              [recipe.id]: alignCraftTimes(times - qtyStep, maxTimes, qtyStep),
+                            }))}
                           >
-                            −
+                            {qtyStep > 1 ? `−${qtyStep}` : "−"}
                           </button>
                           <span className="mining-craft-qty-n">{times}</span>
                           <button
                             type="button"
                             className="mining-craft-qty-btn"
-                            disabled={times >= maxTimes || !!smeltingId}
-                            aria-label="ふやす"
-                            onClick={() => setCraftQty((prev) => ({ ...prev, [recipe.id]: Math.min(maxTimes, times + 1) }))}
+                            disabled={times + qtyStep > maxTimes || !!smeltingId}
+                            aria-label={qtyStep > 1 ? `${qtyStep}こふやす` : "ふやす"}
+                            onClick={() => setCraftQty((prev) => ({
+                              ...prev,
+                              [recipe.id]: alignCraftTimes(times + qtyStep, maxTimes, qtyStep),
+                            }))}
                           >
-                            ＋
+                            {qtyStep > 1 ? `＋${qtyStep}` : "＋"}
                           </button>
                         </div>
                       )}

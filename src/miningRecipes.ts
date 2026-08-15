@@ -69,6 +69,30 @@ export function fuelAmountForTimes(fuel: RecipeCost, times: number): number {
   return Math.ceil((n * fuel.amount) / fuelCraftsPerUnit(fuel));
 }
 
+/** 石炭は1つで2回なので、個数の増減も2こずつ */
+export function smeltQtyStep(fuel: RecipeCost | null | undefined): number {
+  return fuel?.material === "coal" ? 2 : 1;
+}
+
+export function alignCraftTimes(times: number, maxTimes: number, step: number): number {
+  const max = Math.max(0, Math.floor(maxTimes));
+  if (max < 1) return 1;
+  if (step <= 1) return Math.max(1, Math.min(Math.floor(times), max));
+  if (max < step) return Math.max(1, Math.min(Math.floor(times), max));
+  const steppedMax = max - (max % step);
+  const raw = Math.floor(times);
+  const aligned = raw - (raw % step);
+  return Math.max(step, Math.min(aligned || step, steppedMax));
+}
+
+/** 石炭せいれんで素材が1こ／奇数のときの注意 */
+export function coalSmeltRemainderWarning(oreCount: number): string | null {
+  if (oreCount < 1) return null;
+  if (oreCount === 1) return "石炭は1つで2こせいれんできるよ。1こだけだと石炭がもったいないよ";
+  if (oreCount % 2 === 1) return "石炭は2こずつせいれんできるよ。1こ余るよ";
+  return null;
+}
+
 /** 持てる燃料を優先順（石炭→板材→原木）で選ぶ */
 export function pickFuelOption(
   fuelOptions: RecipeCost[] | undefined,
