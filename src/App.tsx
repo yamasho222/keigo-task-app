@@ -4443,9 +4443,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   return (
     <div style={{
       width: "100%",
+      maxWidth: "100%",
       height: "100%",
       flex: 1,
       minHeight: 0,
+      minWidth: 0,
       backgroundColor: theme.bg.editor,
       position: "relative",
       overflow: "hidden",
@@ -5178,6 +5180,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           padding: "max(env(safe-area-inset-top, 16px), 16px) 16px 24px",
           display: "flex",
           flexDirection: "column",
+          alignItems: "stretch",
           gap: 14,
           pointerEvents: (anticipating || !!celebType) ? "none" : "auto",
         }}
@@ -5793,7 +5796,7 @@ function StepProgress({
   const lineW      = total <= 5 ? 22 : total <= 7 ? 14 : 8;
 
   return (
-    <div>
+    <div style={{ width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
         <div>
           <span style={{ fontSize: 28, fontWeight: 900, color: allDone ? theme.category.yellow : theme.text.primary, lineHeight: 1 }}>
@@ -5805,7 +5808,7 @@ function StepProgress({
           {getEncouragement(doneCount, total)}
         </span>
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", width: "100%", minWidth: 0 }}>
         {tasks.map((task, idx) => {
           const isDone    = done.has(task.id);
           const isSkipped = skipped.has(task.id);
@@ -5815,10 +5818,10 @@ function StepProgress({
           const isFuture  = !isResolved && !isActive;
           const prevDone  = idx > 0 && isTaskResolved(done, skipped, tasks[idx - 1].id);
           return (
-            <div key={task.id} style={{ display: "flex", alignItems: "center" }}>
+            <div key={task.id} style={{ display: "flex", alignItems: "center", flex: idx === 0 ? "0 0 auto" : 1, minWidth: 0 }}>
               {idx > 0 && (
                 <div style={{
-                  width: lineW, height: 3, borderRadius: 2, flexShrink: 0,
+                  flex: 1, height: 3, borderRadius: 2, minWidth: lineW,
                   backgroundColor: isResolved || (isActive && prevDone) ? theme.category.green : theme.fill.secondary,
                 }} />
               )}
@@ -5873,6 +5876,7 @@ function BestTimeSummary({
 
   return (
     <div style={{
+      width: "100%", boxSizing: "border-box",
       marginTop: 4, padding: "10px 14px", borderRadius: 12,
       backgroundColor: `${theme.category.orange}12`,
       border: `1.5px solid ${theme.category.orange}33`,
@@ -6275,7 +6279,7 @@ function TaskListScreen({
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: "80vh" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: "80vh", width: "100%", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <BackLink onBack={onBack} />
           <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>タスク一覧</div>
@@ -6524,7 +6528,7 @@ function SessionPhaseSwipe({
 
   return (
     <div
-      style={{ display: "flex", flexDirection: "column", gap: 14, touchAction: "pan-y" }}
+      style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", minWidth: 0, touchAction: "pan-y" }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
@@ -6542,7 +6546,7 @@ function InAppTabs({
 }) {
   const tabs = getVisibleSessionTabs(contextDate);
   return (
-    <div style={{ display: "flex", gap: 4, padding: "2px 0 4px", opacity: disabled ? 0.45 : 1 }}>
+    <div style={{ display: "flex", gap: 4, padding: "2px 0 4px", width: "100%", opacity: disabled ? 0.45 : 1 }}>
       {tabs.map((t) => {
         const active = screen === t.id;
         return (
@@ -7170,7 +7174,7 @@ function TaskScreen({
   const buddyXpLeft = Math.max(0, buddyXpNeed - buddyXpHave);
 
   return (
-    <>
+    <div style={{ width: "100%", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <div style={{ fontSize: 11, color: theme.text.tertiary, marginBottom: 3, letterSpacing: 0.8, textTransform: "uppercase" }}>
           {timeLabel}
@@ -7402,7 +7406,7 @@ function TaskScreen({
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={listTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, width: "100%" }}>
             {listTasks.map((task) => {
               const isActive = activeWorkTask?.session === session && activeWorkTask.taskId === task.id;
               const isSkipped = skipped.has(task.id);
@@ -7992,7 +7996,7 @@ function TaskScreen({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -8205,6 +8209,7 @@ function SortableTaskRow(props: TaskRowProps) {
       ref={setNodeRef}
       style={{
         display: "flex", alignItems: "stretch", gap: 6,
+        width: "100%", boxSizing: "border-box",
         transform: DndCSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
@@ -8445,6 +8450,7 @@ function TaskRow({
       className={isJustChecked ? "row-glow" : ""}
       style={{
         display: "flex", alignItems: "center", gap: 12,
+        width: "100%", boxSizing: "border-box",
         padding: "13px 14px", borderRadius: isActive ? "14px 14px 0 0" : 14,
         backgroundColor: isDone
           ? `${theme.category.green}16`
@@ -8702,7 +8708,7 @@ function ShowParentScreen({
 }) {
   const canStamp = complete && !approved;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", width: "100%", minWidth: 0 }}>
       {/* ホームボタン */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div onClick={onHome} style={{
@@ -8883,7 +8889,7 @@ function TimerScreen({
     const overSec = overtimeSec % 60;
 
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative", width: "100%", minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <ScrollSafeBackButton onBack={onBack} />
           <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
@@ -8948,7 +8954,7 @@ function TimerScreen({
   const activeDots = Math.ceil(progress * totalDots);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", position: "relative", width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <ScrollSafeBackButton onBack={onBack} />
         <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
@@ -9054,7 +9060,7 @@ function TimerEndScreen({
   const overSec = overtimeSec % 60;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 20, textAlign: "center", position: "relative" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "80vh", gap: 20, textAlign: "center", position: "relative", width: "100%", minWidth: 0 }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <ScrollSafeBackButton onBack={onBack} />
         <div onClick={onHome} style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", color: theme.text.tertiary, fontSize: 13, padding: "4px 6px", borderRadius: 6 }}>
@@ -9145,7 +9151,7 @@ function AlarmSettingsScreen({
   onBack: () => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <ScrollSafeBackButton onBack={onBack} />
         <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>アラーム設定</div>

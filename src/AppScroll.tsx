@@ -20,7 +20,12 @@ export function AppScroll({ children, style, className }: Props) {
       style={{
         flex: 1,
         minHeight: 0,
+        minWidth: 0,
+        width: "100%",
+        maxWidth: "100%",
         height: "100%",
+        boxSizing: "border-box",
+        alignItems: "stretch",
         overflowY: "auto",
         overflowX: "hidden",
         WebkitOverflowScrolling: "touch",

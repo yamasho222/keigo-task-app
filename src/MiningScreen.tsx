@@ -1566,7 +1566,7 @@ export function MiningScreen({
   const contentPadBottom = blockingOverlay ? 96 : 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: contentPadBottom }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: contentPadBottom, width: "100%", minWidth: 0 }}>
       {/* 固定ヘッダ: 本体タブ or そうび/なかま/エンチャント */}
       <div style={{ height: chromeSpacerHeight, flexShrink: 0 }} aria-hidden />
       <div

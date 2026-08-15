@@ -353,7 +353,7 @@ export function RecordScreen({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minHeight: "80vh", width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <ScrollSafeBackButton onBack={onBack} />
         <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>連続記録</div>

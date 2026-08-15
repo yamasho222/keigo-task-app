@@ -390,7 +390,7 @@ export function MissionCard({
   if (!alignWithTaskRows) return row;
 
   return (
-    <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+    <div style={{ display: "flex", alignItems: "stretch", gap: 6, width: "100%" }}>
       <div style={{ flexShrink: 0, width: 22 }} aria-hidden />
       {row}
     </div>
@@ -720,7 +720,7 @@ export function ShowParentMissionScreen({
   const canApprove = childDoneThisPhase && !phaseApproved;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div onClick={onHome} style={{
           display: "flex", alignItems: "center", gap: 4,
@@ -851,7 +851,7 @@ export function ShowParentOneOffScreen({
   const canApprove = !approved;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div onClick={onHome} style={{
           display: "flex", alignItems: "center", gap: 4,
