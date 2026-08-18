@@ -48,6 +48,11 @@ import {
   type OddsSegment,
 } from "./miningProgress";
 import {
+  patchFromResult,
+  rebaseMiningWrite,
+  type MiningPatch,
+} from "./miningCommit";
+import {
   CRAFT_RECIPE_TABS,
   NETHERITE_UPGRADE_REQUIRES,
   craftGridForRecipe,
@@ -122,7 +127,7 @@ interface Props {
   stickerAlbum: string[];
   buddyProgress: BuddyProgressMap;
   dateKey: string;
-  onChange: (next: MiningState) => void;
+  onChange: (patch: MiningPatch) => void;
   onBack: () => void;
 }
 
@@ -917,9 +922,14 @@ export function MiningScreen({
   const [rockHint, setRockHint] = useState<HelmetRockHint>({ kind: "none" });
   const crackStageRef = useRef(0);
   const smeltTimerRef = useRef(0);
+  const craftLockRef = useRef(false);
   const pendingDigChaptersRef = useRef<ChapterMoment[]>([]);
   const miningRef = useRef(mining);
   miningRef.current = mining;
+
+  useEffect(() => {
+    craftLockRef.current = false;
+  }, [mining]);
 
   useLayoutEffect(() => {
     const scroll = document.querySelector("[data-app-scroll]");
@@ -1080,8 +1090,10 @@ export function MiningScreen({
 
   const selectToolKind = (kind: ToolKind) => {
     setToolKind(kind);
-    const best = bestOwnedTool(mining, kind);
-    if (best) onChange(equipTool(mining, best));
+    onChange((prev) => {
+      const best = bestOwnedTool(prev, kind);
+      return best ? equipTool(prev, best) : prev;
+    });
   };
 
   /** 行き先を選び、おすすめどうぐを装備し、前回行き先を保存する */
@@ -1091,17 +1103,17 @@ export function MiningScreen({
     setToolKind(kind);
     void unlockAudio();
     playGachaAmbient(gid);
-    let next: MiningState = { ...mining, lastSelectedGacha: gid };
-    const best = bestOwnedTool(next, kind);
-    if (best) next = equipTool(next, best);
-    onChange(next);
+    onChange((prev) => {
+      let state: MiningState = { ...prev, lastSelectedGacha: gid };
+      const owned = bestOwnedTool(state, kind);
+      if (owned) state = equipTool(state, owned);
+      return state;
+    });
   };
 
-  const beginDigFx = (result: DigResult) => {
-    const before = mining;
-    const beforeUnlocks = new Set(mining.unlockedGachas);
+  const beginDigFx = (before: MiningState, result: DigResult) => {
+    const beforeUnlocks = new Set(before.unlockedGachas);
     setDigBusy(true);
-    onChange(result.state);
     setLastDig(result);
     crackDoneRef.current = false;
     crackStageRef.current = 0;
@@ -1136,23 +1148,25 @@ export function MiningScreen({
     if (digBusy) return;
     void unlockAudio();
     playGachaAmbient(gacha);
-    let stateForDig: MiningState = { ...mining, lastSelectedGacha: gacha };
+    const base = mining;
+    let stateForDig: MiningState = { ...base, lastSelectedGacha: gacha };
     const best = bestOwnedTool(stateForDig, kind);
     if (best) stateForDig = equipTool(stateForDig, best);
 
     if (isBucketGacha(gacha)) {
       if (!hasBucket(stateForDig)) {
-        onChange(stateForDig);
+        onChange((prev) => rebaseMiningWrite(prev, base, stateForDig));
         showToast("バケツをそうびしてから入るよ");
         return;
       }
       const result = resolveBucketFill({ state: stateForDig, gacha, luckyRock });
       if ("error" in result) {
-        onChange(stateForDig);
+        onChange((prev) => rebaseMiningWrite(prev, base, stateForDig));
         showToast(result.error);
         return;
       }
-      beginDigFx(result);
+      onChange((prev) => rebaseMiningWrite(prev, base, result.state));
+      beginDigFx(base, result);
       return;
     }
 
@@ -1165,11 +1179,12 @@ export function MiningScreen({
       luckyRock,
     });
     if ("error" in result) {
-      onChange(stateForDig);
+      onChange((prev) => rebaseMiningWrite(prev, base, stateForDig));
       showToast(result.error);
       return;
     }
-    beginDigFx(result);
+    onChange((prev) => rebaseMiningWrite(prev, base, result.state));
+    beginDigFx(base, result);
   };
 
   const rollLuckySpots = () => {
@@ -1267,7 +1282,12 @@ export function MiningScreen({
     const next = refreshUnlocks(current);
     const before = new Set(current.unlockedGachas);
     if (!next.unlockedGachas.some((id) => !before.has(id))) return;
-    onChange(next);
+    onChange((prev) => {
+      const resolved = refreshUnlocks(prev);
+      const prevSet = new Set(prev.unlockedGachas);
+      if (!resolved.unlockedGachas.some((id) => !prevSet.has(id))) return prev;
+      return resolved;
+    });
     announceUnlocks(before, next);
   }, [mining.crafted, mining.unlockedGachas, onChange]);
 
@@ -1288,7 +1308,6 @@ export function MiningScreen({
   ) => {
     const beforeUnlocks = new Set(before.unlockedGachas);
     const beforeBeds = partySlotCount(before);
-    onChange(nextState);
 
     const icon = recipe.grantsBed ? (
       <MiningItemIcon bed emoji={recipe.emoji} size={56} alt="" />
@@ -1362,21 +1381,32 @@ export function MiningScreen({
   };
 
   const onCraft = (recipe: MiningRecipe, times = 1) => {
-    if (smeltingId) return;
+    if (smeltingId || craftLockRef.current) return;
     const chosenId = fuelChoice[recipe.id];
     const fuel =
       recipe.fuelOptions && chosenId
         ? recipe.fuelOptions.find((f) => f.material === chosenId)
         : undefined;
-    const snapshot = miningRef.current;
     const craftOpts = { ...(fuel ? { fuel } : {}), times };
+    const applyCraft = (from: MiningState) => {
+      const result = tryCraft(from, recipe, craftOpts);
+      if (result.error) {
+        showToast(result.error);
+        craftLockRef.current = false;
+        return false;
+      }
+      onChange(patchFromResult((prev) => tryCraft(prev, recipe, craftOpts)));
+      finishCraftSuccess(from, recipe, result.state, times);
+      return true;
+    };
 
     if (recipe.fuelOptions?.length) {
-      const preview = tryCraft(snapshot, recipe, craftOpts);
+      const preview = tryCraft(miningRef.current, recipe, craftOpts);
       if (preview.error) {
         showToast(preview.error);
         return;
       }
+      craftLockRef.current = true;
       setSmeltingId(recipe.id);
       setSmeltProgress(0);
       void playMiningSfx("smelt");
@@ -1389,13 +1419,7 @@ export function MiningScreen({
         if (p >= 1) {
           setSmeltingId(null);
           setSmeltProgress(0);
-          const latest = miningRef.current;
-          const result = tryCraft(latest, recipe, craftOpts);
-          if (result.error) {
-            showToast(result.error);
-            return;
-          }
-          finishCraftSuccess(latest, recipe, result.state, times);
+          applyCraft(miningRef.current);
           return;
         }
         smeltTimerRef.current = window.setTimeout(tick, 40);
@@ -1404,12 +1428,8 @@ export function MiningScreen({
       return;
     }
 
-    const result = tryCraft(snapshot, recipe, craftOpts);
-    if (result.error) {
-      showToast(result.error);
-      return;
-    }
-    finishCraftSuccess(snapshot, recipe, result.state, times);
+    craftLockRef.current = true;
+    applyCraft(miningRef.current);
   };
 
   useEffect(() => () => {
@@ -1860,7 +1880,7 @@ export function MiningScreen({
                     onClick={() => {
                       if (!best) return;
                       setToolKind(kind);
-                      onChange(equipTool(mining, best));
+                      onChange((prev) => equipTool(prev, best));
                       showToast(`${gearLabel(best)} をそうびした！`);
                     }}
                     style={{ opacity: best ? 1 : 0.4 }}
@@ -1939,7 +1959,7 @@ export function MiningScreen({
                                   type="button"
                                   className={`mining-equip-armor-pick${current === id ? " is-equipped" : ""}`}
                                   onClick={() => {
-                                    onChange(equipArmor(mining, slot, id));
+                                    onChange((prev) => equipArmor(prev, slot, id));
                                     showToast(`${gearLabel(id)} をそうびした！`);
                                   }}
                                 >
@@ -1960,7 +1980,7 @@ export function MiningScreen({
                                 type="button"
                                 className="mining-equip-armor-pick is-unequip"
                                 onClick={() => {
-                                  onChange(equipArmor(mining, slot, null));
+                                  onChange((prev) => equipArmor(prev, slot, null));
                                   showToast("はずしたよ");
                                 }}
                               >
@@ -2487,7 +2507,7 @@ export function MiningScreen({
                   type="button"
                   style={{ ...btnGhost, width: "100%", marginBottom: 10 }}
                   onClick={() => {
-                    onChange(setPartySlot(mining, partySlotEdit, null));
+                    onChange((prev) => setPartySlot(prev, partySlotEdit, null));
                     showToast("はずしたよ");
                     setPartyStep("slots");
                     setPartySlotEdit(null);
@@ -2559,7 +2579,7 @@ export function MiningScreen({
                         type="button"
                         onClick={() => {
                           if (!stickerAlbum.includes(item.id)) return;
-                          onChange(setPartySlot(mining, partySlotEdit, item.id));
+                          onChange((prev) => setPartySlot(prev, partySlotEdit, item.id));
                           showToast(`${item.label} Lv${lv} を入れた！`);
                           setPartyStep("slots");
                           setPartySlotEdit(null);
@@ -2624,7 +2644,7 @@ export function MiningScreen({
                 onClick={() => {
                   const r = exchangeQuartzForPoints(mining);
                   if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast(`ネザークォーツをこうかん⭐${QUARTZ_TO_POINTS}にかえした！`); }
+                  else { onChange(patchFromResult((prev) => exchangeQuartzForPoints(prev))); showToast(`ネザークォーツをこうかん⭐${QUARTZ_TO_POINTS}にかえした！`); }
                 }}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -2638,7 +2658,7 @@ export function MiningScreen({
                 onClick={() => {
                   const r = exchangePointsForLog(mining);
                   if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("原木を1つこうかんした！"); }
+                  else { onChange(patchFromResult((prev) => exchangePointsForLog(prev))); showToast("原木を1つこうかんした！"); }
                 }}
               >
                 原木1（こうかん⭐{exchangeCost(EXCHANGE_LOG_COST, mining)}）
@@ -2649,7 +2669,7 @@ export function MiningScreen({
                 onClick={() => {
                   const r = exchangePointsForCobble(mining);
                   if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("丸石を1つこうかんした！"); }
+                  else { onChange(patchFromResult((prev) => exchangePointsForCobble(prev))); showToast("丸石を1つこうかんした！"); }
                 }}
               >
                 丸石1（こうかん⭐{exchangeCost(8, mining)}）
@@ -2660,7 +2680,7 @@ export function MiningScreen({
                 onClick={() => {
                   const r = exchangePointsForWool(mining);
                   if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("羊毛を1つこうかんした！"); }
+                  else { onChange(patchFromResult((prev) => exchangePointsForWool(prev))); showToast("羊毛を1つこうかんした！"); }
                 }}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -2674,7 +2694,7 @@ export function MiningScreen({
                 onClick={() => {
                   const r = exchangePointsForDebris(mining);
                   if (r.error) showToast(r.error);
-                  else { onChange(r.state); showToast("古代の残骸を1つこうかんした！"); }
+                  else { onChange(patchFromResult((prev) => exchangePointsForDebris(prev))); showToast("古代の残骸を1つこうかんした！"); }
                 }}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -3077,7 +3097,7 @@ export function MiningScreen({
                 type="button"
                 className="mining-route-branch-card"
                 onClick={() => {
-                  onChange({ ...mining, miningRouteBranchSeen: true });
+                  onChange((prev) => ({ ...prev, miningRouteBranchSeen: true }));
                   setRouteBranchOpen(false);
                   setTab("craft");
                   showToast("はやくネザーへ！ダイヤどうぐをつくろう", "progress");
@@ -3090,7 +3110,7 @@ export function MiningScreen({
                 type="button"
                 className="mining-route-branch-card"
                 onClick={() => {
-                  onChange({ ...mining, miningRouteBranchSeen: true });
+                  onChange((prev) => ({ ...prev, miningRouteBranchSeen: true }));
                   setRouteBranchOpen(false);
                   setOverlay("enchant");
                   showToast("つよくなってから行こう！エンチャントをつけよう", "progress");
@@ -3104,7 +3124,7 @@ export function MiningScreen({
               type="button"
               className="mining-enchant-secondary"
               onClick={() => {
-                onChange({ ...mining, miningRouteBranchSeen: true });
+                onChange((prev) => ({ ...prev, miningRouteBranchSeen: true }));
                 setRouteBranchOpen(false);
               }}
             >
@@ -3126,7 +3146,7 @@ export function MiningScreen({
               type="button"
               className="mining-enchant-primary"
               onClick={() => {
-                onChange({ ...mining, miningVersionNoticeSeen: true });
+                onChange((prev) => ({ ...prev, miningVersionNoticeSeen: true }));
                 setVersionNoticeOpen(false);
               }}
             >

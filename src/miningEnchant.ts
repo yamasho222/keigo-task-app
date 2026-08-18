@@ -3,6 +3,7 @@
 import {
   ENCHANT_META,
   getMaterialCount,
+  writeMaterialCount,
   type EnchantId,
   type EnchantLevel,
   type EnchantTarget,
@@ -107,9 +108,7 @@ export function applyEnchant(
   }
   const materials = { ...state.materials };
   if (pay > 0) {
-    const left = getMaterialCount(state, "lapis") - pay;
-    if (left > 0) materials.lapis = left;
-    else delete materials.lapis;
+    writeMaterialCount(materials, "lapis", getMaterialCount(state, "lapis") - pay);
   }
   return {
     state: {
@@ -134,9 +133,7 @@ export function levelUpEnchant(
     return { state, error: `ラピスが${cost}こひつようだよ` };
   }
   const materials = { ...state.materials };
-  const left = getMaterialCount(state, "lapis") - cost;
-  if (left > 0) materials.lapis = left;
-  else delete materials.lapis;
+  writeMaterialCount(materials, "lapis", getMaterialCount(state, "lapis") - cost);
   return {
     state: {
       ...state,
@@ -157,9 +154,7 @@ export function spendLapisForReroll(
     return { state, error: `ラピスが${cost}こひつようだよ` };
   }
   const materials = { ...state.materials };
-  const left = getMaterialCount(state, "lapis") - cost;
-  if (left > 0) materials.lapis = left;
-  else delete materials.lapis;
+  writeMaterialCount(materials, "lapis", getMaterialCount(state, "lapis") - cost);
   return { state: { ...state, materials } };
 }
 

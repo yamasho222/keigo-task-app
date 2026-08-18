@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type CSSProperties, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -1656,6 +1656,15 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     refreshUnlocks(normalizeMiningState(stored.mining)),
   );
   const miningRef = useRef(mining);
+  const commitMining = useCallback((patch: (prev: MiningState) => MiningState) => {
+    const next = patch(miningRef.current);
+    miningRef.current = next;
+    setMining((prev) => {
+      const resolved = patch(prev);
+      miningRef.current = resolved;
+      return resolved;
+    });
+  }, []);
   useEffect(() => { miningRef.current = mining; }, [mining]);
   const [rewardTickets, setRewardTickets] = useState<RewardTicketInventory>(() =>
     normalizeRewardTickets(stored.rewardTickets),
@@ -2247,11 +2256,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   /** 早ねボーナス: 翌日5:00以降に未受け取り分を自動付与 */
   const tryClaimBedtimeTickets = () => {
     if (activeCatchUpDate) return;
-    const { nextState, granted } = claimDueBedtimeTickets(miningRef.current, new Date());
-    if (granted <= 0) return;
-    setMining(nextState);
-    miningRef.current = nextState;
-    showBedtimeTicketToast(granted);
+    const now = new Date();
+    const peek = claimDueBedtimeTickets(miningRef.current, now);
+    if (peek.granted <= 0) return;
+    commitMining((prev) => {
+      const { nextState, granted } = claimDueBedtimeTickets(prev, now);
+      return granted > 0 ? nextState : prev;
+    });
+    showBedtimeTicketToast(peek.granted);
   };
 
   useEffect(() => {
@@ -2274,8 +2286,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const eveningAllResolved = isAllResolved("evening", allSessions);
     const next = declareBedtime(miningRef.current, nightDate, { eveningAllResolved });
     if (!next) return;
-    setMining(next);
-    miningRef.current = next;
+    commitMining((prev) => declareBedtime(prev, nightDate, { eveningAllResolved }) ?? prev);
     setBuddyXpToast("早ねできた！ 朝5時にチケット1枚");
     setBuddyXpToastNav(null);
     navigator.vibrate?.([12, 20, 12]);
@@ -2287,8 +2298,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const nightDate = getBedtimePanelNightDate({ state: miningRef.current });
     const next = revokeBedtimeDeclaration(miningRef.current, nightDate);
     if (!next) return;
-    setMining(next);
-    miningRef.current = next;
+    commitMining((prev) => revokeBedtimeDeclaration(prev, nightDate) ?? prev);
     setBuddyXpToast("早ねボーナスを取り消したよ");
     setBuddyXpToastNav(null);
     navigator.vibrate?.([10, 16, 10]);
@@ -2942,8 +2952,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     });
 
     setDuplicateTokens(seed.duplicateTokens);
-    setMining(seed.mining);
-    miningRef.current = seed.mining;
+    commitMining(() => seed.mining);
     setStickerAlbum(seed.stickerAlbum);
     stickerAlbumRef.current = seed.stickerAlbum;
     saveStickerAlbum(seed.stickerAlbum, storageChildId);
@@ -2957,18 +2966,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   /** チケット／こうかん⭐だけ潤沢。装備・素材・解放は初期状態 */
   const applyDevTicketsOnlySeed = () => {
-    const next = buildDevTicketsOnlySeed(miningRef.current);
-    setMining(next);
-    miningRef.current = next;
+    commitMining((prev) => buildDevTicketsOnlySeed(prev));
     setBuddyXpToast("チケットだけの初期状態にしました");
     setTimeout(() => setBuddyXpToast(null), 2200);
   };
 
   /** チケット／こうかん⭐だけ不足分を補充（装備・素材は触らない） */
   const topUpDevMiningCurrency = () => {
-    const next = topUpDevTicketsPoints(miningRef.current);
-    setMining(next);
-    miningRef.current = next;
+    commitMining((prev) => topUpDevTicketsPoints(prev));
   };
 
   useEffect(() => {
@@ -3026,10 +3031,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const grantMiningTicketFromSession = (session: SessionId) => {
     if (activeCatchUpDate) return;
     const key = sessionTreatKey(todayKey(), session);
-    let granted = 0;
-    setMining((prev) => {
+    const beforeTickets = miningRef.current.tickets;
+    commitMining((prev) => {
       if (prev.ticketStampedSessions[key]) return prev;
-      granted = 1;
       let next = addTickets(prev, 1);
       next = addMiningPoints(next, 1);
       return {
@@ -3037,6 +3041,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         ticketStampedSessions: { ...next.ticketStampedSessions, [key]: true },
       };
     });
+    const granted = miningRef.current.tickets - beforeTickets;
     if (granted > 0) showMiningTicketToast(granted);
   };
 
@@ -3049,12 +3054,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   ) => {
     if (activeCatchUpDate) return;
     if (!onTimeToday) return;
-    let granted = 0;
-    setMining((prev) => {
+    const beforeTickets = miningRef.current.tickets;
+    commitMining((prev) => {
       let next = prev;
       if (!next.fullDayTicketClaimed[date]) {
         next = addTickets(next, 1);
-        granted += 1;
         next = {
           ...next,
           fullDayTicketClaimed: { ...next.fullDayTicketClaimed, [date]: true },
@@ -3063,7 +3067,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       const streak = getFullDayStreak(newHistory, lateDays, sessionSickSkip);
       if (streak > 0 && streak % 4 === 0 && !next.streakTicketClaimed[streak]) {
         next = addTickets(next, 1);
-        granted += 1;
         next = {
           ...next,
           streakTicketClaimed: { ...next.streakTicketClaimed, [streak]: true },
@@ -3071,16 +3074,16 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       }
       return next;
     });
+    const granted = miningRef.current.tickets - beforeTickets;
     if (granted > 0) showMiningTicketToast(granted);
   };
 
   /** ミッション／単発ミッションの親ハンコでチケット追加 */
   const grantMiningTicketBonus = (claimKey: string) => {
     if (activeCatchUpDate) return;
-    let granted = 0;
-    setMining((prev) => {
+    const beforeTickets = miningRef.current.tickets;
+    commitMining((prev) => {
       if (prev.ticketStampedSessions[claimKey]) return prev;
-      granted = 1;
       let next = addTickets(prev, 1);
       next = addMiningPoints(next, 1);
       return {
@@ -3088,6 +3091,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         ticketStampedSessions: { ...next.ticketStampedSessions, [claimKey]: true },
       };
     });
+    const granted = miningRef.current.tickets - beforeTickets;
     if (granted > 0) showMiningTicketToast(granted);
   };
 
@@ -4616,7 +4620,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           password={resolveParentRescuePassword(parentRescuePassword)}
           miningTickets={mining.tickets}
           rewardTickets={rewardTickets}
-          onAdjustMiningTickets={(delta) => setMining((m) => adjustTickets(m, delta))}
+          onAdjustMiningTickets={(delta) => commitMining((m) => adjustTickets(m, delta))}
           onAdjustRewardTicket={(kind, delta) =>
             setRewardTickets((prev) => adjustRewardTicket(prev, kind, delta))
           }
@@ -4880,24 +4884,21 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setShowMenu(false);
                 } },
                 { icon: "🎫", label: "採掘チケット+10（テスト）", action: () => {
-                  setMining((m) => addTickets(m, 10));
+                  commitMining((m) => addTickets(m, 10));
                   setShowMenu(false);
                 } },
                 { icon: "🛏️", label: "早ねUIを見せる（夜全完了）", action: () => {
                   const nightDate = todayKey();
-                  // 当日の権利／受け取り済みを消して ready 状態を再現
-                  setMining((m) => {
+                  commitMining((m) => {
                     const eligible = { ...m.bedtimeTicketEligibleNight };
                     const claimed = { ...m.bedtimeTicketClaimed };
                     delete eligible[nightDate];
                     delete claimed[nightDate];
-                    const next = {
+                    return {
                       ...m,
                       bedtimeTicketEligibleNight: eligible,
                       bedtimeTicketClaimed: claimed,
                     };
-                    miningRef.current = next;
-                    return next;
                   });
                   const visible = tasksForProgress(
                     visibleTasksForSession("evening", getAllSessionTasks()),
@@ -4909,17 +4910,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 } },
                 { icon: "🛏️", label: "早ね宣言をいま記録（テスト）", action: () => {
                   const nightDate = todayKey();
-                  setMining((m) => {
-                    const next = {
-                      ...m,
-                      bedtimeTicketEligibleNight: {
-                        ...m.bedtimeTicketEligibleNight,
-                        [nightDate]: true,
-                      },
-                    };
-                    miningRef.current = next;
-                    return next;
-                  });
+                  commitMining((m) => ({
+                    ...m,
+                    bedtimeTicketEligibleNight: {
+                      ...m.bedtimeTicketEligibleNight,
+                      [nightDate]: true,
+                    },
+                  }));
                   setBuddyXpToast("早ね宣言を記録（テスト）");
                   setTimeout(() => setBuddyXpToast(null), 1800);
                   setShowMenu(false);
@@ -4929,19 +4926,21 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   const forced = new Date();
                   forced.setDate(forced.getDate() + 1);
                   forced.setHours(5, 0, 0, 0);
-                  let state = miningRef.current;
-                  if (!state.bedtimeTicketEligibleNight[nightDate]) {
-                    state = {
-                      ...state,
-                      bedtimeTicketEligibleNight: {
-                        ...state.bedtimeTicketEligibleNight,
-                        [nightDate]: true,
-                      },
-                    };
-                  }
-                  const { nextState, granted } = claimDueBedtimeTickets(state, forced);
-                  setMining(nextState);
-                  miningRef.current = nextState;
+                  const beforeTickets = miningRef.current.tickets;
+                  commitMining((prev) => {
+                    let state = prev;
+                    if (!state.bedtimeTicketEligibleNight[nightDate]) {
+                      state = {
+                        ...state,
+                        bedtimeTicketEligibleNight: {
+                          ...state.bedtimeTicketEligibleNight,
+                          [nightDate]: true,
+                        },
+                      };
+                    }
+                    return claimDueBedtimeTickets(state, forced).nextState;
+                  });
+                  const granted = miningRef.current.tickets - beforeTickets;
                   if (granted > 0) showBedtimeTicketToast(granted);
                   else {
                     setBuddyXpToast("受け取り済みか条件未達");
@@ -4950,21 +4949,21 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setShowMenu(false);
                 } },
                 { icon: "🪵", label: "原木+20（テスト）", action: () => {
-                  setMining((m) => ({
+                  commitMining((m) => ({
                     ...m,
                     materials: { ...m.materials, log: (m.materials.log ?? 0) + 20 },
                   }));
                   setShowMenu(false);
                 } },
                 { icon: "🪨", label: "丸石+20（テスト）", action: () => {
-                  setMining((m) => ({
+                  commitMining((m) => ({
                     ...m,
                     materials: { ...m.materials, cobble: (m.materials.cobble ?? 0) + 20 },
                   }));
                   setShowMenu(false);
                 } },
                 { icon: "⚡", label: "採掘ポイント+50（テスト）", action: () => {
-                  setMining((m) => addMiningPoints(m, 50));
+                  commitMining((m) => addMiningPoints(m, 50));
                   setShowMenu(false);
                 } },
                 { icon: "⛏️", label: "こうざん画面を開く（テスト）", action: () => {
@@ -5518,7 +5517,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             stickerAlbum={stickerAlbum}
             buddyProgress={buddyProgress}
             dateKey={todayKey()}
-            onChange={setMining}
+            onChange={commitMining}
             onBack={goHome}
           />
         )}

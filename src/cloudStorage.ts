@@ -13,6 +13,7 @@ import {
 import { db } from "./firebase";
 import type { LocalAppStateSnapshot } from "./appStateStorage";
 import type { ActiveChildContext } from "./App";
+import { firestoreAppStateSetOptions } from "./cloudAppStateWrite";
 
 export type { ActiveChildContext };
 
@@ -224,17 +225,19 @@ export async function saveCloudAppState(
     ? snapshot.stickerAlbum.filter((id): id is string => typeof id === "string")
     : [];
   const updatedAt = Timestamp.now();
-  await setDoc(
-    ref,
-    {
-      schemaVersion: 1,
-      state,
-      stickerAlbum,
-      updatedAt,
-      updatedByDeviceId: deviceId,
-    },
-    { merge: true },
-  );
+  const payload = {
+    schemaVersion: 1,
+    state,
+    stickerAlbum,
+    updatedAt,
+    updatedByDeviceId: deviceId,
+  };
+  const mergeOptions = firestoreAppStateSetOptions();
+  if (mergeOptions) {
+    await setDoc(ref, payload, mergeOptions);
+  } else {
+    await setDoc(ref, payload);
+  }
   await touchChildProfile(userId, childId);
   return updatedAt.toMillis();
 }

@@ -626,6 +626,15 @@ export function getMaterialCount(state: MiningState, id: MaterialId): number {
   return Math.max(0, Math.floor(state.materials[id] ?? 0));
 }
 
+/** 0個もキーとして残す。クラウド merge が再発しても古い個数が復活しない */
+export function writeMaterialCount(
+  materials: Partial<Record<MaterialId, number>>,
+  id: MaterialId,
+  amount: number,
+): void {
+  materials[id] = Math.max(0, Math.floor(amount));
+}
+
 export function gearLabel(id: CraftedGearId): string {
   if (id === "workbench") return "作業台";
   if (id === "furnace") return "かまど";

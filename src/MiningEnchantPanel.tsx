@@ -24,6 +24,7 @@ import {
   type MiningState,
 } from "./miningTypes";
 import { bestOwnedTool } from "./miningProgress";
+import { patchFromResult, type MiningPatch } from "./miningCommit";
 
 function bestOwnedForTargetLocal(
   state: MiningState,
@@ -59,7 +60,7 @@ function displayGearForTarget(
 
 type Props = {
   mining: MiningState;
-  onChange: (next: MiningState) => void;
+  onChange: (patch: MiningPatch) => void;
   showToast: (msg: string) => void;
   /** アカウント初回のエンチャント決定直後 */
   onFirstEnchant?: (id: EnchantId) => void;
@@ -141,7 +142,7 @@ export function MiningEnchantPanel({
       showToast(r.error);
       return;
     }
-    onChange(r.state);
+    onChange(patchFromResult((prev) => spendLapisForReroll(prev, rerollCount)));
     setOffers(rollEnchantOffers());
     setRerollCount((n) => n + 1);
   };
@@ -154,7 +155,7 @@ export function MiningEnchantPanel({
       showToast(r.error);
       return;
     }
-    onChange(r.state);
+    onChange(patchFromResult((prev) => applyEnchant(prev, target, id)));
     const shown = displayGearForTarget(r.state, target);
     setApplySuccess({
       target,
@@ -172,7 +173,7 @@ export function MiningEnchantPanel({
       return;
     }
     const e = r.state.enchants[target];
-    onChange(r.state);
+    onChange(patchFromResult((prev) => levelUpEnchant(prev, target)));
     if (e) showToast(`${ENCHANT_META[e.id].label} が Lv${e.level} になった！`);
   };
 

@@ -29,6 +29,7 @@ import {
   enchantTargetOfGear,
   gearLabel,
   getMaterialCount,
+  writeMaterialCount,
   MATERIAL_META,
   parseToolId,
   partySlotCount,
@@ -1135,17 +1136,26 @@ export function tryCraft(
 
   const materials = { ...state.materials };
   for (const c of recipe.costs) {
-    materials[c.material] = (materials[c.material] ?? 0) - c.amount * times;
+    writeMaterialCount(
+      materials,
+      c.material,
+      (materials[c.material] ?? 0) - c.amount * times,
+    );
   }
   if (fuel) {
-    materials[fuel.material] = (materials[fuel.material] ?? 0) - fuelAmountForTimes(fuel, times);
-  }
-  for (const key of Object.keys(materials) as MaterialId[]) {
-    if ((materials[key] ?? 0) <= 0) delete materials[key];
+    writeMaterialCount(
+      materials,
+      fuel.material,
+      (materials[fuel.material] ?? 0) - fuelAmountForTimes(fuel, times),
+    );
   }
   if (recipe.outputs) {
     for (const o of recipe.outputs) {
-      materials[o.material] = (materials[o.material] ?? 0) + o.amount * times;
+      writeMaterialCount(
+        materials,
+        o.material,
+        (materials[o.material] ?? 0) + o.amount * times,
+      );
     }
   }
   const crafted = { ...state.crafted };
@@ -1177,7 +1187,7 @@ function clearSameKindGear(
   const tiers: GearTier[] = ["wood", "stone", "iron", "gold", "diamond", "netherite"];
   for (const tier of tiers) {
     const id = `${target}_${tier}` as CraftedGearId;
-    if (id !== newId && crafted[id]) delete crafted[id];
+    if (id !== newId && crafted[id]) crafted[id] = false;
   }
   const nextEq = { ...equipped };
   if (target === "sword" || target === "axe" || target === "pickaxe") {
@@ -1332,10 +1342,11 @@ export function exchangeQuartzForPoints(state: MiningState): { state: MiningStat
     state: {
       ...state,
       miningPoints: state.miningPoints + QUARTZ_TO_POINTS,
-      materials: {
-        ...state.materials,
-        nether_quartz: have - 1,
-      },
+      materials: (() => {
+        const materials = { ...state.materials };
+        writeMaterialCount(materials, "nether_quartz", have - 1);
+        return materials;
+      })(),
     },
   };
 }
