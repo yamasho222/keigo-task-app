@@ -127,6 +127,8 @@ export interface MiningState {
   lastSelectedGacha?: GachaId | null;
   /** 種類ごとのまほう */
   enchants: Partial<Record<EnchantTarget, GearEnchant>>;
+  /** 未決定の抽選（とりなおすまで同じ候補を出す） */
+  pendingEnchantOffers?: Partial<Record<EnchantTarget, [EnchantId, EnchantId]>>;
   /** アカウント初回のまほう決定を使ったか */
   firstEnchantClaimed?: boolean;
   /** 鉱山バージョンアップ告知を見たか */
@@ -463,6 +465,7 @@ export function emptyMiningState(): MiningState {
     luckyBonusClaimedDate: null,
     lastSelectedGacha: null,
     enchants: {},
+    pendingEnchantOffers: {},
     firstEnchantClaimed: false,
     miningVersionNoticeSeen: false,
     miningRouteBranchSeen: false,
@@ -603,6 +606,7 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
       typeof raw.luckyBonusClaimedDate === "string" ? raw.luckyBonusClaimedDate : null,
     lastSelectedGacha,
     enchants: normalizeEnchants(raw.enchants),
+    pendingEnchantOffers: normalizePendingEnchantOffers(raw.pendingEnchantOffers),
     firstEnchantClaimed: !!raw.firstEnchantClaimed,
     miningVersionNoticeSeen: !!raw.miningVersionNoticeSeen,
     miningRouteBranchSeen: !!raw.miningRouteBranchSeen,
@@ -619,6 +623,21 @@ function normalizeEnchants(raw: unknown): Partial<Record<EnchantTarget, GearEnch
     const level = Math.floor(Number(rec.level));
     if (level !== 1 && level !== 2 && level !== 3) continue;
     out[k] = { id: rec.id, level };
+  }
+  return out;
+}
+
+function normalizePendingEnchantOffers(
+  raw: unknown,
+): Partial<Record<EnchantTarget, [EnchantId, EnchantId]>> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<Record<EnchantTarget, [EnchantId, EnchantId]>> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isEnchantTarget(k) || !Array.isArray(v) || v.length !== 2) continue;
+    const a = v[0];
+    const b = v[1];
+    if (!isEnchantId(a) || !isEnchantId(b) || a === b) continue;
+    out[k] = [a, b];
   }
   return out;
 }

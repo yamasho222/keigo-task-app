@@ -7,10 +7,11 @@ import {
   ENCHANT_REROLL_COST,
   applyEnchant,
   enchantLevelBlurb,
+  ensureEnchantOffers,
   getEnchant,
+  getPendingEnchantOffers,
   levelUpEnchant,
-  rollEnchantOffers,
-  spendLapisForReroll,
+  rerollEnchantOffers,
 } from "./miningEnchant";
 import { MiningItemIcon } from "./MiningItemIcon";
 import {
@@ -99,8 +100,7 @@ export function MiningEnchantPanel({
   onFirstEnchant,
 }: Props) {
   const [target, setTarget] = useState<EnchantTarget | null>(null);
-  const [offers, setOffers] = useState<[EnchantId, EnchantId] | null>(null);
-  const [rerollCount, setRerollCount] = useState(0);
+  const [viewingOffers, setViewingOffers] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmDialog | null>(null);
   const [applySuccess, setApplySuccess] = useState<{
     target: EnchantTarget;
@@ -120,7 +120,7 @@ export function MiningEnchantPanel({
     const t = window.setTimeout(() => {
       const done = applySuccess;
       setApplySuccess(null);
-      setOffers(null);
+      setViewingOffers(false);
       setTarget(null);
       if (done.wasFirst) onFirstEnchant?.(done.id);
     }, APPLY_SUCCESS_MS);
@@ -130,22 +130,25 @@ export function MiningEnchantPanel({
   const openTarget = (t: EnchantTarget) => {
     if (applySuccess || confirm) return;
     setTarget(t);
-    setRerollCount(0);
-    if (getEnchant(mining, t)) setOffers(null);
-    else setOffers(rollEnchantOffers());
+    if (getEnchant(mining, t)) {
+      setViewingOffers(false);
+      return;
+    }
+    setViewingOffers(true);
+    onChange(patchFromResult((prev) => ensureEnchantOffers(prev, t)));
   };
 
   const current = target ? getEnchant(mining, target) : null;
+  const offers = target && viewingOffers ? getPendingEnchantOffers(mining, target) : null;
 
   const onReroll = () => {
-    const r = spendLapisForReroll(mining, rerollCount);
+    if (!target) return;
+    const r = rerollEnchantOffers(mining, target);
     if (r.error) {
       showToast(r.error);
       return;
     }
-    onChange(patchFromResult((prev) => spendLapisForReroll(prev, rerollCount)));
-    setOffers(rollEnchantOffers());
-    setRerollCount((n) => n + 1);
+    onChange(patchFromResult((prev) => rerollEnchantOffers(prev, target)));
   };
 
   const commitApply = (id: EnchantId) => {
@@ -211,7 +214,6 @@ export function MiningEnchantPanel({
     else commitLevelUp();
   };
 
-  const rerollCost = rerollCount === 0 ? 0 : ENCHANT_REROLL_COST;
   const applyCost = mining.firstEnchantClaimed ? ENCHANT_APPLY_COST : 0;
 
   if (applySuccess) {
@@ -337,8 +339,8 @@ export function MiningEnchantPanel({
             type="button"
             className="mining-enchant-secondary"
             onClick={() => {
-              setOffers(rollEnchantOffers());
-              setRerollCount(0);
+              setViewingOffers(true);
+              onChange(patchFromResult((prev) => ensureEnchantOffers(prev, target)));
             }}
           >
             べつのエンチャントにする
@@ -348,7 +350,7 @@ export function MiningEnchantPanel({
             className="mining-enchant-secondary"
             onClick={() => {
               setTarget(null);
-              setOffers(null);
+              setViewingOffers(false);
             }}
           >
             もどる
@@ -384,8 +386,17 @@ export function MiningEnchantPanel({
             ))}
           </div>
           <button type="button" className="mining-enchant-secondary" onClick={onReroll}>
-            とりなおす
-            {rerollCost === 0 ? "（1回め無料）" : `（ラピス${rerollCost}）`}
+            とりなおす（ラピス{ENCHANT_REROLL_COST}）
+          </button>
+          <button
+            type="button"
+            className="mining-enchant-secondary"
+            onClick={() => {
+              setViewingOffers(false);
+              if (!current) setTarget(null);
+            }}
+          >
+            もどる
           </button>
         </>
       )}

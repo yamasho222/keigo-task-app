@@ -98,6 +98,39 @@ export function bonusStarChance(level: EnchantLevel): number {
   return level === 1 ? 0.08 : level === 2 ? 0.12 : 0.15;
 }
 
+export function getPendingEnchantOffers(
+  state: MiningState,
+  target: EnchantTarget,
+): [EnchantId, EnchantId] | null {
+  return state.pendingEnchantOffers?.[target] ?? null;
+}
+
+export function ensureEnchantOffers(
+  state: MiningState,
+  target: EnchantTarget,
+  rand = Math.random,
+): { state: MiningState; offers: [EnchantId, EnchantId] } {
+  const existing = state.pendingEnchantOffers?.[target];
+  if (existing) return { state, offers: existing };
+  const offers = rollEnchantOffers(rand);
+  return {
+    state: {
+      ...state,
+      pendingEnchantOffers: { ...state.pendingEnchantOffers, [target]: offers },
+    },
+    offers,
+  };
+}
+
+function clearPendingOffersForTarget(
+  state: MiningState,
+  target: EnchantTarget,
+): MiningState["pendingEnchantOffers"] {
+  const next = { ...state.pendingEnchantOffers };
+  delete next[target];
+  return next;
+}
+
 export function applyEnchant(
   state: MiningState,
   target: EnchantTarget,
@@ -117,6 +150,7 @@ export function applyEnchant(
       materials,
       enchants: { ...state.enchants, [target]: { id: enchantId, level: 1 } },
       firstEnchantClaimed: true,
+      pendingEnchantOffers: clearPendingOffersForTarget(state, target),
     },
   };
 }
@@ -144,19 +178,25 @@ export function levelUpEnchant(
   };
 }
 
-export function spendLapisForReroll(
+export function rerollEnchantOffers(
   state: MiningState,
-  rerollIndex: number,
+  target: EnchantTarget,
+  rand = Math.random,
 ): { state: MiningState; error?: string } {
-  // 1回目(index 0)無料、2回目以降は ENCHANT_REROLL_COST
-  const cost = rerollIndex === 0 ? 0 : ENCHANT_REROLL_COST;
-  if (cost === 0) return { state };
+  const cost = ENCHANT_REROLL_COST;
   if (getMaterialCount(state, "lapis") < cost) {
     return { state, error: `ラピスが${cost}こひつようだよ` };
   }
   const materials = { ...state.materials };
   writeMaterialCount(materials, "lapis", getMaterialCount(state, "lapis") - cost);
-  return { state: { ...state, materials } };
+  const offers = rollEnchantOffers(rand);
+  return {
+    state: {
+      ...state,
+      materials,
+      pendingEnchantOffers: { ...state.pendingEnchantOffers, [target]: offers },
+    },
+  };
 }
 
 export function enchantLevelBlurb(id: EnchantId, level: EnchantLevel): string {
