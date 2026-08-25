@@ -1269,79 +1269,48 @@ export function exchangeCost(base: number, state: MiningState): number {
   return Math.max(1, afterPct - bargain);
 }
 
-export const EXCHANGE_LOG_COST = 5;
-export const EXCHANGE_COBBLE_COST = 8;
-/** 羊毛は救済ルート。もり掘りより高め */
-export const EXCHANGE_WOOL_COST = 28;
+export const EXCHANGE_LOG_COST = 15;
+export const EXCHANGE_COBBLE_COST = 20;
+/** さとうきびは紙・本の救済。農場掘りより高め */
+export const EXCHANGE_SUGAR_CANE_COST = 30;
+/** 石炭は精錬の救済。せきたんのやまより高め */
+export const EXCHANGE_COAL_COST = 25;
+/** 羊毛は救済ルート。牧場掘りより高め */
+export const EXCHANGE_WOOL_COST = 30;
+/** 皮は本の救済。牧場のおまけより高め */
+export const EXCHANGE_LEATHER_COST = 60;
 /** 古代の残骸は救済。ネザー掘りよりかなり高め */
 export const EXCHANGE_DEBRIS_COST = 90;
 /** ネザークォーツ1個をエメラルドにかえしたときの量（むねあて割引なし） */
 export const QUARTZ_TO_POINTS = 3;
 
-export function exchangePointsForLog(state: MiningState): { state: MiningState; error?: string } {
-  const cost = exchangeCost(EXCHANGE_LOG_COST, state);
-  if (state.miningPoints < cost) {
-    return { state, error: `エメラルドが${cost}ひつようだよ` };
-  }
-  return {
-    state: {
-      ...state,
-      miningPoints: state.miningPoints - cost,
-      materials: {
-        ...state.materials,
-        log: getMaterialCount(state, "log") + 1,
-      },
-    },
-  };
-}
+export const EXCHANGE_BUY_OFFERS: { material: MaterialId; baseCost: number }[] = [
+  { material: "log", baseCost: EXCHANGE_LOG_COST },
+  { material: "cobble", baseCost: EXCHANGE_COBBLE_COST },
+  { material: "coal", baseCost: EXCHANGE_COAL_COST },
+  { material: "sugar_cane", baseCost: EXCHANGE_SUGAR_CANE_COST },
+  { material: "wool", baseCost: EXCHANGE_WOOL_COST },
+  { material: "leather", baseCost: EXCHANGE_LEATHER_COST },
+  { material: "ancient_debris", baseCost: EXCHANGE_DEBRIS_COST },
+];
 
-export function exchangePointsForCobble(state: MiningState): { state: MiningState; error?: string } {
-  const cost = exchangeCost(EXCHANGE_COBBLE_COST, state);
+export function exchangePointsForMaterial(
+  state: MiningState,
+  material: MaterialId,
+): { state: MiningState; error?: string } {
+  const offer = EXCHANGE_BUY_OFFERS.find((row) => row.material === material);
+  if (!offer) return { state, error: "こうかんできないよ" };
+  const cost = exchangeCost(offer.baseCost, state);
   if (state.miningPoints < cost) {
     return { state, error: `エメラルドが${cost}ひつようだよ` };
   }
+  const materials = { ...state.materials };
+  writeMaterialCount(materials, material, getMaterialCount(state, material) + 1);
   return {
     state: {
       ...state,
       miningPoints: state.miningPoints - cost,
-      materials: {
-        ...state.materials,
-        cobble: getMaterialCount(state, "cobble") + 1,
-      },
-    },
-  };
-}
-
-export function exchangePointsForWool(state: MiningState): { state: MiningState; error?: string } {
-  const cost = exchangeCost(EXCHANGE_WOOL_COST, state);
-  if (state.miningPoints < cost) {
-    return { state, error: `エメラルドが${cost}ひつようだよ` };
-  }
-  return {
-    state: {
-      ...state,
-      miningPoints: state.miningPoints - cost,
-      materials: {
-        ...state.materials,
-        wool: getMaterialCount(state, "wool") + 1,
-      },
-    },
-  };
-}
-
-export function exchangePointsForDebris(state: MiningState): { state: MiningState; error?: string } {
-  const cost = exchangeCost(EXCHANGE_DEBRIS_COST, state);
-  if (state.miningPoints < cost) {
-    return { state, error: `エメラルドが${cost}ひつようだよ` };
-  }
-  return {
-    state: {
-      ...state,
-      miningPoints: state.miningPoints - cost,
-      materials: {
-        ...state.materials,
-        ancient_debris: getMaterialCount(state, "ancient_debris") + 1,
-      },
+      materials,
     },
   };
 }

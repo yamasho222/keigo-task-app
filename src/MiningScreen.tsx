@@ -7,20 +7,14 @@ import { getBuddyEntry, type BuddyProgressMap } from "./buddyProgress";
 import { REWARD_LOOKUP, STICKER_CATEGORIES, type RewardCategory, type RewardLookupEntry } from "./stickerRewards";
 import { playGachaAmbient, playMiningSfx, unlockAudio } from "./alarm";
 import {
-  EXCHANGE_LOG_COST,
-  EXCHANGE_COBBLE_COST,
-  EXCHANGE_WOOL_COST,
-  EXCHANGE_DEBRIS_COST,
+  EXCHANGE_BUY_OFFERS,
   QUARTZ_TO_POINTS,
   bestOwnedTool,
   canAffordRecipe,
   equipArmor,
   equipTool,
   exchangeCost,
-  exchangePointsForCobble,
-  exchangePointsForDebris,
-  exchangePointsForLog,
-  exchangePointsForWool,
+  exchangePointsForMaterial,
   exchangeQuartzForPoints,
   gachaLockBadge,
   gachaLockHint,
@@ -42,6 +36,7 @@ import {
   isDigHighlightDrop,
   setPartySlot,
   tryCraft,
+  type DigBoostPreview,
   type DigHitTier,
   type DigResult,
   type HelmetRockHint,
@@ -294,6 +289,66 @@ function MiningOddsBar({ title, segments }: { title: string; segments: OddsSegme
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MiningStrengthDetails({
+  boost,
+  strength,
+  selectedGacha,
+  mining,
+}: {
+  boost: DigBoostPreview;
+  strength: ReturnType<typeof boostStrengthLabel>;
+  selectedGacha: GachaId;
+  mining: MiningState;
+}) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontWeight: 800, fontSize: 13 }}>いまのつよさ</div>
+        <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>{strength.label}</div>
+      </div>
+      <div className="mining-odds-place">
+        {GACHA_META[selectedGacha].label}
+        {boost.usedTool ? ` ・ ${gearLabel(boost.usedTool)}` : " ・ どうぐなし"}
+      </div>
+      <MiningOddsBar title="きほん" segments={boost.baseOdds} />
+      {boost.bucketMode ? (
+        <div className="mining-odds-note">あたりを選ぶと +1こ</div>
+      ) : (
+        <>
+          <MiningOddsBar title="そうび・なかまこみ（最終）" segments={boost.finalOdds} />
+          <div className="mining-odds-armor">
+            <div className="mining-odds-title">なかま</div>
+            <div className="mining-odds-armor-row">
+              <span className="mining-odds-armor-slot">+1こ</span>
+              <span className="mining-odds-armor-text">
+                {boost.partyPlus1Rate > 0
+                  ? `${oddsPct(boost.partyPlus1Rate)}${boost.partyDetail.length ? ` ・ ${boost.partyDetail.join(" / ")}` : ""}`
+                  : mining.partyIds.some(Boolean)
+                    ? "いまの場所では効かない"
+                    : "なかまがいないよ"}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+      {boost.armorNotes.length > 0 && (
+        <div className="mining-odds-armor">
+          <div className="mining-odds-title">ほかのぼうぐ</div>
+          {boost.armorNotes.map((note) => (
+            <div key={note.slot} className="mining-odds-armor-row">
+              <span className="mining-odds-armor-slot">
+                <MiningItemIcon gear={note.gear} size={14} alt="" />
+                {ARMOR_KIND_LABEL[note.slot]}
+              </span>
+              <span className="mining-odds-armor-text">{note.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1138,10 +1193,6 @@ export function MiningScreen({
   };
 
   const have = useCallback((id: MaterialId) => getMaterialCount(mining, id), [mining]);
-  const logCost = exchangeCost(EXCHANGE_LOG_COST, mining);
-  const cobbleCost = exchangeCost(EXCHANGE_COBBLE_COST, mining);
-  const woolCost = exchangeCost(EXCHANGE_WOOL_COST, mining);
-  const debrisCost = exchangeCost(EXCHANGE_DEBRIS_COST, mining);
 
   const selectToolKind = (kind: ToolKind) => {
     setToolKind(kind);
@@ -1855,51 +1906,12 @@ export function MiningScreen({
             </button>
             {mineMoreOpen && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ fontWeight: 800, fontSize: 13 }}>いまのつよさ</div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: strength.color }}>{strength.label}</div>
-                  </div>
-                  <div className="mining-odds-place">
-                    {GACHA_META[selectedGacha].label}
-                    {boost.usedTool ? ` ・ ${gearLabel(boost.usedTool)}` : " ・ どうぐなし"}
-                  </div>
-                  <MiningOddsBar title="きほん" segments={boost.baseOdds} />
-                  {boost.bucketMode ? (
-                    <div className="mining-odds-note">あたりを選ぶと +1こ</div>
-                  ) : (
-                    <>
-                    <MiningOddsBar title="そうび・なかまこみ（最終）" segments={boost.finalOdds} />
-                    <div className="mining-odds-armor">
-                      <div className="mining-odds-title">なかま</div>
-                      <div className="mining-odds-armor-row">
-                        <span className="mining-odds-armor-slot">+1こ</span>
-                        <span className="mining-odds-armor-text">
-                          {boost.partyPlus1Rate > 0
-                            ? `${oddsPct(boost.partyPlus1Rate)}${boost.partyDetail.length ? ` ・ ${boost.partyDetail.join(" / ")}` : ""}`
-                            : mining.partyIds.some(Boolean)
-                              ? "いまの場所では効かない"
-                              : "なかまがいないよ"}
-                        </span>
-                      </div>
-                    </div>
-                    </>
-                  )}
-                  {boost.armorNotes.length > 0 && (
-                    <div className="mining-odds-armor">
-                      <div className="mining-odds-title">ほかのぼうぐ</div>
-                      {boost.armorNotes.map((note) => (
-                        <div key={note.slot} className="mining-odds-armor-row">
-                          <span className="mining-odds-armor-slot">
-                            <MiningItemIcon gear={note.gear} size={14} alt="" />
-                            {ARMOR_KIND_LABEL[note.slot]}
-                          </span>
-                          <span className="mining-odds-armor-text">{note.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <MiningStrengthDetails
+                  boost={boost}
+                  strength={strength}
+                  selectedGacha={selectedGacha}
+                  mining={mining}
+                />
                 {lastDig && digFx === "idle" && (
                   <div>
                     <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 13 }}>さいごにほった結果</div>
@@ -2054,6 +2066,19 @@ export function MiningScreen({
                 );
               })}
             </div>
+          </div>
+
+          <div style={card}>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>いまのつよさ</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.45 }}>
+              そうびをかえると、数字が変わるよ
+            </div>
+            <MiningStrengthDetails
+              boost={boost}
+              strength={strength}
+              selectedGacha={selectedGacha}
+              mining={mining}
+            />
           </div>
         </div>
       )}
@@ -2717,62 +2742,27 @@ export function MiningScreen({
               <div>
                 <div className="mining-exchange-group-label">エメラルドで買う</div>
                 <div className="mining-exchange-rows">
-                  <ExchangeShopRow
-                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: logCost }}
-                    get={{ material: "log", label: "原木", amount: 1 }}
-                    owned={`所持 エメラルド ${mining.miningPoints} · 原木 ${have("log")}`}
-                    disabled={mining.miningPoints < logCost}
-                    onClick={() => {
-                      const r = exchangePointsForLog(mining);
-                      if (r.error) showToast(r.error);
-                      else {
-                        onChange(patchFromResult((prev) => exchangePointsForLog(prev)));
-                        showToast("原木を1つこうかんした！");
-                      }
-                    }}
-                  />
-                  <ExchangeShopRow
-                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: cobbleCost }}
-                    get={{ material: "cobble", label: "丸石", amount: 1 }}
-                    owned={`所持 エメラルド ${mining.miningPoints} · 丸石 ${have("cobble")}`}
-                    disabled={mining.miningPoints < cobbleCost}
-                    onClick={() => {
-                      const r = exchangePointsForCobble(mining);
-                      if (r.error) showToast(r.error);
-                      else {
-                        onChange(patchFromResult((prev) => exchangePointsForCobble(prev)));
-                        showToast("丸石を1つこうかんした！");
-                      }
-                    }}
-                  />
-                  <ExchangeShopRow
-                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: woolCost }}
-                    get={{ material: "wool", label: "羊毛", amount: 1 }}
-                    owned={`所持 エメラルド ${mining.miningPoints} · 羊毛 ${have("wool")}`}
-                    disabled={mining.miningPoints < woolCost}
-                    onClick={() => {
-                      const r = exchangePointsForWool(mining);
-                      if (r.error) showToast(r.error);
-                      else {
-                        onChange(patchFromResult((prev) => exchangePointsForWool(prev)));
-                        showToast("羊毛を1つこうかんした！");
-                      }
-                    }}
-                  />
-                  <ExchangeShopRow
-                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: debrisCost }}
-                    get={{ material: "ancient_debris", label: "残骸", amount: 1 }}
-                    owned={`所持 エメラルド ${mining.miningPoints} · 残骸 ${have("ancient_debris")}`}
-                    disabled={mining.miningPoints < debrisCost}
-                    onClick={() => {
-                      const r = exchangePointsForDebris(mining);
-                      if (r.error) showToast(r.error);
-                      else {
-                        onChange(patchFromResult((prev) => exchangePointsForDebris(prev)));
-                        showToast("古代の残骸を1つこうかんした！");
-                      }
-                    }}
-                  />
+                  {EXCHANGE_BUY_OFFERS.map((offer) => {
+                    const cost = exchangeCost(offer.baseCost, mining);
+                    const meta = MATERIAL_META[offer.material];
+                    return (
+                      <ExchangeShopRow
+                        key={offer.material}
+                        give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: cost }}
+                        get={{ material: offer.material, label: meta.label, amount: 1 }}
+                        owned={`所持 エメラルド ${mining.miningPoints} · ${meta.label} ${have(offer.material)}`}
+                        disabled={mining.miningPoints < cost}
+                        onClick={() => {
+                          const r = exchangePointsForMaterial(mining, offer.material);
+                          if (r.error) showToast(r.error);
+                          else {
+                            onChange(patchFromResult((prev) => exchangePointsForMaterial(prev, offer.material)));
+                            showToast(`${meta.label}を1つこうかんした！`);
+                          }
+                        }}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             </div>
