@@ -8,6 +8,7 @@ import {
   type RewardTicketInventory,
   type RewardTicketKind,
 } from "./rewardTickets";
+import { BRAINROD_COMPENSATION_CLAIM_KEY } from "./compensationGrants";
 
 export type PendingRewardKind =
   | "daily"
@@ -19,7 +20,8 @@ export type PendingRewardKind =
   | "specialMission"
   | "oneOffSpecial"
   | "fullDayBonus"
-  | "voucher";
+  | "voucher"
+  | "compensation";
 
 export interface PendingRewardItem {
   id: string;
@@ -59,6 +61,8 @@ export interface PendingRewardsContext {
   missionRewardClaimedToday: boolean;
   oneOffLabels?: Record<string, string>;
   rewardTickets?: RewardTicketInventory;
+  /** けいご専用の1回限りガチャ */
+  compensationAvailable?: boolean;
 }
 
 const SESSION_DAILY_LABELS: Record<SessionId, string> = {
@@ -87,6 +91,15 @@ function isSessionDailyUnclaimed(ctx: PendingRewardsContext, session: SessionId)
 
 export function getPendingRewardItems(ctx: PendingRewardsContext): PendingRewardItem[] {
   const items: PendingRewardItem[] = [];
+
+  if (ctx.compensationAvailable) {
+    items.push({
+      id: `compensation:${BRAINROD_COMPENSATION_CLAIM_KEY}`,
+      kind: "compensation",
+      label: "とくべつなガチャ",
+      claimKey: BRAINROD_COMPENSATION_CLAIM_KEY,
+    });
+  }
 
   for (const sid of SESSION_IDS) {
     if (!isSessionDailyUnclaimed(ctx, sid)) continue;

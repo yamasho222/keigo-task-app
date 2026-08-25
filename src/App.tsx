@@ -127,6 +127,11 @@ import {
   type PendingRewardItem,
 } from "./pendingRewards";
 import {
+  BRAINROD_COMPENSATION_CLAIM_KEY,
+  BRAINROD_COMPENSATION_STICKER_ID,
+  isBrainrodCompensationAvailable,
+} from "./compensationGrants";
+import {
   PendingRewardsSheet,
   PendingRewardsBanner,
   DeferRewardHintToast,
@@ -428,6 +433,8 @@ interface StoredState {
   rewardTickets?: RewardTicketInventory;
   /** 親の救済メニュー合言葉（未設定時はデフォルト） */
   parentRescuePassword?: string;
+  /** 1回限りの特別ガチャ受け取り済み */
+  compensationClaims?: Record<string, boolean>;
 }
 
 interface ActiveWorkTask { session: SessionId; taskId: number; }
@@ -468,6 +475,10 @@ interface PendingTreat {
   tokenRedeem?: boolean;
   /** ごほうびチケット開封のレア下限 */
   voucherFloor?: import("./stickerRewards").StickerRarity;
+  /** 開発メニューのプレビュー。アルバムに登録しない */
+  devPreviewOnly?: boolean;
+  /** 1回限りの特別ガチャ */
+  compensationClaimKey?: string;
 }
 
 interface OneOffSpecialPending {
@@ -794,6 +805,7 @@ function hydrateStoredState(data: StoredState): StoredState {
     ),
     rewardTickets: normalizeRewardTickets(data.rewardTickets),
     parentRescuePassword: normalizeParentRescuePassword(data.parentRescuePassword),
+    compensationClaims: data.compensationClaims ?? {},
   };
 }
 
@@ -828,6 +840,7 @@ function loadStoredState(childId?: string): StoredState {
         gamePlayTimes: hydrated.gamePlayTimes,
         missionHistory: hydrated.missionHistory,
         catchUpDays: hydrated.catchUpDays,
+        compensationClaims: hydrated.compensationClaims,
       };
     }
   } catch { /* ignore */ }
@@ -1672,6 +1685,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [parentRescuePassword, setParentRescuePassword] = useState<string | undefined>(() =>
     normalizeParentRescuePassword(stored.parentRescuePassword),
   );
+  const [compensationClaims, setCompensationClaims] = useState<Record<string, boolean>>(
+    stored.compensationClaims ?? {},
+  );
   const [showParentRescue, setShowParentRescue] = useState(false);
   const [buddyXpToast, setBuddyXpToast] = useState<string | null>(null);
   const [buddyXpToastNav, setBuddyXpToastNav] = useState<"mining" | null>(null);
@@ -2088,6 +2104,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       mining,
       rewardTickets,
       parentRescuePassword,
+      compensationClaims,
     };
     localStorage.setItem(appStateStorageKey(storageChildId), JSON.stringify(state));
     saveStickerAlbum(stickerAlbum, storageChildId);
@@ -2114,6 +2131,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     mining,
     rewardTickets,
     parentRescuePassword,
+    compensationClaims,
   ]);
 
   useEffect(() => {
@@ -2551,6 +2569,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const applyPityToTreat = (treat: PendingTreat): PendingTreat => {
     if (treat.pityAttempt || treat.tokenRedeem) return treat;
     if (treat.mode === "weekly" || treat.mode === "fifteenDayStreak" || treat.mode === "thirtyDayStreak") return treat;
+    if (treat.mode === "compensation" || treat.compensationClaimKey) return treat;
     if (treat.devForceTier || treat.devForceStickerId) return treat;
     if (!pityArmedRef.current) return treat;
     return {
@@ -2560,10 +2579,21 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     };
   };
 
+  const applyDevPreviewOnly = (treat: PendingTreat): PendingTreat => {
+    if (!import.meta.env.DEV) return treat;
+    if (treat.devPreviewOnly || treat.tokenRedeem || treat.compensationClaimKey || treat.mode === "compensation") {
+      return treat;
+    }
+    if (treat.devForceStickerId || treat.devForceTier) {
+      return { ...treat, devPreviewOnly: true };
+    }
+    return treat;
+  };
+
   const openTreatQueue = (queue: PendingTreat[]) => {
     if (queue.length === 0) return;
-    const [rawFirst, ...rest] = queue;
-    const first = applyPityToTreat(rawFirst);
+    const tagged = queue.map((t) => applyPityToTreat(applyDevPreviewOnly(t)));
+    const [first, ...rest] = tagged;
     setPendingTreat(first);
     setTreatQueue(rest);
   };
@@ -3198,6 +3228,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         delete next[key];
         return next;
       });
+    } else if (treat.mode === "compensation" && treat.compensationClaimKey) {
+      const key = treat.compensationClaimKey;
+      setCompensationClaims((c) => (c[key] ? c : { ...c, [key]: true }));
     } else if (treat.mode === "daily" && treat.session) {
       dailyTreatCollectedRef.current = true;
       const key = sessionTreatKey(todayKey(), treat.session);
@@ -3656,6 +3689,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     missionRewardClaimedToday,
     oneOffLabels: oneOffPendingLabels,
     rewardTickets,
+    compensationAvailable: isBrainrodCompensationAvailable({
+      childName: cloud?.childName,
+      stickerAlbum,
+      compensationClaims,
+    }),
   };
 
   const pendingRewardItems = getPendingRewardItems(pendingRewardsCtx);
@@ -3719,6 +3757,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         }]);
         break;
       }
+      case "compensation":
+        openTreatQueue([{
+          mode: "compensation",
+          devForceStickerId: BRAINROD_COMPENSATION_STICKER_ID,
+          compensationClaimKey: item.claimKey ?? BRAINROD_COMPENSATION_CLAIM_KEY,
+          missionTitle: "とくべつなガチャ",
+        }]);
+        break;
     }
   };
 
@@ -4496,7 +4542,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       )}
       {pendingTreat && (
         <TreatOverlay
-          key={`${pendingTreat.mode}-${pendingTreat.streakPick ?? ""}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.voucherFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
+          key={`${pendingTreat.mode}-${pendingTreat.streakPick ?? ""}-${pendingTreat.rewardFloor ?? ""}-${pendingTreat.voucherFloor ?? ""}-${pendingTreat.oneOffSpecialClaimKey ?? ""}-${pendingTreat.compensationClaimKey ?? ""}-${pendingTreat.pityAttempt ? "pity" : ""}-${pendingTreat.devForceTier ?? ""}-${pendingTreat.devForceStickerId ?? ""}-${pendingTreat.devForceTeaseId ?? ""}-${pendingTreat.devForceLegendaryMode ?? ""}-${pendingTreat.devForceSrUrMode ?? ""}-${treatQueue.length}`}
           mode={pendingTreat.mode}
           streakPick={pendingTreat.streakPick}
           devForceTier={pendingTreat.devForceTier}
@@ -4511,6 +4557,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           forceUncollectedChance={pendingTreat.forceUncollectedChance}
           pityAttempt={pendingTreat.pityAttempt}
           tokenRedeem={pendingTreat.tokenRedeem}
+          devPreviewOnly={pendingTreat.devPreviewOnly}
           collectedIds={stickerAlbum}
           onClose={closeTreatOverlay}
           onCollect={handleTreatCollect}

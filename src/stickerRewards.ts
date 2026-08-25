@@ -626,6 +626,9 @@ export function pickTreatReward(
   if (mode === "voucher") {
     return pickVoucherReward(collectedIds, options?.voucherFloor ?? "normal");
   }
+  if (mode === "compensation") {
+    return getStickerById("lr-brainrod") ?? pickDailyReward(collectedIds);
+  }
   return pickDailyReward(collectedIds);
 }
 
@@ -655,4 +658,5 @@ export type TreatMode =
   | "oneOffSpecial"
   | "fifteenDayStreak"
   | "thirtyDayStreak"
-  | "voucher";
+  | "voucher"
+  | "compensation";

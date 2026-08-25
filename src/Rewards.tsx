@@ -548,7 +548,7 @@ function TreatFxLayer({ config }: { config: RarityRevealConfig }) {
 
 function TreatOverlay({
   mode, collectedIds, onClose, onCollect, onDefer, devForceTier, devForceStickerId, devForceTease, devForceTeaseId, devForceLegendaryMode, devForceSrUrMode, rewardFloor,
-  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem, streakPick, voucherFloor,
+  missionTitle, forceUncollectedChance, pityAttempt, tokenRedeem, streakPick, voucherFloor, devPreviewOnly,
 }: {
   mode: TreatMode;
   collectedIds: string[];
@@ -568,6 +568,8 @@ function TreatOverlay({
   tokenRedeem?: boolean;
   streakPick?: StreakRewardPick;
   voucherFloor?: StickerRarity;
+  /** 開発メニューのプレビュー。本番・特別ガチャ・交換では付けない */
+  devPreviewOnly?: boolean;
 }) {
   type TreatPhase = "closed" | "teasing" | "upgrading" | "revealed";
   type UpgradeStep = "fakeNormal" | "fakeNormalCrush" | "fakeUltraRare" | "freeze" | "crack" | "cutin" | "directBurst";
@@ -591,6 +593,7 @@ function TreatOverlay({
   const isSpecialMission = mode === "specialMission";
   const isOneOffSpecial = mode === "oneOffSpecial";
   const isVoucher = mode === "voucher";
+  const isCompensation = mode === "compensation";
   const isMissionStyle = isSpecialMission || isOneOffSpecial;
   const isLongStreak = isFifteenDayStreak || isThirtyDayStreak;
 
@@ -615,7 +618,7 @@ function TreatOverlay({
     setActiveTease(null);
     const isNew = !collectedIds.includes(picked.id);
     setRewardWasNew(isNew);
-    if (!devForceStickerId || import.meta.env.DEV) {
+    if (!devPreviewOnly) {
       onCollect(picked.id, { isNew });
     }
     window.setTimeout(() => {
@@ -798,6 +801,8 @@ function TreatOverlay({
       ? "🎫 ごほうびチケット！ 🎫"
     : tokenRedeem
       ? "🪙 ダブりコイン交換！ 🪙"
+    : isCompensation
+      ? "🎁 とくべつなガチャ 🎁"
     : isThreeDayStreak
       ? "🎉 3日連続 ごほうび！ 🎉"
       : isDeadline
@@ -824,6 +829,8 @@ function TreatOverlay({
         : `チケットで開封！${voucherFloorLabel}`
     : tokenRedeem
       ? "たまったダブりコインで新しいシールゲット！"
+    : isCompensation
+      ? "レジェンドレア確定！"
     : pityAttempt
       ? "かぶり救済チャンス！新しいシールが出やすいかも！"
     : isThreeDayStreak
