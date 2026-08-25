@@ -11,8 +11,9 @@ import {
   type MiningState,
 } from "./miningTypes";
 
-export const ENCHANT_APPLY_COST = 3;
-export const ENCHANT_LEVEL_UP_COST: Record<2 | 3, number> = { 2: 9, 3: 18 };
+export const ENCHANT_APPLY_COST = 9;
+export const ENCHANT_REROLL_COST = 3;
+export const ENCHANT_LEVEL_UP_COST: Record<2 | 3, number> = { 2: 18, 3: 36 };
 
 const ALL_IDS = Object.keys(ENCHANT_META) as EnchantId[];
 
@@ -147,8 +148,8 @@ export function spendLapisForReroll(
   state: MiningState,
   rerollIndex: number,
 ): { state: MiningState; error?: string } {
-  // 1回目(index 0)無料、2回目以降は3
-  const cost = rerollIndex === 0 ? 0 : ENCHANT_APPLY_COST;
+  // 1回目(index 0)無料、2回目以降は ENCHANT_REROLL_COST
+  const cost = rerollIndex === 0 ? 0 : ENCHANT_REROLL_COST;
   if (cost === 0) return { state };
   if (getMaterialCount(state, "lapis") < cost) {
     return { state, error: `ラピスが${cost}こひつようだよ` };

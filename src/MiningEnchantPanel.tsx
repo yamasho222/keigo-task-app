@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ENCHANT_APPLY_COST,
   ENCHANT_LEVEL_UP_COST,
+  ENCHANT_REROLL_COST,
   applyEnchant,
   enchantLevelBlurb,
   getEnchant,
@@ -184,7 +185,7 @@ export function MiningEnchantPanel({
         kind: "replace",
         enchantId: id,
         title: "つけかえる？",
-        body: `いまの「${ENCHANT_META[current.id].label} Lv${current.level}」は消えて、新しいエンチャントが Lv1 になるよ`,
+        body: `いまの「${ENCHANT_META[current.id].label} Lv${current.level}」は消えて、新しいエンチャントが Lv1 になるよ。ラピス${ENCHANT_APPLY_COST}こ使う`,
       });
       return;
     }
@@ -210,7 +211,7 @@ export function MiningEnchantPanel({
     else commitLevelUp();
   };
 
-  const rerollCost = rerollCount === 0 ? 0 : ENCHANT_APPLY_COST;
+  const rerollCost = rerollCount === 0 ? 0 : ENCHANT_REROLL_COST;
   const applyCost = mining.firstEnchantClaimed ? ENCHANT_APPLY_COST : 0;
 
   if (applySuccess) {
