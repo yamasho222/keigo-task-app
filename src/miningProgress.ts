@@ -1011,8 +1011,8 @@ export function resolveDig(params: {
   if (starChance > 0 && rand() < starChance) {
     const stars = 1;
     state.miningPoints += stars;
-    breakdown.push(`⭐おまけ +${stars}`);
-    hitReasons.push("⭐おまけ");
+    breakdown.push(`エメラルドおまけ +${stars}`);
+    hitReasons.push("エメラルドおまけ");
   }
 
   state.tickets -= 1;
@@ -1270,17 +1270,18 @@ export function exchangeCost(base: number, state: MiningState): number {
 }
 
 export const EXCHANGE_LOG_COST = 5;
+export const EXCHANGE_COBBLE_COST = 8;
 /** 羊毛は救済ルート。もり掘りより高め */
 export const EXCHANGE_WOOL_COST = 28;
 /** 古代の残骸は救済。ネザー掘りよりかなり高め */
 export const EXCHANGE_DEBRIS_COST = 90;
-/** ネザークォーツ1個を⚡にかえしたときの量（むねあて割引なし） */
+/** ネザークォーツ1個をエメラルドにかえしたときの量（むねあて割引なし） */
 export const QUARTZ_TO_POINTS = 3;
 
 export function exchangePointsForLog(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_LOG_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
+    return { state, error: `エメラルドが${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -1295,9 +1296,9 @@ export function exchangePointsForLog(state: MiningState): { state: MiningState; 
 }
 
 export function exchangePointsForCobble(state: MiningState): { state: MiningState; error?: string } {
-  const cost = exchangeCost(8, state);
+  const cost = exchangeCost(EXCHANGE_COBBLE_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
+    return { state, error: `エメラルドが${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -1314,7 +1315,7 @@ export function exchangePointsForCobble(state: MiningState): { state: MiningStat
 export function exchangePointsForWool(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_WOOL_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
+    return { state, error: `エメラルドが${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -1331,7 +1332,7 @@ export function exchangePointsForWool(state: MiningState): { state: MiningState;
 export function exchangePointsForDebris(state: MiningState): { state: MiningState; error?: string } {
   const cost = exchangeCost(EXCHANGE_DEBRIS_COST, state);
   if (state.miningPoints < cost) {
-    return { state, error: `こうかん⭐が${cost}ひつようだよ` };
+    return { state, error: `エメラルドが${cost}ひつようだよ` };
   }
   return {
     state: {
@@ -1345,7 +1346,7 @@ export function exchangePointsForDebris(state: MiningState): { state: MiningStat
   };
 }
 
-/** ネザークォーツ → 採掘ポイント（外れ掘りの価値） */
+/** ネザークォーツ → エメラルド（外れ掘りの価値） */
 export function exchangeQuartzForPoints(state: MiningState): { state: MiningState; error?: string } {
   const have = getMaterialCount(state, "nether_quartz");
   if (have < 1) {

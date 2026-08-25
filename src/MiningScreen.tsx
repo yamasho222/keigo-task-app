@@ -8,6 +8,7 @@ import { REWARD_LOOKUP, STICKER_CATEGORIES, type RewardCategory, type RewardLook
 import { playGachaAmbient, playMiningSfx, unlockAudio } from "./alarm";
 import {
   EXCHANGE_LOG_COST,
+  EXCHANGE_COBBLE_COST,
   EXCHANGE_WOOL_COST,
   EXCHANGE_DEBRIS_COST,
   QUARTZ_TO_POINTS,
@@ -100,6 +101,7 @@ import {
   ENCHANT_TARGET_LABEL,
   ENCHANTING_TABLE_IMAGE,
   CHEST_IMAGE,
+  EMERALD_IMAGE,
   STEVE_IMAGE,
   GACHA_META,
   GACHA_ORDER,
@@ -166,6 +168,55 @@ const btnGhost: CSSProperties = {
   backgroundColor: theme.fill.secondary,
   color: theme.text.primary,
 };
+
+function ExchangeShopChip({
+  material,
+  src,
+  label,
+  amount,
+}: {
+  material?: MaterialId;
+  src?: string;
+  label: string;
+  amount: number;
+}) {
+  return (
+    <span className="mining-exchange-side">
+      <MiningItemIcon material={material} src={src} size={20} alt="" emoji={src ? "💚" : undefined} />
+      {label}×{amount}
+    </span>
+  );
+}
+
+function ExchangeShopRow({
+  give,
+  get,
+  owned,
+  disabled,
+  onClick,
+}: {
+  give: { material?: MaterialId; src?: string; label: string; amount: number };
+  get: { material?: MaterialId; src?: string; label: string; amount: number };
+  owned: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="mining-exchange-row"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <div className="mining-exchange-row-main">
+        <ExchangeShopChip {...give} />
+        <span className="mining-exchange-arrow">→</span>
+        <ExchangeShopChip {...get} />
+      </div>
+      <div className="mining-exchange-owned">{owned}</div>
+    </button>
+  );
+}
 
 function MiningSlot({
   material,
@@ -1087,6 +1138,10 @@ export function MiningScreen({
   };
 
   const have = useCallback((id: MaterialId) => getMaterialCount(mining, id), [mining]);
+  const logCost = exchangeCost(EXCHANGE_LOG_COST, mining);
+  const cobbleCost = exchangeCost(EXCHANGE_COBBLE_COST, mining);
+  const woolCost = exchangeCost(EXCHANGE_WOOL_COST, mining);
+  const debrisCost = exchangeCost(EXCHANGE_DEBRIS_COST, mining);
 
   const selectToolKind = (kind: ToolKind) => {
     setToolKind(kind);
@@ -1648,8 +1703,9 @@ export function MiningScreen({
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
           <span style={{ fontWeight: 900, color: theme.category.orange, fontSize: 16 }}>🎫 {mining.tickets}</span>
           <div style={{ flex: 1, minWidth: 140 }}>
-            <div style={{ fontWeight: 800, color: theme.text.secondary, fontSize: 14 }}>
-              こうかん⭐ {mining.miningPoints}
+            <div style={{ fontWeight: 800, color: theme.text.secondary, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <MiningItemIcon src={EMERALD_IMAGE} size={18} alt="" emoji="💚" />
+              エメラルド {mining.miningPoints}
             </div>
             <div style={{ marginTop: 2, fontSize: 11, fontWeight: 700, color: theme.text.tertiary }}>
               もちもので素材にかえられるよ
@@ -2633,81 +2689,95 @@ export function MiningScreen({
           <div style={card}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>こうかん所</div>
             <div style={{ fontSize: 12, color: theme.text.secondary, marginBottom: 8, lineHeight: 1.5 }}>
-              こうかん⭐と素材を、おたがいにかえられるよ
+              エメラルドと素材を、おたがいにかえられるよ
             </div>
             {bargainOff > 0 && (
               <div className="mining-bargain-banner">
-                やすうりで⭐{bargainOff} 安くなってる！
+                やすうりでエメラルド{bargainOff} 安くなってる！
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangeQuartzForPoints(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(patchFromResult((prev) => exchangeQuartzForPoints(prev))); showToast(`ネザークォーツをこうかん⭐${QUARTZ_TO_POINTS}にかえした！`); }
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <MiningItemIcon material="nether_quartz" size={18} alt="" />
-                  クォーツ1 → こうかん⭐{QUARTZ_TO_POINTS}
-                </span>
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForLog(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(patchFromResult((prev) => exchangePointsForLog(prev))); showToast("原木を1つこうかんした！"); }
-                }}
-              >
-                原木1（こうかん⭐{exchangeCost(EXCHANGE_LOG_COST, mining)}）
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForCobble(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(patchFromResult((prev) => exchangePointsForCobble(prev))); showToast("丸石を1つこうかんした！"); }
-                }}
-              >
-                丸石1（こうかん⭐{exchangeCost(8, mining)}）
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForWool(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(patchFromResult((prev) => exchangePointsForWool(prev))); showToast("羊毛を1つこうかんした！"); }
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <MiningItemIcon material="wool" size={18} alt="" />
-                  羊毛1（こうかん⭐{exchangeCost(EXCHANGE_WOOL_COST, mining)}）
-                </span>
-              </button>
-              <button
-                type="button"
-                style={btnGhost}
-                onClick={() => {
-                  const r = exchangePointsForDebris(mining);
-                  if (r.error) showToast(r.error);
-                  else { onChange(patchFromResult((prev) => exchangePointsForDebris(prev))); showToast("古代の残骸を1つこうかんした！"); }
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <MiningItemIcon material="ancient_debris" size={18} alt="" />
-                  残骸1（こうかん⭐{exchangeCost(EXCHANGE_DEBRIS_COST, mining)}）
-                </span>
-              </button>
+            <div className="mining-exchange-groups">
+              <div>
+                <div className="mining-exchange-group-label">エメラルドをもらう</div>
+                <ExchangeShopRow
+                  give={{ material: "nether_quartz", label: "クォーツ", amount: 1 }}
+                  get={{ src: EMERALD_IMAGE, label: "エメラルド", amount: QUARTZ_TO_POINTS }}
+                  owned={`所持 クォーツ ${have("nether_quartz")}`}
+                  disabled={have("nether_quartz") < 1}
+                  onClick={() => {
+                    const r = exchangeQuartzForPoints(mining);
+                    if (r.error) showToast(r.error);
+                    else {
+                      onChange(patchFromResult((prev) => exchangeQuartzForPoints(prev)));
+                      showToast(`ネザークォーツをエメラルド${QUARTZ_TO_POINTS}にかえした！`);
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <div className="mining-exchange-group-label">エメラルドで買う</div>
+                <div className="mining-exchange-rows">
+                  <ExchangeShopRow
+                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: logCost }}
+                    get={{ material: "log", label: "原木", amount: 1 }}
+                    owned={`所持 エメラルド ${mining.miningPoints} · 原木 ${have("log")}`}
+                    disabled={mining.miningPoints < logCost}
+                    onClick={() => {
+                      const r = exchangePointsForLog(mining);
+                      if (r.error) showToast(r.error);
+                      else {
+                        onChange(patchFromResult((prev) => exchangePointsForLog(prev)));
+                        showToast("原木を1つこうかんした！");
+                      }
+                    }}
+                  />
+                  <ExchangeShopRow
+                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: cobbleCost }}
+                    get={{ material: "cobble", label: "丸石", amount: 1 }}
+                    owned={`所持 エメラルド ${mining.miningPoints} · 丸石 ${have("cobble")}`}
+                    disabled={mining.miningPoints < cobbleCost}
+                    onClick={() => {
+                      const r = exchangePointsForCobble(mining);
+                      if (r.error) showToast(r.error);
+                      else {
+                        onChange(patchFromResult((prev) => exchangePointsForCobble(prev)));
+                        showToast("丸石を1つこうかんした！");
+                      }
+                    }}
+                  />
+                  <ExchangeShopRow
+                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: woolCost }}
+                    get={{ material: "wool", label: "羊毛", amount: 1 }}
+                    owned={`所持 エメラルド ${mining.miningPoints} · 羊毛 ${have("wool")}`}
+                    disabled={mining.miningPoints < woolCost}
+                    onClick={() => {
+                      const r = exchangePointsForWool(mining);
+                      if (r.error) showToast(r.error);
+                      else {
+                        onChange(patchFromResult((prev) => exchangePointsForWool(prev)));
+                        showToast("羊毛を1つこうかんした！");
+                      }
+                    }}
+                  />
+                  <ExchangeShopRow
+                    give={{ src: EMERALD_IMAGE, label: "エメラルド", amount: debrisCost }}
+                    get={{ material: "ancient_debris", label: "残骸", amount: 1 }}
+                    owned={`所持 エメラルド ${mining.miningPoints} · 残骸 ${have("ancient_debris")}`}
+                    disabled={mining.miningPoints < debrisCost}
+                    onClick={() => {
+                      const r = exchangePointsForDebris(mining);
+                      if (r.error) showToast(r.error);
+                      else {
+                        onChange(patchFromResult((prev) => exchangePointsForDebris(prev)));
+                        showToast("古代の残骸を1つこうかんした！");
+                      }
+                    }}
+                  />
+                </div>
+              </div>
             </div>
             <div style={{ marginTop: 8, fontSize: 11, color: theme.text.tertiary, lineHeight: 1.45 }}>
-              ネザーでは白い石がよく出るよ。ほしいものは⭐でかえられるよ
+              ネザーでは白い石がよく出るよ。ほしいものはエメラルドでかえられるよ
               {netheriteFullComplete(mining) && (
                 <span style={{ display: "block", marginTop: 4, color: theme.category.green, fontWeight: 800 }}>
                   ネザライトそろい：残骸が出やすいよ

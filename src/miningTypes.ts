@@ -33,6 +33,7 @@ export const ENCHANTED_BOOK_IMAGE = "/mining/Enchanted_Book.gif";
 export const ENCHANTING_TABLE_IMAGE = "/mining/Enchanting_Table.png";
 export const CHEST_IMAGE = "/mining/Chest.png";
 export const STEVE_IMAGE = "/mining/Steve.png";
+export const EMERALD_IMAGE = "/mining/Emerald.png";
 
 export type GachaId =
   | "wood"
@@ -286,7 +287,7 @@ export const ENCHANT_META: Record<
   refund: { label: "もどり", blurb: "たまに🎫がもどる", weight: 2 },
   bargain: { label: "やすうり", blurb: "こうかん所が安くなる", weight: 4 },
   prospect: { label: "あたり日", blurb: "こううんのほりばで得しやすい", weight: 2 },
-  bonus_star: { label: "⭐おまけ", blurb: "たまにこうかん⭐がもらえる", weight: 4 },
+  bonus_star: { label: "エメラルドおまけ", blurb: "たまにエメラルドがもらえる", weight: 4 },
 };
 
 export const ENCHANT_TARGET_LABEL: Record<EnchantTarget, string> = {
@@ -323,7 +324,7 @@ export const ARMOR_EFFECT_SHORT: Record<ArmorKind, string> = {
 /** 折りたたみ用のくわしい説明 */
 export const ARMOR_EFFECT_BLURB: Record<ArmorKind, string> = {
   helmet: "こううん場所がわかる。つよいほど岩のヒントが分かりやすい",
-  chest: "こうかん⭐でのこうかんがお得",
+  chest: "エメラルドでのこうかんがお得",
   leggings: "メインとはべつの素材が、たまにころがる",
   boots: "まれにチケットがもどる",
 };

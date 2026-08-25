@@ -2964,14 +2964,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setTimeout(() => setBuddyXpToast(null), 2200);
   };
 
-  /** チケット／こうかん⭐だけ潤沢。装備・素材・解放は初期状態 */
+  /** チケット／エメラルドだけ潤沢。装備・素材・解放は初期状態 */
   const applyDevTicketsOnlySeed = () => {
     commitMining((prev) => buildDevTicketsOnlySeed(prev));
     setBuddyXpToast("チケットだけの初期状態にしました");
     setTimeout(() => setBuddyXpToast(null), 2200);
   };
 
-  /** チケット／こうかん⭐だけ不足分を補充（装備・素材は触らない） */
+  /** チケット／エメラルドだけ不足分を補充（装備・素材は触らない） */
   const topUpDevMiningCurrency = () => {
     commitMining((prev) => topUpDevTicketsPoints(prev));
   };
@@ -4962,7 +4962,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   }));
                   setShowMenu(false);
                 } },
-                { icon: "⚡", label: "採掘ポイント+50（テスト）", action: () => {
+                { icon: "💚", label: "エメラルド+50（テスト）", action: () => {
                   commitMining((m) => addMiningPoints(m, 50));
                   setShowMenu(false);
                 } },

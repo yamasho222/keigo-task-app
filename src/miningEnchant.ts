@@ -207,7 +207,7 @@ export function demoDigLines(id: EnchantId): { title: string; lines: string[]; h
     case "bargain":
       return {
         title: "デモ：やすうり",
-        lines: ["こうかん所で⭐が安くなるよ"],
+        lines: ["こうかん所でエメラルドが安くなるよ"],
         highlight: "もちもののこうかん所を見てね！",
       };
     case "prospect":
@@ -218,9 +218,9 @@ export function demoDigLines(id: EnchantId): { title: string; lines: string[]; h
       };
     case "bonus_star":
       return {
-        title: "デモほり：⭐おまけ",
-        lines: ["きほん 1", "⭐おまけ +1"],
-        highlight: "たまにこうかん⭐がもらえる！",
+        title: "デモほり：エメラルドおまけ",
+        lines: ["きほん 1", "エメラルドおまけ +1"],
+        highlight: "たまにエメラルドがもらえる！",
       };
   }
 }

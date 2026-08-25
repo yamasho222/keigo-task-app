@@ -2873,6 +2873,61 @@ button {
   font-weight: 900;
   color: #8a5a00;
 }
+.mining-exchange-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mining-exchange-group-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-secondary, #666);
+  margin-bottom: 6px;
+}
+.mining-exchange-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mining-exchange-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1.5px solid var(--stroke-secondary, #ddd);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  background: var(--fill-secondary, #f4f4f4);
+  color: var(--text-primary, #222);
+}
+.mining-exchange-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mining-exchange-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mining-exchange-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+}
+.mining-exchange-arrow {
+  font-weight: 900;
+  color: var(--text-tertiary, #888);
+}
+.mining-exchange-owned {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary, #888);
+}
 .mining-demo-lines {
   margin: 12px 0 8px;
   display: flex;

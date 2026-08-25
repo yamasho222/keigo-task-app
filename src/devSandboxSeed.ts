@@ -124,7 +124,7 @@ export interface DevSandboxSeed {
   buddyId: string | null;
 }
 
-/** チケット／こうかん⭐だけ十分。素材・クラフト・装備は空（序盤から掘り直し用） */
+/** チケット／エメラルドだけ十分。素材・クラフト・装備は空（序盤から掘り直し用） */
 export function buildDevTicketsOnlySeed(mining: MiningState): MiningState {
   const blank = emptyMiningState();
   return {
@@ -140,7 +140,7 @@ export function buildDevTicketsOnlySeed(mining: MiningState): MiningState {
   };
 }
 
-/** 素材・装備は触らず、チケット／こうかん⭐だけ足りなければ補充 */
+/** 素材・装備は触らず、チケット／エメラルドだけ足りなければ補充 */
 export function topUpDevTicketsPoints(mining: MiningState): MiningState {
   return {
     ...mining,
