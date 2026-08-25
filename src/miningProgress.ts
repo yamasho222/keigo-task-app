@@ -476,6 +476,7 @@ export interface OddsSegment {
 
 export interface ArmorOddsNote {
   slot: ArmorKind;
+  gear: CraftedGearId;
   text: string;
 }
 
@@ -517,6 +518,12 @@ function keepOdds(segments: OddsSegment[]): OddsSegment[] {
   return segments.filter((s) => s.rate >= 0.005);
 }
 
+function equippedArmorId(state: MiningState, slot: ArmorKind): CraftedGearId | null {
+  const id = state.equipped[slot];
+  if (!id || !state.crafted[id]) return null;
+  return id;
+}
+
 function buildArmorNotes(
   state: MiningState,
   gacha: GachaId,
@@ -527,32 +534,38 @@ function buildArmorNotes(
   const pct = (n: number) => `${Math.round(n * 100)}%`;
   const notes: ArmorOddsNote[] = [];
   const helm = equippedArmorTier(state, "helmet");
-  if (helm) {
+  const helmId = equippedArmorId(state, "helmet");
+  if (helm && helmId) {
     let text = armorTierEffectCopy("helmet", helm);
     if (lucky) {
       text += lucky === gacha
         ? "（きょうはここ）"
         : `（きょうは${GACHA_META[lucky].label}）`;
     }
-    notes.push({ slot: "helmet", text });
+    notes.push({ slot: "helmet", gear: helmId, text });
   }
   const chest = equippedArmorTier(state, "chest");
-  if (chest) {
-    notes.push({ slot: "chest", text: armorTierEffectCopy("chest", chest) });
+  const chestId = equippedArmorId(state, "chest");
+  if (chest && chestId) {
+    notes.push({ slot: "chest", gear: chestId, text: armorTierEffectCopy("chest", chest) });
   }
   const legs = equippedArmorTier(state, "leggings");
-  if (legs) {
+  const legsId = equippedArmorId(state, "leggings");
+  if (legs && legsId) {
     const copy = armorTierEffectCopy("leggings", legs);
     notes.push({
       slot: "leggings",
+      gear: legsId,
       text: leggingsByproductRate > 0 ? `${copy} ${pct(leggingsByproductRate)}` : copy,
     });
   }
   const boots = equippedArmorTier(state, "boots");
-  if (boots) {
+  const bootsId = equippedArmorId(state, "boots");
+  if (boots && bootsId) {
     const copy = armorTierEffectCopy("boots", boots);
     notes.push({
       slot: "boots",
+      gear: bootsId,
       text: bootsRefundRate > 0 ? `${copy} ${pct(bootsRefundRate)}` : copy,
     });
   }

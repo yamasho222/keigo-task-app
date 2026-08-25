@@ -1834,7 +1834,10 @@ export function MiningScreen({
                       <div className="mining-odds-title">ほかのぼうぐ</div>
                       {boost.armorNotes.map((note) => (
                         <div key={note.slot} className="mining-odds-armor-row">
-                          <span className="mining-odds-armor-slot">{ARMOR_KIND_LABEL[note.slot]}</span>
+                          <span className="mining-odds-armor-slot">
+                            <MiningItemIcon gear={note.gear} size={14} alt="" />
+                            {ARMOR_KIND_LABEL[note.slot]}
+                          </span>
                           <span className="mining-odds-armor-text">{note.text}</span>
                         </div>
                       ))}

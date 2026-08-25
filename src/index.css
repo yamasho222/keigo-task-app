@@ -3678,7 +3678,11 @@ button {
   line-height: 1.4;
 }
 .mining-odds-armor-slot {
-  flex: 0 0 5.5em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 5.5em;
   color: #78909C;
 }
 .mining-odds-armor-text {
