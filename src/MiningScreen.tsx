@@ -27,6 +27,8 @@ import {
   ownedArmorForSlot,
   previewDigBoost,
   recommendToolKind,
+  strippedMiningStateForOdds,
+  compareDigCountOdds,
   recipesForState,
   refreshUnlocks,
   resolveBucketFill,
@@ -293,13 +295,57 @@ function MiningOddsBar({ title, segments }: { title: string; segments: OddsSegme
   );
 }
 
+function expectedCountLabel(n: number): string {
+  return n.toFixed(1);
+}
+
+function MiningCountOddsCompare({
+  bare,
+  current,
+}: {
+  bare: OddsSegment[];
+  current: OddsSegment[];
+}) {
+  const rows = compareDigCountOdds(bare, current);
+  const changed = rows.some((row) => Math.abs(row.after - row.before) >= 0.005);
+  if (!changed) {
+    return <div className="mining-odds-note">そうびやなかまがまだないよ</div>;
+  }
+  return (
+    <div className="mining-odds-compare">
+      <div className="mining-odds-title">かわりかた</div>
+      {rows.map((row) => {
+        const delta = row.after - row.before;
+        const deltaText = Math.abs(delta) < 0.005
+          ? "おなじ"
+          : `${delta > 0 ? "+" : ""}${oddsPct(delta)}`;
+        return (
+          <div key={row.key} className="mining-odds-compare-row">
+            <span className="mining-odds-compare-label">{row.label}</span>
+            <span className="mining-odds-compare-nums">
+              {oddsPct(row.before)} → {oddsPct(row.after)}
+            </span>
+            <span
+              className={`mining-odds-compare-delta${delta > 0.005 ? " is-up" : delta < -0.005 ? " is-down" : ""}`}
+            >
+              {deltaText}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MiningStrengthDetails({
   boost,
+  bareBoost,
   strength,
   selectedGacha,
   mining,
 }: {
   boost: DigBoostPreview;
+  bareBoost: DigBoostPreview;
   strength: ReturnType<typeof boostStrengthLabel>;
   selectedGacha: GachaId;
   mining: MiningState;
@@ -314,12 +360,19 @@ function MiningStrengthDetails({
         {GACHA_META[selectedGacha].label}
         {boost.usedTool ? ` ・ ${gearLabel(boost.usedTool)}` : " ・ どうぐなし"}
       </div>
-      <MiningOddsBar title="きほん" segments={boost.baseOdds} />
       {boost.bucketMode ? (
         <div className="mining-odds-note">あたりを選ぶと +1こ</div>
       ) : (
         <>
-          <MiningOddsBar title="そうび・なかまこみ（最終）" segments={boost.finalOdds} />
+          <MiningOddsBar
+            title={`そうびなし（だいたい${expectedCountLabel(bareBoost.expectedCount)}こ）`}
+            segments={bareBoost.finalOdds}
+          />
+          <MiningOddsBar
+            title={`いま（だいたい${expectedCountLabel(boost.expectedCount)}こ）`}
+            segments={boost.finalOdds}
+          />
+          <MiningCountOddsCompare bare={bareBoost.finalOdds} current={boost.finalOdds} />
           <div className="mining-odds-armor">
             <div className="mining-odds-title">なかま</div>
             <div className="mining-odds-armor-row">
@@ -1082,6 +1135,16 @@ export function MiningScreen({
   const boost = useMemo(
     () => previewDigBoost({
       state: mining,
+      gacha: selectedGacha,
+      toolKind,
+      buddyProgress,
+      dateKey,
+    }),
+    [mining, selectedGacha, toolKind, buddyProgress, dateKey],
+  );
+  const bareBoost = useMemo(
+    () => previewDigBoost({
+      state: strippedMiningStateForOdds(mining),
       gacha: selectedGacha,
       toolKind,
       buddyProgress,
@@ -1908,6 +1971,7 @@ export function MiningScreen({
               <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
                 <MiningStrengthDetails
                   boost={boost}
+                  bareBoost={bareBoost}
                   strength={strength}
                   selectedGacha={selectedGacha}
                   mining={mining}
@@ -2075,6 +2139,7 @@ export function MiningScreen({
             </div>
             <MiningStrengthDetails
               boost={boost}
+              bareBoost={bareBoost}
               strength={strength}
               selectedGacha={selectedGacha}
               mining={mining}

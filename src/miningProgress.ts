@@ -492,11 +492,53 @@ export interface DigBoostPreview {
   bootsRefundRate: number;
   luckyToday: boolean;
   expectedExtra: number;
+  /** 1回で出るきほん素材の見込み個数 */
+  expectedCount: number;
   lines: DigBoostLine[];
   bucketMode: boolean;
   baseOdds: OddsSegment[];
   finalOdds: OddsSegment[];
   armorNotes: ArmorOddsNote[];
+}
+
+const COUNT_ODDS_ORDER = ["1", "2", "3", "4+"] as const;
+
+/** どうぐ・ぼうぐ・なかま・まほうを外した比較用 */
+export function strippedMiningStateForOdds(state: MiningState): MiningState {
+  return {
+    ...state,
+    crafted: {},
+    partyIds: [null, null, null],
+    equipped: {
+      tool: null,
+      helmet: null,
+      chest: null,
+      leggings: null,
+      boots: null,
+    },
+    enchants: {},
+  };
+}
+
+export function compareDigCountOdds(
+  bare: OddsSegment[],
+  current: OddsSegment[],
+): { key: string; label: string; before: number; after: number }[] {
+  const labelOf = (key: string, segments: OddsSegment[]): string =>
+    segments.find((s) => s.key === key)?.label ?? (key === "4+" ? "4こ+" : `${key}こ`);
+  const rateOf = (segments: OddsSegment[], key: string): number =>
+    segments.find((s) => s.key === key)?.rate ?? 0;
+  return COUNT_ODDS_ORDER.flatMap((key) => {
+    const before = rateOf(bare, key);
+    const after = rateOf(current, key);
+    if (before < 0.005 && after < 0.005) return [];
+    return [{
+      key,
+      label: labelOf(key, after >= 0.005 ? current : bare),
+      before,
+      after,
+    }];
+  });
 }
 
 function poissonBinomial(probs: number[]): number[] {
@@ -678,6 +720,7 @@ export function previewDigBoost(params: {
       bootsRefundRate: 0,
       luckyToday: false,
       expectedExtra: 0,
+      expectedCount: 1,
       lines,
       bucketMode: true,
       baseOdds: one,
@@ -720,6 +763,7 @@ export function previewDigBoost(params: {
     bootsRefundRate,
     luckyToday,
     expectedExtra,
+    expectedCount: oneRate + 2 * twoRate + 3 * shownJackpot + expectedExtra,
     lines,
     bucketMode: false,
     baseOdds: keepOdds([

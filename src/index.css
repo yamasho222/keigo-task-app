@@ -3720,6 +3720,28 @@ button {
   font-weight: 800;
   color: #546E7A;
 }
+.mining-odds-compare {
+  margin-top: 10px;
+}
+.mining-odds-compare-row {
+  display: grid;
+  grid-template-columns: 2.8em 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #455A64;
+}
+.mining-odds-compare-nums {
+  font-variant-numeric: tabular-nums;
+}
+.mining-odds-compare-delta.is-up {
+  color: #2E7D32;
+}
+.mining-odds-compare-delta.is-down {
+  color: #607D8B;
+}
 .mining-odds-armor {
   margin-top: 12px;
 }
