@@ -19,6 +19,7 @@ export type RecipeId =
   | "smelt_gold"
   | "smelt_debris"
   | "netherite_ingot_craft"
+  | "netherite_upgrade_dupe"
   | "paper_batch"
   | "book_craft"
   | "obsidian_craft";
@@ -40,6 +41,8 @@ export interface MiningRecipe {
   needsFurnace?: boolean;
   /** エンチャントテーブルが必要 */
   needsEnchantingTable?: boolean;
+  /** 鍛冶台が必要 */
+  needsSmithingTable?: boolean;
   /**
    * 精錬の燃料（いずれか1つ）。石炭1で2回／板材2／原木2 など。
    * ある場合は costs に燃料を含めず、こちらで支払う。
@@ -158,8 +161,11 @@ function netheriteUpgrade(
     label,
     emoji,
     craftFlag: id,
-    costs: [{ material: "netherite_ingot", amount: 1 }],
-    needsWorkbench: true,
+    costs: [
+      { material: "netherite_ingot", amount: 1 },
+      { material: "netherite_upgrade", amount: 1 },
+    ],
+    needsSmithingTable: true,
     requiresUnlock: "nether",
   };
 }
@@ -268,6 +274,18 @@ export const MINING_RECIPES: MiningRecipe[] = [
     needsWorkbench: true,
     requiresUnlock: "diamond",
   },
+  {
+    id: "smithing_table",
+    label: "鍛冶台",
+    emoji: "🛠️",
+    craftFlag: "smithing_table",
+    costs: [
+      { material: "iron_ingot", amount: 4 },
+      { material: "plank", amount: 2 },
+    ],
+    needsWorkbench: true,
+    requiresUnlock: "nether",
+  },
 
   // 木
   toolRecipe("sword_wood", "木の剣", "⚔️", "plank", 2, "wood"),
@@ -318,6 +336,19 @@ export const MINING_RECIPES: MiningRecipe[] = [
     costs: [
       { material: "netherite_scrap", amount: 4 },
       { material: "gold_ingot", amount: 4 },
+    ],
+    needsWorkbench: true,
+    requiresUnlock: "nether",
+  },
+  {
+    id: "netherite_upgrade_dupe",
+    label: "鍛冶型の複製",
+    emoji: "📜",
+    outputs: [{ material: "netherite_upgrade", amount: 2 }],
+    costs: [
+      { material: "netherite_upgrade", amount: 1 },
+      { material: "diamond", amount: 3 },
+      { material: "netherrack", amount: 1 },
     ],
     needsWorkbench: true,
     requiresUnlock: "nether",
@@ -464,6 +495,7 @@ const FACILITY_RECIPE_IDS = new Set<string>([
   "furnace",
   "bed",
   "enchanting_table",
+  "smithing_table",
   "bucket_iron",
 ]);
 
@@ -655,9 +687,29 @@ export function craftGridForRecipe(recipe: MiningRecipe): (MaterialId | null)[] 
     g[8] = "obsidian";
     return g;
   }
-  if (main && id.includes("netherite")) {
+  if (recipe.id === "smithing_table") {
     const g = empty();
-    g[4] = main;
+    g[0] = "iron_ingot";
+    g[1] = "iron_ingot";
+    g[3] = "iron_ingot";
+    g[4] = "iron_ingot";
+    g[6] = "plank";
+    g[7] = "plank";
+    return g;
+  }
+  if (recipe.id === "netherite_upgrade_dupe") {
+    const g = empty();
+    g[1] = "diamond";
+    g[3] = "diamond";
+    g[4] = "netherite_upgrade";
+    g[5] = "diamond";
+    g[7] = "netherrack";
+    return g;
+  }
+  if (main && id.includes("netherite") && id !== "netherite_ingot_craft" && id !== "netherite_upgrade_dupe") {
+    const g = empty();
+    g[3] = "netherite_upgrade";
+    g[4] = "netherite_ingot";
     return g;
   }
   return null;

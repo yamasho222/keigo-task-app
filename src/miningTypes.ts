@@ -24,7 +24,9 @@ export type MaterialId =
   | "lava"
   | "obsidian"
   | "lapis"
-  | "book";
+  | "book"
+  | "netherrack"
+  | "netherite_upgrade";
 
 /** パーティ枠＝ベッド数（1〜3） */
 export const MAX_BEDS = 3;
@@ -34,6 +36,8 @@ export const ENCHANTING_TABLE_IMAGE = "/mining/Enchanting_Table.png";
 export const CHEST_IMAGE = "/mining/Chest.png";
 export const STEVE_IMAGE = "/mining/Steve.png";
 export const EMERALD_IMAGE = "/mining/Emerald.png";
+export const SMITHING_TABLE_IMAGE = "/mining/Smithing_Table.png";
+export const NETHERITE_UPGRADE_IMAGE = "/mining/Netherite_Upgrade.png";
 
 export type GachaId =
   | "wood"
@@ -47,7 +51,8 @@ export type GachaId =
   | "lava_cave"
   | "diamond"
   | "lapis_cave"
-  | "nether";
+  | "nether"
+  | "bastion";
 
 export type GearSlot = "tool" | "helmet" | "chest" | "leggings" | "boots";
 
@@ -81,7 +86,8 @@ export type CraftedGearId =
   | "workbench"
   | "furnace"
   | "bucket_iron"
-  | "enchanting_table";
+  | "enchanting_table"
+  | "smithing_table";
 
 export type MiningSpecialty =
   | "wood"
@@ -165,6 +171,12 @@ export const MATERIAL_META: Record<
   obsidian: { label: "黒曜石", emoji: "⬛", image: "/mining/Obsidian.png" },
   lapis: { label: "ラピスラズリ", emoji: "🔵", image: "/mining/Lapis_Lazuli.webp" },
   book: { label: "本", emoji: "📖", image: "/mining/Book.webp" },
+  netherrack: { label: "ネザーラック", emoji: "🧱", image: "/mining/Netherrack.webp" },
+  netherite_upgrade: {
+    label: "ネザライト強化用鍛冶型",
+    emoji: "📜",
+    image: "/mining/Netherite_Upgrade.png",
+  },
 };
 
 /** 装備・設備の画像（あれば表示） */
@@ -173,6 +185,7 @@ export const GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
   furnace: "/mining/Furnace.png",
   bucket_iron: "/mining/Iron_Ingot.png",
   enchanting_table: "/mining/Enchanting_Table.png",
+  smithing_table: "/mining/Smithing_Table.png",
   sword_wood: "/mining/Wooden_Sword.png",
   axe_wood: "/mining/Wooden_Axe.png",
   pickaxe_wood: "/mining/Wooden_Pickaxe.webp",
@@ -230,6 +243,7 @@ export const GACHA_ORDER: GachaId[] = [
   "diamond",
   "lapis_cave",
   "nether",
+  "bastion",
 ];
 
 /** こううん日の抽選から外す（バケツ専用など） */
@@ -237,6 +251,10 @@ export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set(["lava_cave", "
 
 export function isBucketGacha(gacha: GachaId): gacha is "river" | "lava_cave" {
   return gacha === "river" || gacha === "lava_cave";
+}
+
+export function isChestGacha(gacha: GachaId): gacha is "bastion" {
+  return gacha === "bastion";
 }
 
 export function isAxeGacha(gacha: GachaId): boolean {
@@ -259,6 +277,7 @@ export const GACHA_META: Record<
   diamond: { label: "ダイヤのしんそう", emoji: "💎", specialty: "diamond" },
   lapis_cave: { label: "ラピスどうくつ", emoji: "🔵", specialty: "diamond", badge: "ラピスだけ" },
   nether: { label: "ネザー", emoji: "🔥", specialty: "netherite" },
+  bastion: { label: "砦の遺跡", emoji: "🏰", specialty: "netherite", badge: "鍛冶型" },
 };
 
 /**
@@ -278,6 +297,7 @@ export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
   diamond: "/mining/Diamond_Ore.png",
   lapis_cave: "/mining/Lapis_Lazuli_Ore.webp",
   nether: "/mining/Netherrack.webp",
+  bastion: "/mining/Bastion.webp",
 };
 
 export const ENCHANT_META: Record<
@@ -380,6 +400,7 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
     }
     if (isAxeGacha(gacha)) return "こうざんのときだけ効く";
     if (gacha === "nether") return "いま効く：残骸が出やすい";
+    if (gacha === "bastion") return "いま効く：チェストをあけやすい";
     if (gacha === "coal") return "いま効く：石炭+1";
     if (gacha === "lapis_cave") return "いま効く：ラピス";
     return "いま効く：たくさんほれる";
@@ -387,6 +408,7 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (gacha === "iron" || gacha === "gold") return "たまに+3／インゴット直";
   if (gacha === "diamond") return "たまに+3／ダイヤ直";
   if (gacha === "nether") return "たまに+3（残骸はツルハシ向き）";
+  if (gacha === "bastion") return "たまに+3（鍛冶型は運）";
   return "たまに素材+3";
 }
 
@@ -485,6 +507,7 @@ const ALL_GACHA_IDS: GachaId[] = [
   "diamond",
   "lapis_cave",
   "nether",
+  "bastion",
 ];
 
 function isGachaId(id: unknown): id is GachaId {
@@ -660,6 +683,7 @@ export function gearLabel(id: CraftedGearId): string {
   if (id === "furnace") return "かまど";
   if (id === "bucket_iron") return "鉄のバケツ";
   if (id === "enchanting_table") return "エンチャントテーブル";
+  if (id === "smithing_table") return "鍛冶台";
   const [kind, tier] = id.split("_") as [string, GearTier];
   if (kind === "sword" || kind === "axe" || kind === "pickaxe") {
     return `${GEAR_TIER_LABEL[tier]}の${TOOL_KIND_LABEL[kind]}`;

@@ -9,6 +9,7 @@ import { playGachaAmbient, playMiningSfx, unlockAudio } from "./alarm";
 import {
   EXCHANGE_BUY_OFFERS,
   QUARTZ_TO_POINTS,
+  NETHERRACK_TO_POINTS,
   bestOwnedTool,
   canAffordRecipe,
   equipArmor,
@@ -16,11 +17,13 @@ import {
   exchangeCost,
   exchangePointsForMaterial,
   exchangeQuartzForPoints,
+  exchangeNetherrackForPoints,
   gachaLockBadge,
   gachaLockHint,
   hasBucket,
   hasEnchantingTable,
   hasFurnace,
+  hasSmithingTable,
   hasWorkbench,
   luckyGachaForDate,
   netheriteFullComplete,
@@ -111,6 +114,7 @@ import {
   gearLabel,
   getMaterialCount,
   isBucketGacha,
+  isChestGacha,
   parseToolId,
   partySlotCount,
   type CraftedGearId,
@@ -663,6 +667,7 @@ const BLOCK_TONE: Record<GachaId, { top: string; front: string; side: string; ed
   diamond: { top: "#6ad4e8", front: "#2aa8c4", side: "#1a7a90", edge: "#0a3a48" },
   lapis_cave: { top: "#4a6ad4", front: "#2a48a8", side: "#1a3070", edge: "#0a1840" },
   nether: { top: "#8b3a32", front: "#6b241e", side: "#4a1512", edge: "#220a08" },
+  bastion: { top: "#6a5344", front: "#4a372c", side: "#2e221c", edge: "#140e0c" },
 };
 
 /**
@@ -1432,6 +1437,7 @@ export function MiningScreen({
       { id: "diamond", label: "ダイヤのしんそう ひらいた！" },
       { id: "lapis_cave", label: "ラピスどうくつ ひらいた！" },
       { id: "nether", label: "ネザー ひらいた！" },
+      { id: "bastion", label: "砦の遺跡 ひらいた！" },
     ];
     let delay = 500;
     for (const msg of unlockMessages) {
@@ -2221,7 +2227,8 @@ export function MiningScreen({
                 && hasUpgradeBase
                 && !owned
                 && (!recipe.needsWorkbench || hasWorkbench(mining))
-                && (!recipe.needsFurnace || hasFurnace(mining));
+                && (!recipe.needsFurnace || hasFurnace(mining))
+                && (!recipe.needsSmithingTable || hasSmithingTable(mining));
               return { recipe, upgradeFrom, hasUpgradeBase, bedFull, owned, ok };
             });
             const byId = new Map(annotated.map((a) => [a.recipe.id, a]));
@@ -2803,6 +2810,20 @@ export function MiningScreen({
                     }
                   }}
                 />
+                <ExchangeShopRow
+                  give={{ material: "netherrack", label: "ネザーラック", amount: 1 }}
+                  get={{ src: EMERALD_IMAGE, label: "エメラルド", amount: NETHERRACK_TO_POINTS }}
+                  owned={`所持 ネザーラック ${have("netherrack")}`}
+                  disabled={have("netherrack") < 1}
+                  onClick={() => {
+                    const r = exchangeNetherrackForPoints(mining);
+                    if (r.error) showToast(r.error);
+                    else {
+                      onChange(patchFromResult((prev) => exchangeNetherrackForPoints(prev)));
+                      showToast(`ネザーラックをエメラルド${NETHERRACK_TO_POINTS}にかえした！`);
+                    }
+                  }}
+                />
               </div>
               <div>
                 <div className="mining-exchange-group-label">エメラルドで買う</div>
@@ -3078,7 +3099,9 @@ export function MiningScreen({
                         ? "うみで水をくむ"
                         : selectedGacha === "lava_cave"
                           ? "ようがんでくむ"
-                          : `${selectedMeta.label}でほる`}
+                          : isChestGacha(selectedGacha)
+                            ? `${selectedMeta.label}のチェスト`
+                            : `${selectedMeta.label}でほる`}
                     </span>
                   </div>
                 </div>
@@ -3109,7 +3132,11 @@ export function MiningScreen({
                 ) : (
                   <div className="mining-rock-pick-stage">
                     <div className="mining-rock-pick-stage-title">
-                      {isBucketGacha(selectedGacha) ? "どれをくむ？" : "どれをたたく？"}
+                      {isBucketGacha(selectedGacha)
+                        ? "どれをくむ？"
+                        : isChestGacha(selectedGacha)
+                          ? "どのチェスト？"
+                          : "どれをたたく？"}
                     </div>
                     <div className="mining-rock-pick-stage-sub">あたりはひみつ。すきなのを選ぼう</div>
                     <div className="mining-rock-hero-row">
@@ -3153,14 +3180,18 @@ export function MiningScreen({
                       <div className="mining-rock-pick-lucky-hint">
                         {isBucketGacha(selectedGacha)
                           ? "ヘルメットのヒント：キラッと光るところがあたりだよ"
-                          : "ヘルメットのヒント：キラッと光る岩があたりだよ"}
+                          : isChestGacha(selectedGacha)
+                            ? "ヘルメットのヒント：キラッと光るチェストがあたりだよ"
+                            : "ヘルメットのヒント：キラッと光る岩があたりだよ"}
                       </div>
                     )}
                     {rockHint.kind === "miss" && (
                       <div className="mining-rock-pick-lucky-hint">
                         {isBucketGacha(selectedGacha)
                           ? "ヘルメットのヒント：うすいところははずれだよ"
-                          : "ヘルメットのヒント：うすい岩ははずれだよ"}
+                          : isChestGacha(selectedGacha)
+                            ? "ヘルメットのヒント：うすいチェストははずれだよ"
+                            : "ヘルメットのヒント：うすい岩ははずれだよ"}
                       </div>
                     )}
                   </div>

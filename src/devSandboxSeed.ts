@@ -39,11 +39,15 @@ const DEV_MATERIALS: Record<MaterialId, number> = {
   obsidian: DEV_MATERIAL_AMOUNT,
   lapis: DEV_MATERIAL_AMOUNT,
   book: DEV_MATERIAL_AMOUNT,
+  netherrack: DEV_MATERIAL_AMOUNT,
+  netherite_upgrade: DEV_MATERIAL_AMOUNT,
 };
 
 const DEV_CRAFTED: CraftedGearId[] = [
   "workbench",
   "furnace",
+  "enchanting_table",
+  "smithing_table",
   "sword_wood",
   "axe_wood",
   "pickaxe_wood",
@@ -204,6 +208,7 @@ export function buildDevSandboxSeed({
           "gold",
           "diamond",
           "nether",
+          "bastion",
         ] as const),
       ],
       partyIds,

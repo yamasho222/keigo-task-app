@@ -84,9 +84,10 @@ const TIER_JACKPOT: Record<GearTier, number> = {
 /** 掘り弱体化・直ドロップ（1箇所に集約） */
 export const DIG_TWO_RATE = 0.18;
 export const SWORD_INGOT_DIRECT_RATE = 0.12;
-export const SWORD_DIAMOND_DIRECT_RATE = 0.08;
+export const SWORD_DIAMOND_DIRECT_RATE = 0.1;
 export const DEBRIS_BASE_RATE = 0.2;
 export const DEBRIS_RATE_CAP = 0.45;
+export const BASTION_TEMPLATE_RATE = 0.1;
 
 export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   wood: "log",
@@ -101,6 +102,7 @@ export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   diamond: "diamond_shard",
   lapis_cave: "lapis",
   nether: "nether_quartz",
+  bastion: "netherrack",
 };
 
 export function specialtyForGacha(gacha: GachaId): MiningSpecialty {
@@ -134,6 +136,10 @@ export function hasFurnace(state: MiningState): boolean {
 
 export function hasEnchantingTable(state: MiningState): boolean {
   return !!state.crafted.enchanting_table;
+}
+
+export function hasSmithingTable(state: MiningState): boolean {
+  return !!state.crafted.smithing_table;
 }
 
 export function hasBucket(state: MiningState): boolean {
@@ -230,6 +236,7 @@ export function refreshUnlocks(state: MiningState): MiningState {
   }
   if (diamondToolsComplete(state)) {
     unlocked.add("nether");
+    unlocked.add("bastion");
   }
   return { ...state, unlockedGachas: [...unlocked] };
 }
@@ -260,6 +267,7 @@ export function gachaUnlockRequirementIds(gacha: GachaId): CraftedGearId[] {
     case "lapis_cave":
       return IRON_UNLOCK_REQ;
     case "nether":
+    case "bastion":
       return NETHER_UNLOCK_REQ;
     default:
       return [];
@@ -374,6 +382,7 @@ const LEGGINGS_BYPRODUCT_BASIC: Partial<Record<GachaId, MaterialId>> = {
   diamond: "coal",
   lapis_cave: "cobble",
   nether: "gold_ore",
+  bastion: "netherrack",
 };
 
 const LEGGINGS_BYPRODUCT_BETTER: Partial<Record<GachaId, MaterialId>> = {
@@ -387,6 +396,7 @@ const LEGGINGS_BYPRODUCT_BETTER: Partial<Record<GachaId, MaterialId>> = {
   diamond: "lapis",
   lapis_cave: "coal",
   nether: "gold_ore",
+  bastion: "netherrack",
 };
 
 export function rollLeggingsByproduct(
@@ -818,6 +828,7 @@ const GREAT_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
   "diamond",
   "iron_ingot",
   "gold_ingot",
+  "netherite_upgrade",
 ]);
 
 const GOOD_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
@@ -994,6 +1005,13 @@ export function resolveDig(params: {
       drops.push({ material: "gold_ore", amount: 1 });
       breakdown.push("おまけ 金の原石");
     }
+  } else if (params.gacha === "bastion") {
+    drops.push({ material: "netherrack", amount: primaryAmount });
+    if (rand() < BASTION_TEMPLATE_RATE) {
+      drops.push({ material: "netherite_upgrade", amount: 1 });
+      breakdown.push("鍛冶型ゲット！");
+      hitReasons.push("ネザライト強化用鍛冶型");
+    }
   } else if (params.gacha === "iron") {
     if (hasSword && rand() < SWORD_INGOT_DIRECT_RATE) {
       drops.push({ material: "iron_ingot", amount: primaryAmount });
@@ -1151,6 +1169,9 @@ export function tryCraft(
   }
   if (recipe.needsEnchantingTable && !hasEnchantingTable(state)) {
     return { state, error: "エンチャントテーブルのあとでつくれるよ" };
+  }
+  if (recipe.needsSmithingTable && !hasSmithingTable(state)) {
+    return { state, error: "先に鍛冶台を作ってね" };
   }
   if (recipe.craftFlag && state.crafted[recipe.craftFlag]) {
     return { state, error: "もう持っているよ" };
@@ -1325,8 +1346,12 @@ export const EXCHANGE_WOOL_COST = 30;
 export const EXCHANGE_LEATHER_COST = 60;
 /** 古代の残骸は救済。ネザー掘りよりかなり高め */
 export const EXCHANGE_DEBRIS_COST = 90;
+/** 鍛冶型は初回救済。砦掘りより高め */
+export const EXCHANGE_TEMPLATE_COST = 120;
 /** ネザークォーツ1個をエメラルドにかえしたときの量（むねあて割引なし） */
 export const QUARTZ_TO_POINTS = 3;
+/** ネザーラック1個をエメラルドにかえしたときの量 */
+export const NETHERRACK_TO_POINTS = 1;
 
 export const EXCHANGE_BUY_OFFERS: { material: MaterialId; baseCost: number }[] = [
   { material: "log", baseCost: EXCHANGE_LOG_COST },
@@ -1336,6 +1361,7 @@ export const EXCHANGE_BUY_OFFERS: { material: MaterialId; baseCost: number }[] =
   { material: "wool", baseCost: EXCHANGE_WOOL_COST },
   { material: "leather", baseCost: EXCHANGE_LEATHER_COST },
   { material: "ancient_debris", baseCost: EXCHANGE_DEBRIS_COST },
+  { material: "netherite_upgrade", baseCost: EXCHANGE_TEMPLATE_COST },
 ];
 
 export function exchangePointsForMaterial(
@@ -1372,6 +1398,25 @@ export function exchangeQuartzForPoints(state: MiningState): { state: MiningStat
       materials: (() => {
         const materials = { ...state.materials };
         writeMaterialCount(materials, "nether_quartz", have - 1);
+        return materials;
+      })(),
+    },
+  };
+}
+
+/** ネザーラック → エメラルド */
+export function exchangeNetherrackForPoints(state: MiningState): { state: MiningState; error?: string } {
+  const have = getMaterialCount(state, "netherrack");
+  if (have < 1) {
+    return { state, error: "ネザーラックが足りないよ" };
+  }
+  return {
+    state: {
+      ...state,
+      miningPoints: state.miningPoints + NETHERRACK_TO_POINTS,
+      materials: (() => {
+        const materials = { ...state.materials };
+        writeMaterialCount(materials, "netherrack", have - 1);
         return materials;
       })(),
     },

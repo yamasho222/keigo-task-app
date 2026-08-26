@@ -8,6 +8,7 @@ type Props = {
   luckyIndex: number;
   onPick: (luckyRock: boolean) => void;
   onCancel: () => void;
+  chestMode?: boolean;
 };
 
 export function MiningRockPick({
@@ -16,17 +17,19 @@ export function MiningRockPick({
   luckyIndex,
   onPick,
   onCancel,
+  chestMode = false,
 }: Props) {
+  const thing = chestMode ? "チェスト" : "岩";
   return (
-    <div className="mining-rock-pick-backdrop" role="dialog" aria-label="どの岩をほる？">
+    <div className="mining-rock-pick-backdrop" role="dialog" aria-label={chestMode ? "どのチェスト？" : "どの岩をほる？"}>
       <div className="mining-rock-pick-sheet">
-        <div className="mining-rock-pick-title">どの岩をほる？</div>
+        <div className="mining-rock-pick-title">{chestMode ? "どのチェスト？" : "どの岩をほる？"}</div>
         <div className="mining-rock-pick-sub">{placeLabel}</div>
         {rockHint.kind === "hit" && (
-          <div className="mining-rock-pick-hint">ヘルメットのヒント：キラッと光る岩があたりだよ</div>
+          <div className="mining-rock-pick-hint">ヘルメットのヒント：キラッと光る{thing}があたりだよ</div>
         )}
         {rockHint.kind === "miss" && (
-          <div className="mining-rock-pick-hint">ヘルメットのヒント：うすい岩ははずれだよ</div>
+          <div className="mining-rock-pick-hint">ヘルメットのヒント：うすい{thing}ははずれだよ</div>
         )}
         <div className="mining-rock-pick-row">
           {[0, 1, 2].map((i) => {
@@ -41,9 +44,9 @@ export function MiningRockPick({
                 onClick={() => onPick(isLucky)}
               >
                 <span className="mining-rock-emoji" aria-hidden>
-                  🪨
+                  {chestMode ? "📦" : "🪨"}
                 </span>
-                <span className="mining-rock-label">いわ {i + 1}</span>
+                <span className="mining-rock-label">{chestMode ? `チェスト ${i + 1}` : `いわ ${i + 1}`}</span>
                 {isMissHint && <span className="mining-rock-tile-badge is-miss">はずれ</span>}
                 {isHitHint && <span className="mining-rock-tile-badge is-hit">あたり</span>}
               </button>

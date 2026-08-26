@@ -3,6 +3,7 @@ import {
   hasBucket,
   hasEnchantingTable,
   hasFurnace,
+  hasSmithingTable,
   hasWorkbench,
   ironFullComplete,
   ironToolsComplete,
@@ -236,13 +237,23 @@ export function miningNextHero(mining: MiningState): NextHero {
       jumpTab: "craft",
     };
   }
+  if (!hasSmithingTable(mining)) {
+    return {
+      kind: "unlock",
+      title: "鍛冶台をつくろう",
+      subtitle: "鉄4と板材2で、ネザライト強化ができるよ",
+      jumpTab: "craft",
+      preferredGacha: "iron",
+    };
+  }
   if (!netheriteFullComplete(mining)) {
+    const hasTemplate = getMaterialCount(mining, "netherite_upgrade") >= 1;
     return {
       kind: "netherite",
-      title: "ネザライトをそろえよう",
-      subtitle: "残骸をほって、強化していこう",
+      title: hasTemplate ? "ネザライトをそろえよう" : "砦で鍛冶型をさがそう",
+      subtitle: hasTemplate ? "残骸をほって、鍛冶台で強化しよう" : "チェストから型が出るよ。ネザーラックはエメラルドになるよ",
       jumpTab: "mine",
-      preferredGacha: "nether",
+      preferredGacha: hasTemplate ? "nether" : "bastion",
     };
   }
   return {
@@ -441,7 +452,29 @@ export function recommendedCraftRecipeIds(mining: MiningState): RecipeId[] {
     push("bed");
   }
 
+  if (!hasSmithingTable(mining)) {
+    push("smithing_table");
+    return ids;
+  }
+
   if (!netheriteFullComplete(mining)) {
+    if (getMaterialCount(mining, "netherite_upgrade") < 1) {
+      return ids;
+    }
+    const remaining = (
+      [
+        "sword_netherite",
+        "axe_netherite",
+        "pickaxe_netherite",
+        "helmet_netherite",
+        "chest_netherite",
+        "leggings_netherite",
+        "boots_netherite",
+      ] as const
+    ).filter((id) => !mining.crafted[id]).length;
+    if (remaining > getMaterialCount(mining, "netherite_upgrade")) {
+      push("netherite_upgrade_dupe");
+    }
     if (getMaterialCount(mining, "netherite_scrap") < 4
       && getMaterialCount(mining, "ancient_debris") > 0) {
       push("smelt_debris");
@@ -449,6 +482,17 @@ export function recommendedCraftRecipeIds(mining: MiningState): RecipeId[] {
     if (getMaterialCount(mining, "netherite_ingot") < 1
       && getMaterialCount(mining, "netherite_scrap") >= 4) {
       push("netherite_ingot_craft");
+    }
+    for (const id of [
+      "sword_netherite",
+      "axe_netherite",
+      "pickaxe_netherite",
+      "helmet_netherite",
+      "chest_netherite",
+      "leggings_netherite",
+      "boots_netherite",
+    ] as const) {
+      if (!mining.crafted[id]) push(id);
     }
   }
 
@@ -471,6 +515,8 @@ export function recipeEffectLine(recipe: MiningRecipe): string | null {
   if (recipe.id === "smelt_gold") return "金のどうぐ・よろいの材料";
   if (recipe.id === "smelt_debris") return "ネザライトの材料";
   if (recipe.id === "netherite_ingot_craft") return "ダイヤどうぐをいちばん強くできる";
+  if (recipe.id === "netherite_upgrade_dupe") return "型が1こふえる（ダイヤ3＋ネザーラック）";
+  if (recipe.craftFlag === "smithing_table") return "ネザライト強化ができる";
   if (recipe.id === "diamond_from_shards") return "ダイヤどうぐの材料";
   if (recipe.id === "paper_batch") return "本の材料（さとうきび3で紙3）";
   if (recipe.id === "book_craft") return "エンチャントテーブルの材料";
@@ -550,10 +596,16 @@ export function craftTutorialBanner(mining: MiningState): {
       steps: ["牧場で羊毛→ベッド（なかま+1）"],
     };
   }
+  if (!hasSmithingTable(mining)) {
+    return {
+      title: "いまやること：鍛冶台",
+      steps: ["鉄4と板材2で鍛冶台"],
+    };
+  }
   if (!netheriteFullComplete(mining)) {
     return {
       title: "いまやること：ネザライト",
-      steps: ["残骸→かまどで精錬→強化"],
+      steps: ["砦で型→複製（ダイヤ3）→残骸を精錬→鍛冶台で強化"],
     };
   }
   return {
@@ -778,6 +830,9 @@ export function gachaForMaterial(id: MaterialId): GachaId | null {
     case "netherite_scrap":
     case "netherite_ingot":
       return "nether";
+    case "netherrack":
+    case "netherite_upgrade":
+      return "bastion";
     case "leather":
     case "wool":
       return "ranch";
@@ -812,6 +867,7 @@ export const GACHA_SURFACE: Record<GachaId, string> = {
   diamond: "#E0F7FA",
   lapis_cave: "#E8EAF6",
   nether: "#FBE9E7",
+  bastion: "#EFEBE9",
 };
 
 /** 子ども向け補正の強さ */
@@ -864,8 +920,15 @@ export function detectChapterMoments(before: MiningState, after: MiningState): C
       sub: "エンチャントがかけられるよ",
     });
   }
+  if (!hasSmithingTable(before) && hasSmithingTable(after)) {
+    push({
+      id: "smithing_table",
+      title: "鍛冶台できた！",
+      sub: "型とインゴットでネザライトにできるよ",
+    });
+  }
   if (!diamondToolsComplete(before) && diamondToolsComplete(after)) {
-    push({ id: "diamond_age", title: "ダイヤのじだい！", sub: "ネザーがひらいたよ" });
+    push({ id: "diamond_age", title: "ダイヤのじだい！", sub: "ネザーと砦の遺跡がひらいたよ" });
   }
   if (!netheriteFullComplete(before) && netheriteFullComplete(after)) {
     push({ id: "netherite_full", title: "ネザライト そろい！", sub: "いちばんつよいセット！" });
@@ -884,6 +947,12 @@ export function detectChapterMoments(before: MiningState, after: MiningState): C
     push({ id: "netherite_scrap", title: "ネザライトの欠片！", sub: "インゴットまであと少し" });
   }
   if (
+    getMaterialCount(before, "netherite_upgrade") < 1
+    && getMaterialCount(after, "netherite_upgrade") >= 1
+  ) {
+    push({ id: "netherite_upgrade", title: "鍛冶型ゲット！", sub: "複製してネザライトにしよう" });
+  }
+  if (
     getMaterialCount(before, "netherite_ingot") < 1
     && getMaterialCount(after, "netherite_ingot") >= 1
   ) {
@@ -898,6 +967,9 @@ export function digRevealTitle(
   tier: "normal" | "good" | "great",
   materials: MaterialId[],
 ): { title: string; sub?: string } {
+  if (materials.includes("netherite_upgrade")) {
+    return { title: "鍛冶型ゲット！", sub: "ネザライトに強化できるよ" };
+  }
   if (materials.includes("ancient_debris")) {
     return { title: "古代の残骸！！", sub: "ネザーのレアだ！" };
   }
