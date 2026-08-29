@@ -259,7 +259,7 @@ export function miningNextHero(mining: MiningState): NextHero {
   return {
     kind: "done",
     title: "ネザライトそろい！",
-    subtitle: "特典で残骸が出やすいよ",
+    subtitle: "すきなところをほっていいよ",
   };
 }
 

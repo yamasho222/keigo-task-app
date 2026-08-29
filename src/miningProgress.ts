@@ -83,11 +83,13 @@ const TIER_JACKPOT: Record<GearTier, number> = {
 
 /** 掘り弱体化・直ドロップ（1箇所に集約） */
 export const DIG_TWO_RATE = 0.18;
-export const SWORD_INGOT_DIRECT_RATE = 0.12;
-export const SWORD_DIAMOND_DIRECT_RATE = 0.1;
-export const DEBRIS_BASE_RATE = 0.2;
-export const DEBRIS_RATE_CAP = 0.45;
-export const BASTION_TEMPLATE_RATE = 0.1;
+export const SWORD_INGOT_DIRECT_RATE = 0.06;
+export const SWORD_DIAMOND_DIRECT_RATE = 0.05;
+/** ネザー1回あたり。上限も同じにして装備で早くならない（16回に1個・約4日） */
+export const DEBRIS_BASE_RATE = 1 / 16;
+export const DEBRIS_RATE_CAP = 1 / 16;
+/** 砦1回あたり（60回に1個・約15日） */
+export const BASTION_TEMPLATE_RATE = 1 / 60;
 
 export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   wood: "log",
@@ -993,13 +995,8 @@ export function resolveDig(params: {
     if (setBonus) debrisRate += 0.08;
     if (rand() < Math.min(DEBRIS_RATE_CAP, debrisRate)) {
       drops.push({ material: "ancient_debris", amount: 1 });
-      breakdown.push(setBonus ? "古代の残骸！（そろいボーナス）" : "古代の残骸！");
-      hitReasons.push(setBonus ? "古代の残骸（そろいボーナス）" : "古代の残骸");
-      if (setBonus && rand() < 0.15) {
-        drops.push({ material: "ancient_debris", amount: 1 });
-        breakdown.push("そろいおまけ残骸+1！");
-        hitReasons.push("そろいおまけ残骸+1");
-      }
+      breakdown.push("古代の残骸！");
+      hitReasons.push("古代の残骸");
     }
     if (rand() < 0.12) {
       drops.push({ material: "gold_ore", amount: 1 });
@@ -1344,10 +1341,10 @@ export const EXCHANGE_COAL_COST = 25;
 export const EXCHANGE_WOOL_COST = 30;
 /** 皮は本の救済。牧場のおまけより高め */
 export const EXCHANGE_LEATHER_COST = 60;
-/** 古代の残骸は救済。ネザー掘りよりかなり高め */
-export const EXCHANGE_DEBRIS_COST = 90;
+/** 古代の残骸は救済。ネザー掘りより高め */
+export const EXCHANGE_DEBRIS_COST = 200;
 /** 鍛冶型は初回救済。砦掘りより高め */
-export const EXCHANGE_TEMPLATE_COST = 120;
+export const EXCHANGE_TEMPLATE_COST = 300;
 /** ネザークォーツ1個をエメラルドにかえしたときの量（むねあて割引なし） */
 export const QUARTZ_TO_POINTS = 3;
 /** ネザーラック1個をエメラルドにかえしたときの量 */

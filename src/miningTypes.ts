@@ -399,7 +399,7 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
       return gacha === "river" ? "バケツで水をくむ" : "バケツでようがんをくむ";
     }
     if (isAxeGacha(gacha)) return "こうざんのときだけ効く";
-    if (gacha === "nether") return "いま効く：残骸が出やすい";
+    if (gacha === "nether") return "いま効く：クォーツがでやすい";
     if (gacha === "bastion") return "いま効く：チェストをあけやすい";
     if (gacha === "coal") return "いま効く：石炭+1";
     if (gacha === "lapis_cave") return "いま効く：ラピス";
@@ -407,7 +407,7 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   }
   if (gacha === "iron" || gacha === "gold") return "たまに+3／インゴット直";
   if (gacha === "diamond") return "たまに+3／ダイヤ直";
-  if (gacha === "nether") return "たまに+3（残骸はツルハシ向き）";
+  if (gacha === "nether") return "たまに+3";
   if (gacha === "bastion") return "たまに+3（鍛冶型は運）";
   return "たまに素材+3";
 }

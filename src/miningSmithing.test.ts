@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   BASTION_TEMPLATE_RATE,
+  DEBRIS_BASE_RATE,
+  DEBRIS_RATE_CAP,
+  EXCHANGE_DEBRIS_COST,
   EXCHANGE_TEMPLATE_COST,
   NETHERRACK_TO_POINTS,
+  SWORD_DIAMOND_DIRECT_RATE,
+  SWORD_INGOT_DIRECT_RATE,
   exchangeNetherrackForPoints,
   exchangePointsForMaterial,
   refreshUnlocks,
@@ -45,7 +50,7 @@ describe("bastion chest loot", () => {
   });
 
   it("can drop the smithing template", () => {
-    expect(BASTION_TEMPLATE_RATE).toBe(0.1);
+    expect(BASTION_TEMPLATE_RATE).toBeCloseTo(1 / 60);
     const result = resolveDig({
       state: bastionReady(),
       gacha: "bastion",
@@ -104,12 +109,25 @@ describe("smithing recipes", () => {
   });
 });
 
-describe("template emerald buy", () => {
-  it("costs 120 emeralds for one template", () => {
-    expect(EXCHANGE_TEMPLATE_COST).toBe(120);
+describe("named rare rates", () => {
+  it("caps debris so geared nether is still 16 digs per drop", () => {
+    expect(DEBRIS_BASE_RATE).toBeCloseTo(1 / 16);
+    expect(DEBRIS_RATE_CAP).toBeCloseTo(1 / 16);
+    expect(DEBRIS_RATE_CAP).toBe(DEBRIS_BASE_RATE);
+  });
+
+  it("halves sword direct drops", () => {
+    expect(SWORD_DIAMOND_DIRECT_RATE).toBe(0.05);
+    expect(SWORD_INGOT_DIRECT_RATE).toBe(0.06);
+  });
+});
+
+describe("named rare emerald buy", () => {
+  it("costs 300 emeralds for one template", () => {
+    expect(EXCHANGE_TEMPLATE_COST).toBe(300);
     const before = {
       ...emptyMiningState(),
-      miningPoints: 120,
+      miningPoints: 300,
     };
     const result = exchangePointsForMaterial(before, "netherite_upgrade");
     expect(result.error).toBeUndefined();
@@ -117,13 +135,25 @@ describe("template emerald buy", () => {
     expect(getMaterialCount(result.state, "netherite_upgrade")).toBe(1);
   });
 
-  it("errors when emeralds are short", () => {
+  it("errors when template emeralds are short", () => {
     const before = {
       ...emptyMiningState(),
-      miningPoints: 119,
+      miningPoints: 299,
     };
     const result = exchangePointsForMaterial(before, "netherite_upgrade");
-    expect(result.error).toBe("エメラルドが120ひつようだよ");
+    expect(result.error).toBe("エメラルドが300ひつようだよ");
     expect(getMaterialCount(result.state, "netherite_upgrade")).toBe(0);
+  });
+
+  it("costs 200 emeralds for one debris", () => {
+    expect(EXCHANGE_DEBRIS_COST).toBe(200);
+    const before = {
+      ...emptyMiningState(),
+      miningPoints: 200,
+    };
+    const result = exchangePointsForMaterial(before, "ancient_debris");
+    expect(result.error).toBeUndefined();
+    expect(getMaterialCount(result.state, "ancient_debris")).toBe(1);
+    expect(result.state.miningPoints).toBe(0);
   });
 });

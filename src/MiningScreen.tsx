@@ -1880,7 +1880,7 @@ export function MiningScreen({
         </div>
         {netheriteFullComplete(mining) && (
           <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: theme.category.green }}>
-            ネザライトそろい：残骸が出やすいよ
+            ネザライトそろい！
           </div>
         )}
       </div>
@@ -2856,7 +2856,7 @@ export function MiningScreen({
               ネザーでは白い石がよく出るよ。ほしいものはエメラルドでかえられるよ
               {netheriteFullComplete(mining) && (
                 <span style={{ display: "block", marginTop: 4, color: theme.category.green, fontWeight: 800 }}>
-                  ネザライトそろい：残骸が出やすいよ
+                  ネザライトそろい！
                 </span>
               )}
             </div>
