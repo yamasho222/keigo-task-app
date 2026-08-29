@@ -47,6 +47,14 @@ import {
   type RewardTicketInventory,
 } from "./rewardTickets";
 import { ParentRescuePanel } from "./ParentRescuePanel";
+import { MiningNightEndOverlay } from "./MiningNightEndOverlay";
+import {
+  isMiningNightHours,
+  isMiningNightLocked,
+  miningNightLockNightKey,
+  normalizeMiningNightLockEnabled,
+  shouldAutoShowMiningNightEnd,
+} from "./miningNightLock";
 import {
   claimDueBedtimeTickets,
   declareBedtime,
@@ -433,6 +441,8 @@ interface StoredState {
   rewardTickets?: RewardTicketInventory;
   /** 親の救済メニュー合言葉（未設定時はデフォルト） */
   parentRescuePassword?: string;
+  /** 夜のこうざんロック（未設定は ON） */
+  miningNightLockEnabled?: boolean;
   /** 1回限りの特別ガチャ受け取り済み */
   compensationClaims?: Record<string, boolean>;
 }
@@ -805,6 +815,7 @@ function hydrateStoredState(data: StoredState): StoredState {
     ),
     rewardTickets: normalizeRewardTickets(data.rewardTickets),
     parentRescuePassword: normalizeParentRescuePassword(data.parentRescuePassword),
+    miningNightLockEnabled: normalizeMiningNightLockEnabled(data.miningNightLockEnabled),
     compensationClaims: data.compensationClaims ?? {},
   };
 }
@@ -1685,6 +1696,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [parentRescuePassword, setParentRescuePassword] = useState<string | undefined>(() =>
     normalizeParentRescuePassword(stored.parentRescuePassword),
   );
+  const [miningNightLockEnabled, setMiningNightLockEnabled] = useState(() =>
+    normalizeMiningNightLockEnabled(stored.miningNightLockEnabled),
+  );
+  const [showMiningNightEnd, setShowMiningNightEnd] = useState(false);
+  const miningNightEndShownRef = useRef<string | null>(null);
   const [compensationClaims, setCompensationClaims] = useState<Record<string, boolean>>(
     stored.compensationClaims ?? {},
   );
@@ -2104,6 +2120,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       mining,
       rewardTickets,
       parentRescuePassword,
+      miningNightLockEnabled,
       compensationClaims,
     };
     localStorage.setItem(appStateStorageKey(storageChildId), JSON.stringify(state));
@@ -2131,6 +2148,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     mining,
     rewardTickets,
     parentRescuePassword,
+    miningNightLockEnabled,
     compensationClaims,
   ]);
 
@@ -4205,6 +4223,15 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setScreen(next);
   };
 
+  const tryOpenMining = () => {
+    if (isWorkTimerLocked) return;
+    if (isMiningNightLocked({ enabled: miningNightLockEnabled })) {
+      setShowMiningNightEnd(true);
+      return;
+    }
+    navigateToScreen("mining");
+  };
+
   const openParentCheck = (preferred?: SessionId) => {
     const allSessions = getContextAllSessionTasks();
     const isComplete = (sid: SessionId) => isParentCheckSessionComplete(sid, allSessions, {
@@ -4238,6 +4265,45 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     }
     setScreen(getSessionScreen());
   };
+  const goHomeRef = useRef(goHome);
+  goHomeRef.current = goHome;
+
+  useEffect(() => {
+    if (!miningNightLockEnabled) return;
+
+    const tick = () => {
+      const now = new Date();
+      if (!isMiningNightHours(now)) return;
+
+      if (screenRef.current === "mining") {
+        goHomeRef.current();
+        setShowMiningNightEnd(true);
+        miningNightEndShownRef.current = miningNightLockNightKey(now);
+        return;
+      }
+
+      const auto = shouldAutoShowMiningNightEnd({
+        enabled: true,
+        now,
+        shownNightKey: miningNightEndShownRef.current,
+      });
+      if (auto.show) {
+        miningNightEndShownRef.current = auto.nightKey;
+        setShowMiningNightEnd(true);
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [miningNightLockEnabled]);
 
   const removeTaskRow = (session: SessionId, id: number, task?: Task) => {
     const { tasks: base, setTasks, done: doneSet, setDone, skipped: skippedSet, setSkipped } = sessionState[session];
@@ -4621,7 +4687,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           role={buddyXpToastNav ? "button" : undefined}
           onClick={() => {
             if (buddyXpToastNav === "mining") {
-              navigateToScreen("mining");
+              tryOpenMining();
               setBuddyXpToast(null);
               setBuddyXpToastNav(null);
             }
@@ -4638,6 +4704,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             <div className="lu-name">{buddyLevelUp.name}</div>
           </div>
         </div>
+      )}
+
+      {showMiningNightEnd && (
+        <MiningNightEndOverlay onDismiss={() => setShowMiningNightEnd(false)} />
       )}
 
       {showBuddyPrompt && (
@@ -4667,6 +4737,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           password={resolveParentRescuePassword(parentRescuePassword)}
           miningTickets={mining.tickets}
           rewardTickets={rewardTickets}
+          miningNightLockEnabled={miningNightLockEnabled}
+          onToggleMiningNightLock={setMiningNightLockEnabled}
           onAdjustMiningTickets={(delta) => commitMining((m) => adjustTickets(m, delta))}
           onAdjustRewardTicket={(kind, delta) =>
             setRewardTickets((prev) => adjustRewardTicket(prev, kind, delta))
@@ -4803,7 +4875,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
               { id: "mining", icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
                 if (import.meta.env.DEV) applyDevSandboxSeed();
-                navigateToScreen("mining");
+                tryOpenMining();
                 setShowMenu(false);
               } },
               { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
@@ -4840,12 +4912,12 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 } },
                 { icon: "🧰", label: "体験フルセットを入れる（開発用）", action: () => {
                   applyDevSandboxSeed();
-                  navigateToScreen("mining");
+                  tryOpenMining();
                   setShowMenu(false);
                 } },
                 { icon: "🎫", label: "チケットだけ／装備なし（開発用）", action: () => {
                   applyDevTicketsOnlySeed();
-                  navigateToScreen("mining");
+                  tryOpenMining();
                   setShowMenu(false);
                 } },
                 { icon: "⛏️", label: "MCシールプレビュー（全16枚）", action: () => {
@@ -5014,7 +5086,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setShowMenu(false);
                 } },
                 { icon: "⛏️", label: "こうざん画面を開く（テスト）", action: () => {
-                  navigateToScreen("mining");
+                  tryOpenMining();
                   setShowMenu(false);
                 } },
                 { icon: "🎁", label: "天井武装のごほうびテスト", action: () => {

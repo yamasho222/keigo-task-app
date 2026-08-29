@@ -22,6 +22,8 @@ type Props = {
   rewardTickets: RewardTicketInventory;
   onAdjustMiningTickets: (delta: number) => void;
   onAdjustRewardTicket: (kind: RewardTicketKind, delta: number) => void;
+  miningNightLockEnabled: boolean;
+  onToggleMiningNightLock: (enabled: boolean) => void;
   onChangePassword: (next: string) => void;
   onClose: () => void;
 };
@@ -45,6 +47,8 @@ export function ParentRescuePanel({
   rewardTickets,
   onAdjustMiningTickets,
   onAdjustRewardTicket,
+  miningNightLockEnabled,
+  onToggleMiningNightLock,
   onChangePassword,
   onClose,
 }: Props) {
@@ -236,6 +240,43 @@ export function ParentRescuePanel({
             }}
           >
             ✕
+          </button>
+        </div>
+
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          marginBottom: 16, padding: "12px 14px", borderRadius: 12,
+          border: `1.5px solid ${theme.stroke.secondary}`,
+          backgroundColor: theme.fill.quaternary,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: theme.text.primary }}>
+              夜のこうざんロック（21時〜朝5時）
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 4, lineHeight: 1.4 }}>
+              {miningNightLockEnabled
+                ? "いま ON。子どもは夜にこうざんへ入れないよ"
+                : "いま OFF。夜でもこうざんできるよ"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onToggleMiningNightLock(!miningNightLockEnabled)}
+            aria-pressed={miningNightLockEnabled}
+            style={{
+              flexShrink: 0,
+              minWidth: 64,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "none",
+              cursor: "pointer",
+              fontWeight: 900,
+              fontSize: 14,
+              backgroundColor: miningNightLockEnabled ? theme.accent.primary : theme.fill.secondary,
+              color: miningNightLockEnabled ? "#fff" : theme.text.primary,
+            }}
+          >
+            {miningNightLockEnabled ? "ON" : "OFF"}
           </button>
         </div>
 
