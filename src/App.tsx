@@ -489,6 +489,8 @@ interface PendingTreat {
   devPreviewOnly?: boolean;
   /** 1回限りの特別ガチャ */
   compensationClaimKey?: string;
+  /** 溜まった日（日付またぎの受け取り） */
+  claimDateKey?: string;
 }
 
 interface OneOffSpecialPending {
@@ -1701,6 +1703,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   );
   const [showMiningNightEnd, setShowMiningNightEnd] = useState(false);
   const miningNightEndShownRef = useRef<string | null>(null);
+  const blockNightPlay = () => {
+    if (!isMiningNightLocked({ enabled: miningNightLockEnabled })) return false;
+    setShowMiningNightEnd(true);
+    return true;
+  };
   const [compensationClaims, setCompensationClaims] = useState<Record<string, boolean>>(
     stored.compensationClaims ?? {},
   );
@@ -2244,8 +2251,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       setDaytimeTasks((t) => stripEphemeralTasks(t));
       setEveningTasks((t) => stripEphemeralTasks(t));
       setHomeTasks((t) => stripEphemeralTasks(t));
-      setOneOffSpecialClaimed({});
-      setOneOffSpecialTreatPending({});
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
       setActiveWorkTask(null);
@@ -2610,6 +2615,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const openTreatQueue = (queue: PendingTreat[]) => {
     if (queue.length === 0) return;
+    if (blockNightPlay()) return;
     const tagged = queue.map((t) => applyPityToTreat(applyDevPreviewOnly(t)));
     const [first, ...rest] = tagged;
     setPendingTreat(first);
@@ -3144,6 +3150,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const selectBuddy = (stickerId: string) => {
+    if (blockNightPlay()) return;
     if (!stickerAlbumRef.current.includes(stickerId)) return;
     setBuddyId(stickerId);
     buddyIdRef.current = stickerId;
@@ -3159,6 +3166,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   useEffect(() => {
     if (inCatchUp) return;
+    if (isMiningNightLocked({ enabled: miningNightLockEnabled })) return;
     if (!isSessionScreen(screen)) return;
     if (buddyId) return;
     if (stickerAlbum.length === 0) return;
@@ -3166,9 +3174,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       if (localStorage.getItem(`keigo-buddy-prompt-dismissed-${storageChildId ?? "local"}-${todayKey()}`) === "1") return;
     } catch { /* ignore */ }
     setShowBuddyPrompt(true);
-  }, [screen, buddyId, stickerAlbum.length, inCatchUp, storageChildId]);
+  }, [screen, buddyId, stickerAlbum.length, inCatchUp, storageChildId, miningNightLockEnabled]);
 
   const trainBuddyWithToken = (stickerId: string) => {
+    if (blockNightPlay()) return;
     if (!stickerAlbumRef.current.includes(stickerId)) return;
     const entry = getBuddyEntry(buddyProgressRef.current, stickerId);
     if (!canTrainWithTokens(entry, duplicateTokens)) return;
@@ -3200,8 +3209,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   pityArmedRef.current = pityArmed;
   stickerAlbumRef.current = stickerAlbum;
 
-  const openFullDayBonusReward = () => {
-    const dayKey = todayKey();
+  const openFullDayBonusReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const dayKey = dateKey ?? todayKey();
     if (fullDayBonusClaimedRef.current[dayKey]) return;
     if (pendingTreatRef.current?.mode === "fullDayBonus") return;
     fullDayBonusCollectedRef.current = false;
@@ -3211,7 +3221,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[dayKey];
       return next;
     });
-    openTreatQueue([{ mode: "fullDayBonus" }]);
+    openTreatQueue([{ mode: "fullDayBonus", claimDateKey: dayKey }]);
   };
 
   const handleTreatCollect = (rewardId: string, meta?: { isNew: boolean }) => {
@@ -3219,7 +3229,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (!treat) return;
 
     if (treat.mode === "specialMission") {
-      const dayKey = taskDayKey();
+      const dayKey = treat.claimDateKey ?? taskDayKey();
       if (specialMissionRewardClaimedRef.current[dayKey]) return;
       specialMissionCollectedRef.current = true;
       setSpecialMissionRewardClaimed((c) => {
@@ -3251,7 +3261,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       setCompensationClaims((c) => (c[key] ? c : { ...c, [key]: true }));
     } else if (treat.mode === "daily" && treat.session) {
       dailyTreatCollectedRef.current = true;
-      const key = sessionTreatKey(todayKey(), treat.session);
+      const key = sessionTreatKey(treat.claimDateKey ?? todayKey(), treat.session);
       setDailyTreatClaimed((c) => ({ ...c, [key]: true }));
       setDailyTreatPending((p) => {
         if (!p[key]) return p;
@@ -3260,7 +3270,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         return next;
       });
     } else if (treat.mode === "deadline" && treat.deadlineRewardFloor) {
-      const dayKey = taskDayKey();
+      const dayKey = treat.claimDateKey ?? taskDayKey();
       if (deadlineTreatClaimedRef.current[dayKey]) return;
       deadlineCollectedRef.current = true;
       const floor = treat.deadlineRewardFloor;
@@ -3276,7 +3286,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       if (lastWeeklyRewardStreakRef.current >= milestoneStreak) return;
       weeklyCollectedRef.current = true;
       setLastWeeklyRewardStreak((prev) => Math.max(prev, milestoneStreak));
-      const milestoneDay = todayKey();
+      const milestoneDay = treat.claimDateKey ?? todayKey();
       setWeeklyTreatPending((p) => {
         if (!(milestoneDay in p)) return p;
         const next = { ...p };
@@ -3288,7 +3298,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       if (lastThreeDayRewardStreakRef.current >= milestoneStreak) return;
       threeDayCollectedRef.current = true;
       setLastThreeDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
-      const milestoneDay = todayKey();
+      const milestoneDay = treat.claimDateKey ?? todayKey();
       setThreeDayTreatPending((p) => {
         if (!(milestoneDay in p)) return p;
         const next = { ...p };
@@ -3300,7 +3310,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       const milestoneStreak = treat.fifteenDayMilestoneStreak;
       fifteenDayCollectedRef.current = true;
       setLastFifteenDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
-      const milestoneDay = todayKey();
+      const milestoneDay = treat.claimDateKey ?? todayKey();
       setFifteenDayTreatPending((p) => {
         if (!(milestoneDay in p)) return p;
         const next = { ...p };
@@ -3311,7 +3321,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       const milestoneStreak = treat.thirtyDayMilestoneStreak;
       thirtyDayCollectedRef.current = true;
       setLastThirtyDayRewardStreak((prev) => Math.max(prev, milestoneStreak));
-      const milestoneDay = todayKey();
+      const milestoneDay = treat.claimDateKey ?? todayKey();
       setThirtyDayTreatPending((p) => {
         if (!(milestoneDay in p)) return p;
         const next = { ...p };
@@ -3319,7 +3329,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         return next;
       });
     } else if (treat.mode === "fullDayBonus") {
-      const dayKey = todayKey();
+      const dayKey = treat.claimDateKey ?? todayKey();
       if (fullDayBonusClaimedRef.current[dayKey]) return;
       fullDayBonusCollectedRef.current = true;
       setFullDayBonusClaimed((c) => (c[dayKey] ? c : { ...c, [dayKey]: true }));
@@ -3365,6 +3375,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const redeemDuplicateToken = (tier: DuplicateTokenExchangeTier) => {
+    if (blockNightPlay()) return;
     const cost = DUPLICATE_TOKEN_COSTS[tier];
     if (duplicateTokens < cost) return;
     const picked = pickUncollectedByRarity(stickerAlbumRef.current, tier);
@@ -3378,9 +3389,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     }]);
   };
 
-  const openSessionDailyReward = (session: SessionId) => {
+  const openSessionDailyReward = (session: SessionId, dateKey?: string) => {
+    if (blockNightPlay()) return;
     dailyTreatCollectedRef.current = false;
-    const key = sessionTreatKey(todayKey(), session);
+    const dayKey = dateKey ?? todayKey();
+    const key = sessionTreatKey(dayKey, session);
     setDailyTreatClaimed((c) => {
       if (!c[key]) return c;
       const next = { ...c };
@@ -3393,7 +3406,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[key];
       return next;
     });
-    openTreatQueue([{ mode: "daily", session }]);
+    openTreatQueue([{ mode: "daily", session, claimDateKey: dayKey }]);
   };
 
   const hasUnclaimedDeadlineReward = () => {
@@ -3402,8 +3415,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     return deadlineTreatPending[dayKey] !== undefined;
   };
 
-  const openDeadlineReward = () => {
-    const dayKey = taskDayKey();
+  const openDeadlineReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const dayKey = dateKey ?? taskDayKey();
     const floor = deadlineTreatPending[dayKey];
     if (!floor) return;
     if (deadlineTreatClaimedRef.current[dayKey]) return;
@@ -3415,7 +3429,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[dayKey];
       return next;
     });
-    openTreatQueue([{ mode: "deadline", rewardFloor: floor, deadlineRewardFloor: floor }]);
+    openTreatQueue([{ mode: "deadline", rewardFloor: floor, deadlineRewardFloor: floor, claimDateKey: dayKey }]);
   };
 
   const hasUnclaimedSessionDailyReward = (session: SessionId) => {
@@ -3432,8 +3446,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     return lastWeeklyRewardStreak < pendingStreak;
   };
 
-  const openWeeklyReward = () => {
-    const today = todayKey();
+  const openWeeklyReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const today = dateKey ?? todayKey();
     const pendingStreak = weeklyTreatPending[today];
     if (pendingStreak === undefined) return;
     if (lastWeeklyRewardStreakRef.current >= pendingStreak) return;
@@ -3445,7 +3460,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[today];
       return next;
     });
-    openTreatQueue([{ mode: "weekly", weeklyMilestoneStreak: pendingStreak }]);
+    openTreatQueue([{ mode: "weekly", weeklyMilestoneStreak: pendingStreak, claimDateKey: today }]);
   };
 
   const hasUnclaimedThreeDayReward = () => {
@@ -3455,8 +3470,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     return lastThreeDayRewardStreak < pendingStreak;
   };
 
-  const openThreeDayReward = () => {
-    const today = todayKey();
+  const openThreeDayReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const today = dateKey ?? todayKey();
     const pendingStreak = threeDayTreatPending[today];
     if (pendingStreak === undefined) return;
     if (lastThreeDayRewardStreakRef.current >= pendingStreak) return;
@@ -3468,7 +3484,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[today];
       return next;
     });
-    openTreatQueue([{ mode: "threeDayStreak", threeDayMilestoneStreak: pendingStreak }]);
+    openTreatQueue([{ mode: "threeDayStreak", threeDayMilestoneStreak: pendingStreak, claimDateKey: today }]);
   };
 
   const hasUnclaimedFifteenDayReward = () => {
@@ -3478,8 +3494,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     return lastFifteenDayRewardStreak < pendingStreak;
   };
 
-  const openFifteenDayReward = () => {
-    const today = todayKey();
+  const openFifteenDayReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const today = dateKey ?? todayKey();
     const pendingStreak = fifteenDayTreatPending[today];
     if (pendingStreak === undefined) return;
     if (lastFifteenDayRewardStreakRef.current >= pendingStreak) return;
@@ -3492,7 +3509,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       return next;
     });
     openTreatQueue([
-      { mode: "fifteenDayStreak", fifteenDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed" },
+      { mode: "fifteenDayStreak", fifteenDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed", claimDateKey: today },
     ]);
   };
 
@@ -3503,8 +3520,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     return lastThirtyDayRewardStreak < pendingStreak;
   };
 
-  const openThirtyDayReward = () => {
-    const today = todayKey();
+  const openThirtyDayReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const today = dateKey ?? todayKey();
     const pendingStreak = thirtyDayTreatPending[today];
     if (pendingStreak === undefined) return;
     if (lastThirtyDayRewardStreakRef.current >= pendingStreak) return;
@@ -3517,8 +3535,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       return next;
     });
     openTreatQueue([
-      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed" },
-      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "urPlusUncollected" },
+      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "lrGuaranteed", claimDateKey: today },
+      { mode: "thirtyDayStreak", thirtyDayMilestoneStreak: pendingStreak, streakPick: "urPlusUncollected", claimDateKey: today },
     ]);
   };
 
@@ -3553,6 +3571,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   };
 
   const openOneOffSpecialReward = (pending: OneOffSpecialPending) => {
+    if (blockNightPlay()) return;
     if (oneOffSpecialClaimedRef.current[pending.claimKey]) return;
     if (
       pendingTreatRef.current?.mode === "oneOffSpecial"
@@ -3705,6 +3724,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     todayMission,
     currentTaskDay,
     missionRewardClaimedToday,
+    missionHistory,
     oneOffLabels: oneOffPendingLabels,
     rewardTickets,
     compensationAvailable: isBrainrodCompensationAvailable({
@@ -3720,10 +3740,32 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const hasAnyUnclaimedDailyReward = () =>
     SESSION_IDS.some((sid) => hasUnclaimedSessionDailyReward(sid));
 
+  const tryOpenPendingRewards = () => {
+    if (blockNightPlay()) return;
+    setShowPendingRewardsSheet(true);
+  };
+
+  const tryOpenTokenShop = () => {
+    if (blockNightPlay()) return;
+    setShowTokenShop(true);
+  };
+
+  const tryOpenBuddySelect = () => {
+    if (blockNightPlay()) return;
+    setShowBuddyPrompt(true);
+  };
+
+  const tryOpenRecord = () => {
+    if (isWorkTimerLocked) return;
+    if (blockNightPlay()) return;
+    navigateToScreen("record");
+  };
+
   const openDailyRewardEntry = () => {
+    if (blockNightPlay()) return;
     const dailyItems = pendingRewardItems.filter((i) => i.kind === "daily");
     if (dailyItems.length === 1 && dailyItems[0].session) {
-      openSessionDailyReward(dailyItems[0].session);
+      openSessionDailyReward(dailyItems[0].session, dailyItems[0].dateKey);
       return;
     }
     setShowPendingRewardsSheet(true);
@@ -3734,28 +3776,28 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setShowPendingRewardsSheet(false);
     switch (item.kind) {
       case "daily":
-        if (item.session) openSessionDailyReward(item.session);
+        if (item.session) openSessionDailyReward(item.session, item.dateKey);
         break;
       case "deadline":
-        openDeadlineReward();
+        openDeadlineReward(item.dateKey);
         break;
       case "threeDay":
-        openThreeDayReward();
+        openThreeDayReward(item.dateKey);
         break;
       case "weekly":
-        openWeeklyReward();
+        openWeeklyReward(item.dateKey);
         break;
       case "fifteenDay":
-        openFifteenDayReward();
+        openFifteenDayReward(item.dateKey);
         break;
       case "thirtyDay":
-        openThirtyDayReward();
+        openThirtyDayReward(item.dateKey);
         break;
       case "fullDayBonus":
-        openFullDayBonusReward();
+        openFullDayBonusReward(item.dateKey);
         break;
       case "specialMission":
-        openMissionReward();
+        openMissionReward(item.dateKey);
         break;
       case "oneOffSpecial":
         if (item.claimKey) {
@@ -3792,7 +3834,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (pendingTreat !== null || treatQueue.length > 0) return;
     returnToPendingRewardsRef.current = false;
     if (pendingRewardItems.length > 0) {
-      setShowPendingRewardsSheet(true);
+      tryOpenPendingRewards();
     }
   }, [pendingTreat, treatQueue.length, pendingRewardItems]);
 
@@ -3873,11 +3915,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setScreen("show_parent_mission");
   };
 
-  const openMissionReward = () => {
-    if (!todayMission) return;
-    const dayKey = taskDayKey();
+  const openMissionReward = (dateKey?: string) => {
+    if (blockNightPlay()) return;
+    const dayKey = dateKey ?? taskDayKey();
+    const current = todayMission && todayMission.dateKey === dayKey ? todayMission : null;
+    const hist = missionHistory[dayKey];
+    if (!current && !specialMissionTreatPending[dayKey]) return;
     if (specialMissionRewardClaimedRef.current[dayKey]) return;
-    if (!isAllMissionPhasesParentApproved(missionApprovedSessions)) return;
+    if (current && !isAllMissionPhasesParentApproved(missionApprovedSessions)) return;
     if (pendingTreatRef.current?.mode === "specialMission") return;
     specialMissionCollectedRef.current = false;
     setSpecialMissionTreatPending((p) => {
@@ -3886,10 +3931,16 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       delete next[dayKey];
       return next;
     });
+    const title = current
+      ? `${current.emoji} ${current.title}`
+      : hist
+        ? `${hist.emoji} ${hist.title}`
+        : "ミッション";
     openTreatQueue([{
       mode: "specialMission",
-      missionTitle: `${todayMission.emoji} ${todayMission.title}`,
-      rewardFloor: todayMission.rewardFloor ?? "rare",
+      missionTitle: title,
+      rewardFloor: current?.rewardFloor ?? "rare",
+      claimDateKey: dayKey,
     }]);
   };
 
@@ -4225,10 +4276,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const tryOpenMining = () => {
     if (isWorkTimerLocked) return;
-    if (isMiningNightLocked({ enabled: miningNightLockEnabled })) {
-      setShowMiningNightEnd(true);
-      return;
-    }
+    if (blockNightPlay()) return;
     navigateToScreen("mining");
   };
 
@@ -4275,12 +4323,15 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       const now = new Date();
       if (!isMiningNightHours(now)) return;
 
-      if (screenRef.current === "mining") {
+      if (screenRef.current === "mining" || screenRef.current === "record") {
         goHomeRef.current();
         setShowMiningNightEnd(true);
         miningNightEndShownRef.current = miningNightLockNightKey(now);
         return;
       }
+      setShowPendingRewardsSheet(false);
+      setShowTokenShop(false);
+      setShowBuddyPrompt(false);
 
       const auto = shouldAutoShowMiningNightEnd({
         enabled: true,
@@ -4854,7 +4905,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
               ...(unclaimedRewardCount > 0 && !inCatchUp ? [{
                 icon: "🎁",
                 label: `もらえるごほうび (${unclaimedRewardCount})`,
-                action: () => { setShowPendingRewardsSheet(true); setShowMenu(false); },
+                action: () => { tryOpenPendingRewards(); setShowMenu(false); },
               }] : []),
               ...contextActiveSessionIds.map((sid) => ({
                 icon: SESSION_META[sid].menuIcon,
@@ -4872,14 +4923,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 action: () => { goToTimer(viewSession); setShowMenu(false); },
               },
               { icon: "🔔", label: "アラーム設定", action: () => { navigateToScreen("alarm_settings"); setShowMenu(false); } },
-              { icon: "📅", label: "連続記録", action: () => { navigateToScreen("record"); setShowMenu(false); } },
+              { icon: "📅", label: "連続記録", action: () => { tryOpenRecord(); setShowMenu(false); } },
               { id: "mining", icon: "⛏️", label: `こうざん／クラフト（🎫${mining.tickets}）`, action: () => {
                 if (import.meta.env.DEV) applyDevSandboxSeed();
                 tryOpenMining();
                 setShowMenu(false);
               } },
               { icon: "🪙", label: `${DUPLICATE_TOKEN_LABEL}交換所（${duplicateTokens}）`, action: () => {
-                setShowTokenShop(true);
+                tryOpenTokenShop();
                 setShowMenu(false);
               } },
               { icon: "🛟", label: "親の救済メニュー", action: () => {
@@ -5355,14 +5406,14 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             {!inCatchUp && (
               <PendingRewardsBanner
                 count={unclaimedRewardCount}
-                onOpen={() => setShowPendingRewardsSheet(true)}
+                onOpen={tryOpenPendingRewards}
               />
             )}
             {!inCatchUp && (pityArmed || duplicateStreak > 0 || duplicateTokens > 0) && (
               <button
                 type="button"
                 onClick={() => {
-                  if (!pityArmed && duplicateStreak === 0) setShowTokenShop(true);
+                  if (!pityArmed && duplicateStreak === 0) tryOpenTokenShop();
                 }}
                 style={{
                   margin: "0 0 8px",
@@ -5502,7 +5553,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 buddyId={!inCatchUp ? buddyId : null}
                 buddyProgress={buddyProgress}
                 canChangeBuddy={!inCatchUp && stickerAlbum.length > 0}
-                onOpenBuddySelect={() => setShowBuddyPrompt(true)}
+                onOpenBuddySelect={tryOpenBuddySelect}
                 duplicateTokens={duplicateTokens}
                 onTrainBuddy={trainBuddyWithToken}
                 sickSkipActive={!inCatchUp && !!sessionSickSkip[todayKey()]?.[sid]}
@@ -5624,7 +5675,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             sickSkip={sessionSickSkip}
             onSelectBuddy={selectBuddy}
             onTrainBuddy={trainBuddyWithToken}
-            onOpenBuddySelect={() => setShowBuddyPrompt(true)}
+            onOpenBuddySelect={tryOpenBuddySelect}
             onBack={goHome}
             onSelectCatchUpDay={openCatchUpDay}
           />

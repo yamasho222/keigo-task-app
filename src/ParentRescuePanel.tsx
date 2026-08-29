@@ -251,12 +251,12 @@ export function ParentRescuePanel({
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 900, color: theme.text.primary }}>
-              夜のこうざんロック（21時〜朝5時）
+              夜の遊びロック（21時〜朝5時）
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 4, lineHeight: 1.4 }}>
               {miningNightLockEnabled
-                ? "いま ON。子どもは夜にこうざんへ入れないよ"
-                : "いま OFF。夜でもこうざんできるよ"}
+                ? "いま ON。子どもは夜にこうざん・ガチャ・交換所で遊べないよ"
+                : "いま OFF。夜でも遊べるよ"}
             </div>
           </div>
           <button

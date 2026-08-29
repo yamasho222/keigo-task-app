@@ -31,6 +31,8 @@ export interface PendingRewardItem {
   claimKey?: string;
   /** ごほうびチケット開封用 */
   voucherKind?: RewardTicketKind;
+  /** 溜まった日（日付またぎの受け取り用） */
+  dateKey?: string;
 }
 
 export interface PendingRewardsContext {
@@ -59,6 +61,7 @@ export interface PendingRewardsContext {
   currentTaskDay: string;
   missionApprovedSessions?: SessionId[];
   missionRewardClaimedToday: boolean;
+  missionHistory?: Record<string, { title: string; emoji: string }>;
   oneOffLabels?: Record<string, string>;
   rewardTickets?: RewardTicketInventory;
   /** けいご専用の1回限りガチャ */
@@ -72,8 +75,18 @@ const SESSION_DAILY_LABELS: Record<SessionId, string> = {
   evening: "夜のごほうび",
 };
 
-function sessionTreatKey(date: string, session: SessionId) {
+export function sessionTreatKey(date: string, session: SessionId) {
   return `${date}:${session}`;
+}
+
+export function parseSessionTreatKey(key: string): { date: string; session: SessionId } | null {
+  const sep = key.lastIndexOf(":");
+  if (sep <= 0) return null;
+  const date = key.slice(0, sep);
+  const session = key.slice(sep + 1);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (!SESSION_IDS.includes(session as SessionId)) return null;
+  return { date, session: session as SessionId };
 }
 
 function isSessionTreatClaimed(claimed: Record<string, boolean>, date: string, session: SessionId) {
@@ -89,6 +102,26 @@ function isSessionDailyUnclaimed(ctx: PendingRewardsContext, session: SessionId)
   return !isSessionTreatClaimed(ctx.dailyTreatClaimed, ctx.todayKey, session);
 }
 
+function pushStreakItem(
+  items: PendingRewardItem[],
+  pending: Record<string, number>,
+  lastClaimed: number,
+  kind: PendingRewardKind,
+  label: string,
+) {
+  const seen = new Set<number>();
+  for (const [dateKey, streak] of Object.entries(pending)) {
+    if (streak === undefined || lastClaimed >= streak || seen.has(streak)) continue;
+    seen.add(streak);
+    items.push({
+      id: `${kind}:${dateKey}`,
+      kind,
+      label,
+      dateKey,
+    });
+  }
+}
+
 export function getPendingRewardItems(ctx: PendingRewardsContext): PendingRewardItem[] {
   const items: PendingRewardItem[] = [];
 
@@ -101,78 +134,73 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
     });
   }
 
+  const dailySeen = new Set<string>();
+  for (const [key, pending] of Object.entries(ctx.dailyTreatPending)) {
+    if (!pending) continue;
+    const parsed = parseSessionTreatKey(key);
+    if (!parsed) continue;
+    if (isSessionTreatClaimed(ctx.dailyTreatClaimed, parsed.date, parsed.session)) continue;
+    dailySeen.add(`${parsed.date}:${parsed.session}`);
+    items.push({
+      id: `daily:${key}`,
+      kind: "daily",
+      label: SESSION_DAILY_LABELS[parsed.session],
+      session: parsed.session,
+      dateKey: parsed.date,
+    });
+  }
   for (const sid of SESSION_IDS) {
     if (!isSessionDailyUnclaimed(ctx, sid)) continue;
+    const seenKey = `${ctx.todayKey}:${sid}`;
+    if (dailySeen.has(seenKey)) continue;
     items.push({
       id: `daily:${sid}`,
       kind: "daily",
       label: SESSION_DAILY_LABELS[sid],
       session: sid,
+      dateKey: ctx.todayKey,
     });
   }
 
-  const dayKey = ctx.taskDayKey;
-  if (!ctx.deadlineTreatClaimed[dayKey] && ctx.deadlineTreatPending[dayKey] !== undefined) {
+  for (const [dateKey, floor] of Object.entries(ctx.deadlineTreatPending)) {
+    if (floor === undefined || ctx.deadlineTreatClaimed[dateKey]) continue;
     items.push({
-      id: "deadline",
+      id: `deadline:${dateKey}`,
       kind: "deadline",
       label: "締切クリア ごほうび",
+      dateKey,
     });
   }
 
-  const threeDayStreak = ctx.threeDayTreatPending[ctx.todayKey];
-  if (threeDayStreak !== undefined && ctx.lastThreeDayRewardStreak < threeDayStreak) {
-    items.push({
-      id: "threeDay",
-      kind: "threeDay",
-      label: "3日連続 ごほうび",
-    });
-  }
+  pushStreakItem(items, ctx.threeDayTreatPending, ctx.lastThreeDayRewardStreak, "threeDay", "3日連続 ごほうび");
+  pushStreakItem(items, ctx.weeklyTreatPending, ctx.lastWeeklyRewardStreak, "weekly", "7日連続 ごほうび");
+  pushStreakItem(items, ctx.fifteenDayTreatPending, ctx.lastFifteenDayRewardStreak, "fifteenDay", "15日連続 ごほうび");
+  pushStreakItem(items, ctx.thirtyDayTreatPending, ctx.lastThirtyDayRewardStreak, "thirtyDay", "30日連続 ごほうび");
 
-  const weeklyStreak = ctx.weeklyTreatPending[ctx.todayKey];
-  if (weeklyStreak !== undefined && ctx.lastWeeklyRewardStreak < weeklyStreak) {
+  for (const [dateKey, pending] of Object.entries(ctx.fullDayBonusTreatPending)) {
+    if (!pending || ctx.fullDayBonusClaimed[dateKey]) continue;
     items.push({
-      id: "weekly",
-      kind: "weekly",
-      label: "7日連続 ごほうび",
-    });
-  }
-
-  const fifteenDayStreak = ctx.fifteenDayTreatPending[ctx.todayKey];
-  if (fifteenDayStreak !== undefined && ctx.lastFifteenDayRewardStreak < fifteenDayStreak) {
-    items.push({
-      id: "fifteenDay",
-      kind: "fifteenDay",
-      label: "15日連続 ごほうび",
-    });
-  }
-
-  const thirtyDayStreak = ctx.thirtyDayTreatPending[ctx.todayKey];
-  if (thirtyDayStreak !== undefined && ctx.lastThirtyDayRewardStreak < thirtyDayStreak) {
-    items.push({
-      id: "thirtyDay",
-      kind: "thirtyDay",
-      label: "30日連続 ごほうび",
-    });
-  }
-
-  if (ctx.fullDayBonusTreatPending[ctx.todayKey] && !ctx.fullDayBonusClaimed[ctx.todayKey]) {
-    items.push({
-      id: "fullDayBonus",
+      id: `fullDayBonus:${dateKey}`,
       kind: "fullDayBonus",
       label: "1日ぜんぶクリア ボーナス",
+      dateKey,
     });
   }
 
-  if (
-    ctx.todayMission
-    && ctx.specialMissionTreatPending[ctx.currentTaskDay]
-    && !ctx.missionRewardClaimedToday
-  ) {
+  for (const [dateKey, pending] of Object.entries(ctx.specialMissionTreatPending)) {
+    if (!pending || ctx.specialMissionRewardClaimed[dateKey]) continue;
+    const current = ctx.todayMission && ctx.currentTaskDay === dateKey ? ctx.todayMission : null;
+    const hist = ctx.missionHistory?.[dateKey];
+    const title = current
+      ? `${current.emoji} ${current.title}`
+      : hist
+        ? `${hist.emoji} ${hist.title}`
+        : "ミッション";
     items.push({
-      id: "specialMission",
+      id: `specialMission:${dateKey}`,
       kind: "specialMission",
-      label: `${ctx.todayMission.emoji} ${ctx.todayMission.title} のごほうび`,
+      label: `${title} のごほうび`,
+      dateKey,
     });
   }
 
