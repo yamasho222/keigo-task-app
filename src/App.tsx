@@ -2294,7 +2294,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     }, 2800);
   };
 
-  /** 早ねボーナス: 翌日5:00以降に未受け取り分を自動付与 */
+  /** 早ねボーナス: 翌日6:30以降に未受け取り分を自動付与 */
   const tryClaimBedtimeTickets = () => {
     if (activeCatchUpDate) return;
     const now = new Date();
@@ -2328,7 +2328,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const next = declareBedtime(miningRef.current, nightDate, { eveningAllResolved });
     if (!next) return;
     commitMining((prev) => declareBedtime(prev, nightDate, { eveningAllResolved }) ?? prev);
-    setBuddyXpToast("早ねできた！ 朝5時にチケット1枚");
+    setBuddyXpToast("早ねできた！ 朝6:30にチケット1枚");
     setBuddyXpToastNav(null);
     navigator.vibrate?.([12, 20, 12]);
     window.setTimeout(() => setBuddyXpToast(null), 2200);
@@ -5091,11 +5091,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                   setTimeout(() => setBuddyXpToast(null), 1800);
                   setShowMenu(false);
                 } },
-                { icon: "🛏️", label: "早ねボーナスを朝5時扱いで受け取る（テスト）", action: () => {
+                { icon: "🛏️", label: "早ねボーナスを朝6:30扱いで受け取る（テスト）", action: () => {
                   const nightDate = todayKey();
                   const forced = new Date();
                   forced.setDate(forced.getDate() + 1);
-                  forced.setHours(5, 0, 0, 0);
+                  forced.setHours(6, 30, 0, 0);
                   const beforeTickets = miningRef.current.tickets;
                   commitMining((prev) => {
                     let state = prev;
@@ -7640,7 +7640,7 @@ function TaskScreen({
           {bedtimePanelStatus === "ready" && (
             <>
               <div style={{ fontSize: 13, color: theme.text.secondary, marginBottom: 12, lineHeight: 1.45 }}>
-                21時までにベッドへ入ると、朝5時に 🎫1枚
+                21:30までにベッドへ入ると、朝6:30に 🎫1枚
               </div>
               <button
                 type="button"
@@ -7666,7 +7666,7 @@ function TaskScreen({
           {bedtimePanelStatus === "declared" && (
             <>
               <div style={{ fontSize: 14, fontWeight: 700, color: theme.text.primary, lineHeight: 1.45, marginBottom: 12 }}>
-                早ねできた！ 朝5時にこうざんチケット1枚
+                早ねできた！ 朝6:30にこうざんチケット1枚
               </div>
               <button
                 type="button"

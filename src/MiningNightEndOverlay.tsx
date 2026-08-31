@@ -23,7 +23,7 @@ export function MiningNightEndOverlay({ onDismiss }: Props) {
           今日はおしまい
         </div>
         <div className="mining-night-end-sub">
-          こうざんは 朝5時まで ねよう
+          こうざんは 朝6:30まで ねよう
         </div>
         <button
           type="button"

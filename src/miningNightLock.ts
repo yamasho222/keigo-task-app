@@ -1,4 +1,4 @@
-import { BEDTIME_CLAIM_HOUR, BEDTIME_DEADLINE_MINUTES } from "./bedtimeTicket";
+import { BEDTIME_CLAIM_MINUTES, NIGHT_PLAY_LOCK_START_MINUTES } from "./bedtimeTicket";
 
 /** 未保存はロック ON */
 export function normalizeMiningNightLockEnabled(value: unknown): boolean {
@@ -16,10 +16,10 @@ function localDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 21:00:00 以降〜翌朝 5:00:00 手前 */
+/** 21:00:00 以降〜翌朝 6:30:00 手前 */
 export function isMiningNightHours(now: Date): boolean {
   const minutes = minutesOfDay(now);
-  return minutes >= BEDTIME_DEADLINE_MINUTES || minutes < BEDTIME_CLAIM_HOUR * 60;
+  return minutes >= NIGHT_PLAY_LOCK_START_MINUTES || minutes < BEDTIME_CLAIM_MINUTES;
 }
 
 export function isMiningNightLocked(opts: {
@@ -30,10 +30,10 @@ export function isMiningNightLocked(opts: {
   return isMiningNightHours(opts.now ?? new Date());
 }
 
-/** 21:00〜翌5:00 を同じ夜として扱うキー（0〜4時は前日） */
+/** 21:00〜翌6:30 を同じ夜として扱うキー（6:30 未満は前日） */
 export function miningNightLockNightKey(now: Date): string {
   const d = new Date(now.getTime());
-  if (d.getHours() < BEDTIME_CLAIM_HOUR) {
+  if (minutesOfDay(d) < BEDTIME_CLAIM_MINUTES) {
     d.setDate(d.getDate() - 1);
   }
   return localDateKey(d);

@@ -32,13 +32,14 @@ describe("isMiningNightHours", () => {
     expect(isMiningNightHours(at(23, 0))).toBe(true);
   });
 
-  it("stays locked after midnight until 5:00", () => {
+  it("stays locked after midnight until 6:30", () => {
     expect(isMiningNightHours(at(0, 0, 30))).toBe(true);
-    expect(isMiningNightHours(at(4, 59, 30))).toBe(true);
+    expect(isMiningNightHours(at(5, 0, 30))).toBe(true);
+    expect(isMiningNightHours(at(6, 29, 30))).toBe(true);
   });
 
-  it("unlocks at 5:00 inclusive", () => {
-    expect(isMiningNightHours(at(5, 0, 30))).toBe(false);
+  it("unlocks at 6:30 inclusive", () => {
+    expect(isMiningNightHours(at(6, 30, 30))).toBe(false);
   });
 });
 
@@ -51,7 +52,7 @@ describe("isMiningNightLocked", () => {
   it("follows night hours when ON", () => {
     expect(isMiningNightLocked({ enabled: true, now: at(20, 59) })).toBe(false);
     expect(isMiningNightLocked({ enabled: true, now: at(21, 0) })).toBe(true);
-    expect(isMiningNightLocked({ enabled: true, now: at(5, 0, 30) })).toBe(false);
+    expect(isMiningNightLocked({ enabled: true, now: at(6, 30, 30) })).toBe(false);
   });
 });
 
@@ -59,7 +60,8 @@ describe("miningNightLockNightKey", () => {
   it("uses the evening date across midnight", () => {
     expect(miningNightLockNightKey(at(21, 0))).toBe("2026-08-29");
     expect(miningNightLockNightKey(at(2, 0, 30))).toBe("2026-08-29");
-    expect(miningNightLockNightKey(at(5, 0, 30))).toBe("2026-08-30");
+    expect(miningNightLockNightKey(at(6, 29, 30))).toBe("2026-08-29");
+    expect(miningNightLockNightKey(at(6, 30, 30))).toBe("2026-08-30");
   });
 });
 

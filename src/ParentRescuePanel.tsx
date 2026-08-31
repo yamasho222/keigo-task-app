@@ -251,7 +251,7 @@ export function ParentRescuePanel({
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 900, color: theme.text.primary }}>
-              夜の遊びロック（21時〜朝5時）
+              夜の遊びロック（21時〜朝6:30）
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginTop: 4, lineHeight: 1.4 }}>
               {miningNightLockEnabled

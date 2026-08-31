@@ -2,10 +2,14 @@ import { parseDateKey } from "./japaneseCalendar";
 import { addTickets } from "./miningProgress";
 import type { MiningState } from "./miningTypes";
 
-/** 早ね宣言の締切（21:00 まで） */
-export const BEDTIME_DEADLINE_MINUTES = 21 * 60;
-/** 翌朝チケット付与開始時刻 */
-export const BEDTIME_CLAIM_HOUR = 5;
+/** 夜の遊びロック開始（21:00）。早ねボタンの締切とは別 */
+export const NIGHT_PLAY_LOCK_START_MINUTES = 21 * 60;
+/** 早ね宣言の締切（21:30 まで） */
+export const BEDTIME_DEADLINE_MINUTES = 21 * 60 + 30;
+/** 翌朝チケット付与・遊びロック解除 */
+export const BEDTIME_CLAIM_HOUR = 6;
+export const BEDTIME_CLAIM_MINUTE = 30;
+export const BEDTIME_CLAIM_MINUTES = BEDTIME_CLAIM_HOUR * 60 + BEDTIME_CLAIM_MINUTE;
 
 function localDateKey(d: Date): string {
   const y = d.getFullYear();
@@ -90,7 +94,7 @@ export function revokeBedtimeDeclaration(
 
 /**
  * 夜パネルに使う nightDate。
- * 今日の宣言／宣言待ちを優先し、日付またぎでまだ 5:00 前の未付与があれば昨夜を返す。
+ * 今日の宣言／宣言待ちを優先し、日付またぎでまだ 6:30 前の未付与があれば昨夜を返す。
  */
 export function getBedtimePanelNightDate(opts: {
   now?: Date;
@@ -113,11 +117,11 @@ export function getBedtimePanelNightDate(opts: {
   return today;
 }
 
-/** 付与可能か（翌日 5:00 以降） */
+/** 付与可能か（翌日 6:30 以降） */
 export function isBedtimeTicketClaimable(nightDate: string, now: Date): boolean {
   const claimDay = addCalendarDays(nightDate, 1);
   const claimAt = parseDateKey(claimDay);
-  claimAt.setHours(BEDTIME_CLAIM_HOUR, 0, 0, 0);
+  claimAt.setHours(BEDTIME_CLAIM_HOUR, BEDTIME_CLAIM_MINUTE, 0, 0);
   return now.getTime() >= claimAt.getTime();
 }
 
