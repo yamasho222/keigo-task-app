@@ -66,6 +66,80 @@ export interface PendingRewardsContext {
   rewardTickets?: RewardTicketInventory;
   /** けいご専用の1回限りガチャ */
   compensationAvailable?: boolean;
+  /** 親はんこ履歴。pending未書き込みの日付またぎ日次ごほうびを拾う */
+  sessionHistory?: Record<string, Partial<Record<SessionId, boolean>>>;
+  sessionSickSkip?: Record<string, Partial<Record<SessionId, boolean>>>;
+  catchUpDateKeys?: Record<string, unknown>;
+}
+
+export type PersistableTreat = {
+  mode: string;
+  session?: SessionId;
+  claimDateKey?: string;
+  deadlineRewardFloor?: SpecialRewardFloor;
+  weeklyMilestoneStreak?: number;
+  threeDayMilestoneStreak?: number;
+  fifteenDayMilestoneStreak?: number;
+  thirtyDayMilestoneStreak?: number;
+  oneOffSpecialClaimKey?: string;
+  rewardFloor?: SpecialRewardFloor;
+};
+
+export interface PendingTreatMaps {
+  dailyTreatPending: Record<string, boolean>;
+  fullDayBonusTreatPending: Record<string, boolean>;
+  deadlineTreatPending: Record<string, SpecialRewardFloor>;
+  weeklyTreatPending: Record<string, number>;
+  threeDayTreatPending: Record<string, number>;
+  fifteenDayTreatPending: Record<string, number>;
+  thirtyDayTreatPending: Record<string, number>;
+  specialMissionTreatPending: Record<string, boolean>;
+  oneOffSpecialTreatPending: Record<string, SpecialRewardFloor>;
+}
+
+/** ガチャを開けなかった権利を pending に残す（夜ロックなど） */
+export function mergeQueueIntoPendingMaps(
+  maps: PendingTreatMaps,
+  queue: PersistableTreat[],
+  fallbackDateKey: string,
+): PendingTreatMaps {
+  const next: PendingTreatMaps = {
+    dailyTreatPending: { ...maps.dailyTreatPending },
+    fullDayBonusTreatPending: { ...maps.fullDayBonusTreatPending },
+    deadlineTreatPending: { ...maps.deadlineTreatPending },
+    weeklyTreatPending: { ...maps.weeklyTreatPending },
+    threeDayTreatPending: { ...maps.threeDayTreatPending },
+    fifteenDayTreatPending: { ...maps.fifteenDayTreatPending },
+    thirtyDayTreatPending: { ...maps.thirtyDayTreatPending },
+    specialMissionTreatPending: { ...maps.specialMissionTreatPending },
+    oneOffSpecialTreatPending: { ...maps.oneOffSpecialTreatPending },
+  };
+
+  for (const treat of queue) {
+    const day = treat.claimDateKey ?? fallbackDateKey;
+    if (treat.mode === "daily" && treat.session) {
+      next.dailyTreatPending[sessionTreatKey(day, treat.session)] = true;
+    } else if (treat.mode === "fullDayBonus") {
+      next.fullDayBonusTreatPending[day] = true;
+    } else if (treat.mode === "deadline" && treat.deadlineRewardFloor) {
+      next.deadlineTreatPending[day] = treat.deadlineRewardFloor;
+    } else if (treat.mode === "weekly" && treat.weeklyMilestoneStreak !== undefined) {
+      next.weeklyTreatPending[day] = treat.weeklyMilestoneStreak;
+    } else if (treat.mode === "threeDayStreak" && treat.threeDayMilestoneStreak !== undefined) {
+      next.threeDayTreatPending[day] = treat.threeDayMilestoneStreak;
+    } else if (treat.mode === "fifteenDayStreak" && treat.fifteenDayMilestoneStreak !== undefined) {
+      next.fifteenDayTreatPending[day] = treat.fifteenDayMilestoneStreak;
+    } else if (treat.mode === "thirtyDayStreak" && treat.thirtyDayMilestoneStreak !== undefined) {
+      next.thirtyDayTreatPending[day] = treat.thirtyDayMilestoneStreak;
+    } else if (treat.mode === "specialMission") {
+      next.specialMissionTreatPending[day] = true;
+    } else if (treat.mode === "oneOffSpecial" && treat.oneOffSpecialClaimKey) {
+      const floor = treat.rewardFloor ?? treat.deadlineRewardFloor ?? "rare";
+      next.oneOffSpecialTreatPending[treat.oneOffSpecialClaimKey] = floor;
+    }
+  }
+
+  return next;
 }
 
 const SESSION_DAILY_LABELS: Record<SessionId, string> = {
@@ -162,6 +236,26 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
     });
   }
 
+  for (const [dateKey, day] of Object.entries(ctx.sessionHistory ?? {})) {
+    if (dateKey === ctx.todayKey) continue;
+    if (ctx.catchUpDateKeys && dateKey in ctx.catchUpDateKeys) continue;
+    for (const sid of SESSION_IDS) {
+      if (!day[sid]) continue;
+      if (ctx.sessionSickSkip?.[dateKey]?.[sid]) continue;
+      if (isSessionTreatClaimed(ctx.dailyTreatClaimed, dateKey, sid)) continue;
+      const seenKey = `${dateKey}:${sid}`;
+      if (dailySeen.has(seenKey)) continue;
+      dailySeen.add(seenKey);
+      items.push({
+        id: `daily:${dateKey}:${sid}`,
+        kind: "daily",
+        label: SESSION_DAILY_LABELS[sid],
+        session: sid,
+        dateKey,
+      });
+    }
+  }
+
   for (const [dateKey, floor] of Object.entries(ctx.deadlineTreatPending)) {
     if (floor === undefined || ctx.deadlineTreatClaimed[dateKey]) continue;
     items.push({
@@ -187,6 +281,7 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
     });
   }
 
+  const missionSeen = new Set<string>();
   for (const [dateKey, pending] of Object.entries(ctx.specialMissionTreatPending)) {
     if (!pending || ctx.specialMissionRewardClaimed[dateKey]) continue;
     const current = ctx.todayMission && ctx.currentTaskDay === dateKey ? ctx.todayMission : null;
@@ -196,10 +291,22 @@ export function getPendingRewardItems(ctx: PendingRewardsContext): PendingReward
       : hist
         ? `${hist.emoji} ${hist.title}`
         : "ミッション";
+    missionSeen.add(dateKey);
     items.push({
       id: `specialMission:${dateKey}`,
       kind: "specialMission",
       label: `${title} のごほうび`,
+      dateKey,
+    });
+  }
+  for (const [dateKey, hist] of Object.entries(ctx.missionHistory ?? {})) {
+    if (ctx.specialMissionRewardClaimed[dateKey]) continue;
+    if (missionSeen.has(dateKey)) continue;
+    missionSeen.add(dateKey);
+    items.push({
+      id: `specialMission:${dateKey}`,
+      kind: "specialMission",
+      label: `${hist.emoji} ${hist.title} のごほうび`,
       dateKey,
     });
   }

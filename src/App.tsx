@@ -131,6 +131,7 @@ import {
 } from "./sharedTasks";
 import {
   getPendingRewardItems,
+  mergeQueueIntoPendingMaps,
   pendingRewardCount,
   type PendingRewardItem,
 } from "./pendingRewards";
@@ -538,40 +539,45 @@ function buildTreatQueue(
     thirtyDayMilestone?: boolean;
     thirtyDayMilestoneStreak?: number;
     missionTitle?: string;
+    dateKey?: string;
   },
 ): PendingTreat[] {
+  const dateKey = opts.dateKey;
+  const tag = (treat: PendingTreat): PendingTreat => (
+    dateKey ? { ...treat, claimDateKey: dateKey } : treat
+  );
   const queue: PendingTreat[] = [];
   if (opts.needsDaily && opts.dailySession) {
-    queue.push({ mode: "daily", session: opts.dailySession });
+    queue.push(tag({ mode: "daily", session: opts.dailySession }));
   }
   if (opts.specialMissionEligible) {
-    queue.push({ mode: "specialMission", missionTitle: opts.missionTitle });
+    queue.push(tag({ mode: "specialMission", missionTitle: opts.missionTitle }));
   }
-  if (opts.fullDayBonusEligible) queue.push({ mode: "fullDayBonus" });
+  if (opts.fullDayBonusEligible) queue.push(tag({ mode: "fullDayBonus" }));
   if (opts.deadlineRewardFloor) {
-    queue.push({
+    queue.push(tag({
       mode: "deadline",
       rewardFloor: opts.deadlineRewardFloor,
       deadlineRewardFloor: opts.deadlineRewardFloor,
-    });
+    }));
   }
   if (opts.threeDayMilestone && opts.threeDayMilestoneStreak) {
-    queue.push({ mode: "threeDayStreak", threeDayMilestoneStreak: opts.threeDayMilestoneStreak });
+    queue.push(tag({ mode: "threeDayStreak", threeDayMilestoneStreak: opts.threeDayMilestoneStreak }));
   }
   if (opts.weeklyMilestone && opts.weeklyMilestoneStreak) {
-    queue.push({ mode: "weekly", weeklyMilestoneStreak: opts.weeklyMilestoneStreak });
+    queue.push(tag({ mode: "weekly", weeklyMilestoneStreak: opts.weeklyMilestoneStreak }));
   }
   if (opts.fifteenDayMilestone && opts.fifteenDayMilestoneStreak) {
-    queue.push({
+    queue.push(tag({
       mode: "fifteenDayStreak",
       fifteenDayMilestoneStreak: opts.fifteenDayMilestoneStreak,
       streakPick: "lrGuaranteed",
-    });
+    }));
   }
   if (opts.thirtyDayMilestone && opts.thirtyDayMilestoneStreak) {
     const streak = opts.thirtyDayMilestoneStreak;
-    queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "lrGuaranteed" });
-    queue.push({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "urPlusUncollected" });
+    queue.push(tag({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "lrGuaranteed" }));
+    queue.push(tag({ mode: "thirtyDayStreak", thirtyDayMilestoneStreak: streak, streakPick: "urPlusUncollected" }));
   }
   return queue;
 }
@@ -2469,7 +2475,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         const treatSession = closing.session;
         setDailyTreatPending((p) => ({
           ...p,
-          [sessionTreatKey(todayKey(), treatSession)]: true,
+          [sessionTreatKey(closing.claimDateKey ?? todayKey(), treatSession)]: true,
         }));
       }
       if (closing?.mode === "deadline" && closing.deadlineRewardFloor) {
@@ -2613,9 +2619,36 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     return treat;
   };
 
+  const persistUnopenedTreats = (queue: PendingTreat[], dateKey: string) => {
+    if (queue.length === 0) return;
+    const merged = mergeQueueIntoPendingMaps({
+      dailyTreatPending,
+      fullDayBonusTreatPending,
+      deadlineTreatPending,
+      weeklyTreatPending,
+      threeDayTreatPending,
+      fifteenDayTreatPending,
+      thirtyDayTreatPending,
+      specialMissionTreatPending,
+      oneOffSpecialTreatPending,
+    }, queue, dateKey);
+    setDailyTreatPending(merged.dailyTreatPending);
+    setFullDayBonusTreatPending(merged.fullDayBonusTreatPending);
+    setDeadlineTreatPending(merged.deadlineTreatPending);
+    setWeeklyTreatPending(merged.weeklyTreatPending);
+    setThreeDayTreatPending(merged.threeDayTreatPending);
+    setFifteenDayTreatPending(merged.fifteenDayTreatPending);
+    setThirtyDayTreatPending(merged.thirtyDayTreatPending);
+    setSpecialMissionTreatPending(merged.specialMissionTreatPending);
+    setOneOffSpecialTreatPending(merged.oneOffSpecialTreatPending);
+  };
+
   const openTreatQueue = (queue: PendingTreat[]) => {
     if (queue.length === 0) return;
-    if (blockNightPlay()) return;
+    if (blockNightPlay()) {
+      persistUnopenedTreats(queue, todayKey());
+      return;
+    }
     const tagged = queue.map((t) => applyPityToTreat(applyDevPreviewOnly(t)));
     const [first, ...rest] = tagged;
     setPendingTreat(first);
@@ -3646,6 +3679,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     triggerStamp();
     grantBuddyXpFromStamp();
     if (pending) grantMiningTicketBonus(`oneoff:${pending.claimKey}`);
+    setOneOffSpecialTreatPending((p) => (
+      pending.claimKey in p ? p : { ...p, [pending.claimKey]: pending.rewardFloor }
+    ));
     setTimeout(() => {
       setOneOffSpecialAwaitingParent(null);
       setOneOffSpecialStampApproved(false);
@@ -3725,6 +3761,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     currentTaskDay,
     missionRewardClaimedToday,
     missionHistory,
+    sessionHistory: history,
+    sessionSickSkip,
+    catchUpDateKeys: catchUpDays,
     oneOffLabels: oneOffPendingLabels,
     rewardTickets,
     compensationAvailable: isBrainrodCompensationAvailable({
@@ -3958,6 +3997,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
         ...h,
         [currentTodayKey]: { title: todayMission.title, emoji: todayMission.emoji },
       }));
+      setSpecialMissionTreatPending((p) => (p[currentTodayKey] ? p : { ...p, [currentTodayKey]: true }));
       setTimeout(() => {
         if (!specialMissionRewardClaimedRef.current[taskDayKey()]) {
           openMissionReward();
@@ -4105,7 +4145,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       fifteenDayMilestoneStreak: fifteenDayMilestone ? fullDayStreak : undefined,
       thirtyDayMilestone,
       thirtyDayMilestoneStreak: thirtyDayMilestone ? fullDayStreak : undefined,
+      dateKey: today,
     });
+    persistUnopenedTreats(treatQueueToOpen, today);
 
     setTimeout(() => {
       if (treatQueueToOpen.length > 0) {
@@ -4159,7 +4201,9 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       fifteenDayMilestoneStreak: milestone.fifteenDayMilestoneStreak,
       thirtyDayMilestone: milestone.thirtyDayMilestone,
       thirtyDayMilestoneStreak: milestone.thirtyDayMilestoneStreak,
+      dateKey,
     });
+    persistUnopenedTreats(treatQueueToOpen, dateKey);
 
     setTimeout(() => {
       if (treatQueueToOpen.length > 0) openTreatQueue(treatQueueToOpen);
