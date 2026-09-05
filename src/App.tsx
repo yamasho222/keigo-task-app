@@ -3796,7 +3796,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
   const tryOpenRecord = () => {
     if (isWorkTimerLocked) return;
-    if (blockNightPlay()) return;
     navigateToScreen("record");
   };
 
@@ -4367,7 +4366,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       const now = new Date();
       if (!isMiningNightHours(now)) return;
 
-      if (screenRef.current === "mining" || screenRef.current === "record") {
+      if (screenRef.current === "mining") {
         goHomeRef.current();
         setShowMiningNightEnd(true);
         miningNightEndShownRef.current = miningNightLockNightKey(now);
