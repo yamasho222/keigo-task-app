@@ -84,12 +84,12 @@ const TIER_JACKPOT: Record<GearTier, number> = {
 /** 掘り弱体化・直ドロップ（1箇所に集約） */
 export const DIG_TWO_RATE = 0.18;
 export const SWORD_INGOT_DIRECT_RATE = 0.06;
-export const SWORD_DIAMOND_DIRECT_RATE = 0.05;
-/** ネザー1回あたり。上限も同じにして装備で早くならない（16回に1個・約4日） */
-export const DEBRIS_BASE_RATE = 1 / 16;
-export const DEBRIS_RATE_CAP = 1 / 16;
-/** 砦1回あたり（60回に1個・約15日） */
-export const BASTION_TEMPLATE_RATE = 1 / 60;
+export const SWORD_DIAMOND_DIRECT_RATE = 0.08;
+/** ネザー1回あたり。なし約12回、ツルハシで上限8回に1個 */
+export const DEBRIS_BASE_RATE = 1 / 12;
+export const DEBRIS_RATE_CAP = 1 / 8;
+/** 砦1回あたり（25回に1個） */
+export const BASTION_TEMPLATE_RATE = 1 / 25;
 
 export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   wood: "log",

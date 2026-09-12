@@ -50,7 +50,7 @@ describe("bastion chest loot", () => {
   });
 
   it("can drop the smithing template", () => {
-    expect(BASTION_TEMPLATE_RATE).toBeCloseTo(1 / 60);
+    expect(BASTION_TEMPLATE_RATE).toBeCloseTo(1 / 25);
     const result = resolveDig({
       state: bastionReady(),
       gacha: "bastion",
@@ -110,14 +110,13 @@ describe("smithing recipes", () => {
 });
 
 describe("named rare rates", () => {
-  it("caps debris so geared nether is still 16 digs per drop", () => {
-    expect(DEBRIS_BASE_RATE).toBeCloseTo(1 / 16);
-    expect(DEBRIS_RATE_CAP).toBeCloseTo(1 / 16);
-    expect(DEBRIS_RATE_CAP).toBe(DEBRIS_BASE_RATE);
+  it("lets pickaxe raise debris from 12 digs to 8 digs per drop", () => {
+    expect(DEBRIS_BASE_RATE).toBeCloseTo(1 / 12);
+    expect(DEBRIS_RATE_CAP).toBeCloseTo(1 / 8);
   });
 
-  it("halves sword direct drops", () => {
-    expect(SWORD_DIAMOND_DIRECT_RATE).toBe(0.05);
+  it("sets sword diamond direct to 8%", () => {
+    expect(SWORD_DIAMOND_DIRECT_RATE).toBe(0.08);
     expect(SWORD_INGOT_DIRECT_RATE).toBe(0.06);
   });
 });
