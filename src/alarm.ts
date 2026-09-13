@@ -483,7 +483,7 @@ export async function playMiningSfx(kind: MiningSfx): Promise<boolean> {
 export function playGachaAmbient(gacha: GachaIdLike): void {
   void playMiningSfx(
     gacha === "wood" ? "ambient_wood"
-      : gacha === "nether" || gacha === "bastion" ? "ambient_nether"
+      : gacha === "nether" || gacha === "bastion" || gacha === "warped_forest" || gacha === "fortress" ? "ambient_nether"
         : "ambient_cave",
   );
 }
@@ -501,4 +501,6 @@ type GachaIdLike =
   | "diamond"
   | "lapis_cave"
   | "nether"
-  | "bastion";
+  | "bastion"
+  | "warped_forest"
+  | "fortress";

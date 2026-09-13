@@ -46,6 +46,7 @@ import {
   type MiningState,
   type ToolKind,
 } from "./miningTypes";
+import { isEndChapterDevEnabled } from "./miningCombat";
 
 const TIER_PLUS1: Record<GearTier, number> = {
   wood: 0.1,
@@ -105,6 +106,8 @@ export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   lapis_cave: "lapis",
   nether: "nether_quartz",
   bastion: "netherrack",
+  warped_forest: "ender_pearl",
+  fortress: "blaze_rod",
 };
 
 export function specialtyForGacha(gacha: GachaId): MiningSpecialty {
@@ -124,6 +127,7 @@ export function bestOwnedTool(
 }
 
 export function recommendToolKind(gacha: GachaId): ToolKind {
+  if (gacha === "warped_forest" || gacha === "fortress") return "sword";
   if (isAxeGacha(gacha)) return "axe";
   return "pickaxe";
 }
@@ -239,6 +243,14 @@ export function refreshUnlocks(state: MiningState): MiningState {
   if (diamondToolsComplete(state)) {
     unlocked.add("nether");
     unlocked.add("bastion");
+    if (isEndChapterDevEnabled()) {
+      unlocked.add("warped_forest");
+      unlocked.add("fortress");
+    }
+  }
+  if (!isEndChapterDevEnabled()) {
+    unlocked.delete("warped_forest");
+    unlocked.delete("fortress");
   }
   return { ...state, unlockedGachas: [...unlocked] };
 }
@@ -270,6 +282,8 @@ export function gachaUnlockRequirementIds(gacha: GachaId): CraftedGearId[] {
       return IRON_UNLOCK_REQ;
     case "nether":
     case "bastion":
+    case "warped_forest":
+    case "fortress":
       return NETHER_UNLOCK_REQ;
     default:
       return [];
@@ -527,6 +541,7 @@ export function strippedMiningStateForOdds(state: MiningState): MiningState {
       chest: null,
       leggings: null,
       boots: null,
+      held: null,
     },
     enchants: {},
   };
@@ -793,6 +808,11 @@ export function equipTool(state: MiningState, toolId: CraftedGearId | null): Min
   return { ...state, equipped: { ...state.equipped, tool: toolId } };
 }
 
+export function equipHeld(state: MiningState, material: MaterialId | null): MiningState {
+  if (material && getMaterialCount(state, material) < 1) return state;
+  return { ...state, equipped: { ...state.equipped, held: material } };
+}
+
 export function equipArmor(
   state: MiningState,
   slot: "helmet" | "chest" | "leggings" | "boots",
@@ -831,6 +851,8 @@ const GREAT_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
   "iron_ingot",
   "gold_ingot",
   "netherite_upgrade",
+  "ender_pearl",
+  "blaze_rod",
 ]);
 
 const GOOD_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([

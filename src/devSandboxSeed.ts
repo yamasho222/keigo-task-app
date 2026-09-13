@@ -41,6 +41,11 @@ const DEV_MATERIALS: Record<MaterialId, number> = {
   book: DEV_MATERIAL_AMOUNT,
   netherrack: DEV_MATERIAL_AMOUNT,
   netherite_upgrade: DEV_MATERIAL_AMOUNT,
+  ender_pearl: DEV_MATERIAL_AMOUNT,
+  blaze_rod: DEV_MATERIAL_AMOUNT,
+  blaze_powder: DEV_MATERIAL_AMOUNT,
+  warped_wart: DEV_MATERIAL_AMOUNT,
+  ender_eye: DEV_MATERIAL_AMOUNT,
 };
 
 const DEV_CRAFTED: CraftedGearId[] = [
@@ -209,11 +214,14 @@ export function buildDevSandboxSeed({
           "diamond",
           "nether",
           "bastion",
+          "warped_forest",
+          "fortress",
         ] as const),
       ],
       partyIds,
       equipped: {
         ...mining.equipped,
+        held: mining.equipped.held ?? null,
         tool: mining.equipped.tool ?? "pickaxe_netherite",
         helmet: mining.equipped.helmet ?? "helmet_netherite",
         chest: mining.equipped.chest ?? "chest_netherite",

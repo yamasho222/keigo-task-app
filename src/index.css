@@ -3812,3 +3812,70 @@ button {
   flex: 1;
   color: #37474F;
 }
+
+.mining-combat-stage {
+  margin-top: 8px;
+}
+.mining-combat-mobs {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.mining-combat-mob {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.7s ease, opacity 0.7s ease;
+}
+.mining-combat-mob.is-flash .mining-combat-sprite {
+  filter: brightness(1.8);
+}
+.mining-combat-mob.is-fallen {
+  transform: rotate(90deg) translateY(12px);
+  opacity: 0.35;
+  transform-origin: 50% 80%;
+}
+.mining-combat-sprite {
+  width: 72px;
+  height: 96px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.mining-combat-hearts {
+  margin-top: 4px;
+}
+.mining-combat-heart-row {
+  display: flex;
+  gap: 1px;
+  justify-content: center;
+}
+.mining-combat-heart {
+  width: 10px;
+  height: 10px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.mining-combat-heart.is-empty {
+  display: inline-block;
+  background: #222;
+  opacity: 0.25;
+  border-radius: 1px;
+}
+.mining-combat-hp-num {
+  font-size: 10px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.mining-combat-need-sword {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ef6c00;
+  margin: 8px 0;
+}
+.mining-rock-tile.is-combat-swing .mining-rock-tile-img {
+  transform: rotate(-18deg);
+  transition: transform 0.12s ease;
+}

@@ -13,6 +13,7 @@ import {
   bestOwnedTool,
   canAffordRecipe,
   equipArmor,
+  equipHeld,
   equipTool,
   exchangeCost,
   exchangePointsForMaterial,
@@ -48,6 +49,17 @@ import {
   type MiningRecipe,
   type OddsSegment,
 } from "./miningProgress";
+import {
+  WARPED_WART_TO_POINTS,
+  exchangeWarpedWartForPoints,
+  isCombatGacha,
+  isEndChapterDevEnabled,
+  resolveCombat,
+  resolveCombatHelmetHint,
+  shuffleCombatTiers,
+  type CombatTier,
+} from "./miningCombat";
+import { MiningCombatPanel } from "./MiningCombatPanel";
 import {
   patchFromResult,
   rebaseMiningWrite,
@@ -668,6 +680,8 @@ const BLOCK_TONE: Record<GachaId, { top: string; front: string; side: string; ed
   lapis_cave: { top: "#4a6ad4", front: "#2a48a8", side: "#1a3070", edge: "#0a1840" },
   nether: { top: "#8b3a32", front: "#6b241e", side: "#4a1512", edge: "#220a08" },
   bastion: { top: "#6a5344", front: "#4a372c", side: "#2e221c", edge: "#140e0c" },
+  warped_forest: { top: "#2a6a6a", front: "#1a4a4a", side: "#0e3333", edge: "#061818" },
+  fortress: { top: "#6b241e", front: "#4a1512", side: "#2a0c0a", edge: "#140606" },
 };
 
 /**
@@ -1073,6 +1087,10 @@ export function MiningScreen({
   const [highlightGacha, setHighlightGacha] = useState<GachaId | null>(null);
   const [highlightRocks, setHighlightRocks] = useState(false);
   const [rockLuckyIndex, setRockLuckyIndex] = useState(() => Math.floor(Math.random() * 3));
+  const [combatLayout, setCombatLayout] = useState<CombatTier[]>(() => shuffleCombatTiers());
+  const [combatBusy, setCombatBusy] = useState(false);
+  const [combatFallen, setCombatFallen] = useState<number[]>([]);
+  const [combatFlash, setCombatFlash] = useState<number[]>([]);
   const [digDestStep, setDigDestStep] = useState<DigDestStep>("place");
   const [mineMoreOpen, setMineMoreOpen] = useState(false);
   const [bagNoticeOpen, setBagNoticeOpen] = useState(false);
@@ -1327,6 +1345,8 @@ export function MiningScreen({
     const best = bestOwnedTool(stateForDig, kind);
     if (best) stateForDig = equipTool(stateForDig, best);
 
+    if (isCombatGacha(gacha)) return;
+
     if (isBucketGacha(gacha)) {
       if (!hasBucket(stateForDig)) {
         onChange((prev) => rebaseMiningWrite(prev, base, stateForDig));
@@ -1361,7 +1381,15 @@ export function MiningScreen({
     beginDigFx(base, result);
   };
 
-  const rollLuckySpots = () => {
+  const rollLuckySpots = (gacha: GachaId = selectedGacha) => {
+    if (isCombatGacha(gacha)) {
+      const layout = shuffleCombatTiers();
+      setCombatLayout(layout);
+      setRockHint(resolveCombatHelmetHint(mining, layout));
+      setCombatFallen([]);
+      setCombatFlash([]);
+      return;
+    }
     const luckyIdx = Math.floor(Math.random() * 3);
     setRockLuckyIndex(luckyIdx);
     setRockHint(resolveHelmetRockHint(mining, luckyIdx));
@@ -1377,8 +1405,13 @@ export function MiningScreen({
     const kind = recommendToolKind(gacha);
     setSelectedGacha(gacha);
     setToolKind(kind);
-    rollLuckySpots();
+    rollLuckySpots(gacha);
     setDigDestStep("rock");
+    if (isCombatGacha(gacha)) {
+      const sword = bestOwnedTool(mining, "sword");
+      if (sword) onChange((prev) => equipTool(prev, sword));
+      else showToast("剣を作ってからたたこう");
+    }
     if (isBucketGacha(gacha) && !hasBucket(mining)) {
       showToast("鉄のバケツを作ってからね");
     }
@@ -1438,6 +1471,8 @@ export function MiningScreen({
       { id: "lapis_cave", label: "ラピスどうくつ ひらいた！" },
       { id: "nether", label: "ネザー ひらいた！" },
       { id: "bastion", label: "砦の遺跡 ひらいた！" },
+      { id: "warped_forest", label: "歪んだ森 ひらいた！" },
+      { id: "fortress", label: "ネザー要塞 ひらいた！" },
     ];
     let delay = 500;
     for (const msg of unlockMessages) {
@@ -1687,6 +1722,11 @@ export function MiningScreen({
     setRockLuckyIndex(luckyIdx);
     setRockHint(resolveHelmetRockHint(miningRef.current, luckyIdx));
     setHighlightRocks(false);
+    if (isCombatGacha(selectedGacha)) {
+      const layout = shuffleCombatTiers();
+      setCombatLayout(layout);
+      setRockHint(resolveCombatHelmetHint(miningRef.current, layout));
+    }
   }, [selectedGacha]);
 
   useEffect(() => {
@@ -1746,11 +1786,54 @@ export function MiningScreen({
       showToast("チケットが足りないよ");
       return;
     }
+    if (isCombatGacha(selectedGacha)) {
+      pickCombatInSheet(rockIndex);
+      return;
+    }
     navigator.vibrate?.(12);
     const kind = recommendToolKind(selectedGacha);
     setToolKind(kind);
     setOverlay(null);
     performDig(selectedGacha, kind, rockIndex === rockLuckyIndex);
+  };
+
+  const pickCombatInSheet = (cardIndex: number) => {
+    if (combatBusy || digBusy) return;
+    if (!isCombatGacha(selectedGacha)) return;
+    if (mining.tickets < 1) {
+      showToast("チケットが足りないよ");
+      return;
+    }
+    const tier = combatLayout[cardIndex] ?? "normal";
+    const base = mining;
+    const withSword = (() => {
+      const sword = bestOwnedTool(base, "sword");
+      return sword ? equipTool({ ...base, lastSelectedGacha: selectedGacha }, sword) : { ...base, lastSelectedGacha: selectedGacha };
+    })();
+    const result = resolveCombat({ state: withSword, gacha: selectedGacha, tier });
+    if ("error" in result) {
+      showToast(result.error);
+      return;
+    }
+    navigator.vibrate?.(12);
+    void unlockAudio();
+    void playMiningSfx("crack");
+    setCombatBusy(true);
+    setCombatFlash(result.targets);
+    onChange((prev) => rebaseMiningWrite(prev, base, result.state));
+    window.setTimeout(() => {
+      setCombatFallen(result.killed);
+      if (result.killed.length) void playMiningSfx("break");
+    }, Math.max(220, result.swings * 180));
+    window.setTimeout(() => {
+      setLastDig(result);
+      setCombatBusy(false);
+      setCombatFlash([]);
+      rollLuckySpots(selectedGacha);
+      const names = result.drops.map((d) => `${MATERIAL_META[d.material].label}${d.amount > 1 ? `×${d.amount}` : ""}`);
+      if (names.length) showToast(names.join(" / "), result.killed.length ? "progress" : "normal");
+      void playMiningSfx("drop");
+    }, 900 + result.killed.length * 700);
   };
 
   /** party / equip / enchant は全画面置換。digDestination はボトムシートなので本体UIを残す */
@@ -2042,6 +2125,32 @@ export function MiningScreen({
                 );
               })}
             </div>
+          </div>
+
+          <div style={card}>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>持ち物</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: theme.text.secondary, marginBottom: 8 }}>
+              水入りバケツを入れると、エンドマンに＋2
+            </div>
+            <button
+              type="button"
+              className={`mining-equip-tool-row${mining.equipped.held === "water" ? " is-equipped" : ""}`}
+              disabled={have("water") < 1}
+              style={{ opacity: have("water") < 1 ? 0.4 : 1 }}
+              onClick={() => {
+                const next = mining.equipped.held === "water" ? null : "water";
+                onChange((prev) => equipHeld(prev, next));
+                showToast(next ? "水を持ち物にした！" : "持ち物をはずした");
+              }}
+            >
+              <span className="mining-equip-tool-icon" aria-hidden>
+                <MiningItemIcon material="water" size={32} alt="" />
+              </span>
+              <span className="mining-equip-tool-body">
+                <span className="mining-equip-tool-effect">水入りバケツ（所持 {have("water")}）</span>
+                {mining.equipped.held === "water" && <span className="mining-equip-tool-badge">そうび中</span>}
+              </span>
+            </button>
           </div>
 
           <div style={card}>
@@ -2824,6 +2933,22 @@ export function MiningScreen({
                     }
                   }}
                 />
+                {isEndChapterDevEnabled() && (
+                  <ExchangeShopRow
+                    give={{ material: "warped_wart", label: "ウォート", amount: 1 }}
+                    get={{ src: EMERALD_IMAGE, label: "エメラルド", amount: WARPED_WART_TO_POINTS }}
+                    owned={`所持 ウォート ${have("warped_wart")}`}
+                    disabled={have("warped_wart") < 1}
+                    onClick={() => {
+                      const r = exchangeWarpedWartForPoints(mining);
+                      if (r.error) showToast(r.error);
+                      else {
+                        onChange(patchFromResult((prev) => exchangeWarpedWartForPoints(prev)));
+                        showToast(`ウォートをエメラルド${WARPED_WART_TO_POINTS}にかえした！`);
+                      }
+                    }}
+                  />
+                )}
               </div>
               <div>
                 <div className="mining-exchange-group-label">エメラルドで買う</div>
@@ -3023,7 +3148,7 @@ export function MiningScreen({
                   <div className="mining-dig-dest-hint">おすすめ: せきたん → かまど → てつ</div>
                 )}
                 <div className="mining-biome-grid">
-                  {GACHA_ORDER.map((gid) => {
+                  {GACHA_ORDER.filter((gid) => !isCombatGacha(gid) || isEndChapterDevEnabled()).map((gid) => {
                     const unlocked = mining.unlockedGachas.includes(gid);
                     const meta = GACHA_META[gid];
                     const isLucky = unlocked && lucky === gid;
@@ -3101,7 +3226,9 @@ export function MiningScreen({
                           ? "ようがんでくむ"
                           : isChestGacha(selectedGacha)
                             ? `${selectedMeta.label}のチェスト`
-                            : `${selectedMeta.label}でほる`}
+                            : isCombatGacha(selectedGacha)
+                              ? `${selectedMeta.label}でたたかう`
+                              : `${selectedMeta.label}でほる`}
                     </span>
                   </div>
                 </div>
@@ -3114,7 +3241,18 @@ export function MiningScreen({
                   ← 場所を選びなおす
                 </button>
 
-                {isBucketGacha(selectedGacha) && !hasBucket(mining) ? (
+                {isCombatGacha(selectedGacha) ? (
+                  <MiningCombatPanel
+                    mining={mining}
+                    gacha={selectedGacha}
+                    hint={rockHint}
+                    busy={combatBusy}
+                    fallen={combatFallen}
+                    flash={combatFlash}
+                    tickets={mining.tickets}
+                    onPick={pickRockInSheet}
+                  />
+                ) : isBucketGacha(selectedGacha) && !hasBucket(mining) ? (
                   <div style={{ marginTop: 12, fontSize: 14, fontWeight: 800, color: theme.category.orange }}>
                     鉄のバケツを作ってから入ろう
                     <button

@@ -868,6 +868,8 @@ export const GACHA_SURFACE: Record<GachaId, string> = {
   lapis_cave: "#E8EAF6",
   nether: "#FBE9E7",
   bastion: "#EFEBE9",
+  warped_forest: "#E0F2F1",
+  fortress: "#FFEBEE",
 };
 
 /** 子ども向け補正の強さ */

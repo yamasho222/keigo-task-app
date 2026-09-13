@@ -26,7 +26,12 @@ export type MaterialId =
   | "lapis"
   | "book"
   | "netherrack"
-  | "netherite_upgrade";
+  | "netherite_upgrade"
+  | "ender_pearl"
+  | "blaze_rod"
+  | "blaze_powder"
+  | "warped_wart"
+  | "ender_eye";
 
 /** パーティ枠＝ベッド数（1〜3） */
 export const MAX_BEDS = 3;
@@ -52,7 +57,9 @@ export type GachaId =
   | "diamond"
   | "lapis_cave"
   | "nether"
-  | "bastion";
+  | "bastion"
+  | "warped_forest"
+  | "fortress";
 
 export type GearSlot = "tool" | "helmet" | "chest" | "leggings" | "boots";
 
@@ -116,7 +123,11 @@ export interface MiningState {
     chest: CraftedGearId | null;
     leggings: CraftedGearId | null;
     boots: CraftedGearId | null;
+    /** 水バケツ・エンダーアイなど */
+    held: MaterialId | null;
   };
+  /** 歪んだ森／要塞の残りHP（倒すまで引き継ぐ） */
+  combatEncounters?: Partial<Record<"warped_forest" | "fortress", { mobs: { hp: number }[] }>>;
   /** チケット付与済みフェーズ（sessionTreatKey） */
   ticketStampedSessions: Record<string, boolean>;
   /** 全日クリアでチケット付与済みの日付 */
@@ -177,6 +188,11 @@ export const MATERIAL_META: Record<
     emoji: "📜",
     image: "/mining/Netherite_Upgrade.png",
   },
+  ender_pearl: { label: "エンダーパール", emoji: "🟢", image: "/mining/Ender_Pearl.png" },
+  blaze_rod: { label: "ブレイズロッド", emoji: "🔶", image: "/mining/Blaze_Rod.webp" },
+  blaze_powder: { label: "ブレイズパウダー", emoji: "✨", image: "/mining/Blaze_Powder.webp" },
+  warped_wart: { label: "歪んだウォートブロック", emoji: "🟦", image: "/mining/Warped_Wart.png" },
+  ender_eye: { label: "エンダーアイ", emoji: "👁", image: "/mining/Eye_of_Ender.png" },
 };
 
 /** 装備・設備の画像（あれば表示） */
@@ -244,10 +260,17 @@ export const GACHA_ORDER: GachaId[] = [
   "lapis_cave",
   "nether",
   "bastion",
+  "warped_forest",
+  "fortress",
 ];
 
 /** こううん日の抽選から外す（バケツ専用など） */
-export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set(["lava_cave", "river"]);
+export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set([
+  "lava_cave",
+  "river",
+  "warped_forest",
+  "fortress",
+]);
 
 export function isBucketGacha(gacha: GachaId): gacha is "river" | "lava_cave" {
   return gacha === "river" || gacha === "lava_cave";
@@ -278,6 +301,8 @@ export const GACHA_META: Record<
   lapis_cave: { label: "ラピスどうくつ", emoji: "🔵", specialty: "diamond", badge: "ラピスだけ" },
   nether: { label: "ネザー", emoji: "🔥", specialty: "netherite" },
   bastion: { label: "砦の遺跡", emoji: "🏰", specialty: "netherite", badge: "鍛冶型" },
+  warped_forest: { label: "歪んだ森", emoji: "🟣", specialty: "netherite", badge: "エンドマン" },
+  fortress: { label: "ネザー要塞", emoji: "🔥", specialty: "netherite", badge: "ブレイズ" },
 };
 
 /**
@@ -298,6 +323,8 @@ export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
   lapis_cave: "/mining/Lapis_Lazuli_Ore.webp",
   nether: "/mining/Netherrack.webp",
   bastion: "/mining/Bastion.webp",
+  warped_forest: "/mining/Warped_Forest.webp",
+  fortress: "/mining/Nether_Fortress.jpg",
 };
 
 export const ENCHANT_META: Record<
@@ -401,6 +428,7 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
     if (isAxeGacha(gacha)) return "こうざんのときだけ効く";
     if (gacha === "nether") return "いま効く：残骸が出やすい";
     if (gacha === "bastion") return "いま効く：チェストをあけやすい";
+    if (gacha === "warped_forest" || gacha === "fortress") return "たたかうときは剣";
     if (gacha === "coal") return "いま効く：石炭+1";
     if (gacha === "lapis_cave") return "いま効く：ラピス";
     return "いま効く：たくさんほれる";
@@ -409,6 +437,8 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (gacha === "diamond") return "たまに+3／ダイヤ直";
   if (gacha === "nether") return "たまに+3（残骸はツルハシ向き）";
   if (gacha === "bastion") return "たまに+3（鍛冶型は運）";
+  if (gacha === "warped_forest") return "剣でエンドマンをたたく";
+  if (gacha === "fortress") return "剣でブレイズをたたく";
   return "たまに素材+3";
 }
 
@@ -463,6 +493,31 @@ export function specialtyBlurb(category: string): string {
   const meta = SPECIALTY_META[spec];
   return `${meta.emoji}${meta.label}（${meta.gachaHint}）`;
 }
+function isMaterialId(id: unknown): id is MaterialId {
+  return typeof id === "string" && id in MATERIAL_META;
+}
+
+function normalizeCombatEncounters(
+  raw: unknown,
+): MiningState["combatEncounters"] {
+  if (!raw || typeof raw !== "object") return {};
+  const out: NonNullable<MiningState["combatEncounters"]> = {};
+  for (const key of ["warped_forest", "fortress"] as const) {
+    const rec = (raw as Record<string, unknown>)[key];
+    if (!rec || typeof rec !== "object") continue;
+    const mobsRaw = (rec as { mobs?: unknown }).mobs;
+    if (!Array.isArray(mobsRaw)) continue;
+    const mobs = mobsRaw
+      .map((m) => {
+        const hp = Math.floor(Number((m as { hp?: unknown })?.hp));
+        return Number.isFinite(hp) ? { hp: Math.max(0, hp) } : null;
+      })
+      .filter((m): m is { hp: number } => !!m);
+    if (mobs.length) out[key] = { mobs };
+  }
+  return out;
+}
+
 export function emptyMiningState(): MiningState {
   return {
     tickets: 0,
@@ -478,7 +533,9 @@ export function emptyMiningState(): MiningState {
       chest: null,
       leggings: null,
       boots: null,
+      held: null,
     },
+    combatEncounters: {},
     ticketStampedSessions: {},
     fullDayTicketClaimed: {},
     streakTicketClaimed: {},
@@ -508,6 +565,8 @@ const ALL_GACHA_IDS: GachaId[] = [
   "lapis_cave",
   "nether",
   "bastion",
+  "warped_forest",
+  "fortress",
 ];
 
 function isGachaId(id: unknown): id is GachaId {
@@ -616,7 +675,9 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
       chest: eq.chest ?? null,
       leggings: eq.leggings ?? null,
       boots: eq.boots ?? null,
+      held: isMaterialId(eq.held) ? eq.held : null,
     },
+    combatEncounters: normalizeCombatEncounters(raw.combatEncounters),
     ticketStampedSessions: normalizeBoolRecord(raw.ticketStampedSessions),
     fullDayTicketClaimed: normalizeBoolRecord(raw.fullDayTicketClaimed),
     streakTicketClaimed:
