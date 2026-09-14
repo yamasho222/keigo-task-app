@@ -6,6 +6,8 @@ import {
   type MaterialId,
   type MiningState,
 } from "./miningTypes";
+import { refreshUnlocks } from "./miningProgress";
+import { emptyDragonFight, emptyEndQuest } from "./endChapter";
 
 /** 開発・体験用の余裕ある初期量（自分で触って試せる量） */
 const DEV_TICKETS = 200;
@@ -46,6 +48,7 @@ const DEV_MATERIALS: Record<MaterialId, number> = {
   blaze_powder: DEV_MATERIAL_AMOUNT,
   warped_wart: DEV_MATERIAL_AMOUNT,
   ender_eye: DEV_MATERIAL_AMOUNT,
+  spare_bed: 8,
 };
 
 const DEV_CRAFTED: CraftedGearId[] = [
@@ -229,5 +232,150 @@ export function buildDevSandboxSeed({
         boots: mining.equipped.boots ?? "boots_netherite",
       },
     },
+  };
+}
+
+/** 開発専用。歪んだ森ですぐ戦闘を試す（本番ビルドではメニューごと出ない） */
+export function buildWarpedForestTestSeed(input: BuildDevSandboxSeedInput): DevSandboxSeed {
+  const seed = buildDevSandboxSeed(input);
+  return {
+    ...seed,
+    mining: refreshUnlocks({
+      ...seed.mining,
+      lastSelectedGacha: "warped_forest",
+      combatEncounters: {},
+      equipped: {
+        ...seed.mining.equipped,
+        tool: "sword_netherite",
+        helmet: "helmet_netherite",
+        held: "water",
+      },
+    }),
+  };
+}
+
+function withEndDevUiReady(mining: MiningState): MiningState {
+  return {
+    ...mining,
+    miningVersionNoticeSeen: true,
+    miningRouteBranchSeen: true,
+    tickets: Math.max(mining.tickets, DEV_TICKETS),
+  };
+}
+
+/** 開発専用。棒→粉→アイのクラフトを試す */
+export function buildEndEyeCraftSeed(input: BuildDevSandboxSeedInput): DevSandboxSeed {
+  const seed = buildWarpedForestTestSeed(input);
+  return {
+    ...seed,
+    mining: refreshUnlocks(withEndDevUiReady({
+      ...seed.mining,
+      lastSelectedGacha: "fortress",
+      materials: {
+        ...seed.mining.materials,
+        ender_eye: 0,
+        blaze_powder: 0,
+        blaze_rod: Math.max(seed.mining.materials.blaze_rod ?? 0, 8),
+        ender_pearl: Math.max(seed.mining.materials.ender_pearl ?? 0, 8),
+      },
+      endQuest: emptyEndQuest(),
+      dragonFight: emptyDragonFight(),
+    })),
+  };
+}
+
+/** 開発専用。エンダーアイ探索を試す */
+export function buildEndChapterHuntSeed(input: BuildDevSandboxSeedInput): DevSandboxSeed {
+  const seed = buildWarpedForestTestSeed(input);
+  return {
+    ...seed,
+    mining: refreshUnlocks(withEndDevUiReady({
+      ...seed.mining,
+      lastSelectedGacha: "wood",
+      materials: {
+        ...seed.mining.materials,
+        ender_eye: Math.max(seed.mining.materials.ender_eye ?? 0, 4),
+        spare_bed: Math.max(seed.mining.materials.spare_bed ?? 0, 8),
+      },
+      endQuest: emptyEndQuest(),
+      dragonFight: emptyDragonFight(),
+      equipped: {
+        ...seed.mining.equipped,
+        tool: "sword_netherite",
+        held: null,
+      },
+    })),
+  };
+}
+
+/** 開発専用。発見済みポータルにアイを12こはめる */
+export function buildEndPortalFillSeed(input: BuildDevSandboxSeedInput): DevSandboxSeed {
+  const seed = buildEndChapterHuntSeed(input);
+  return {
+    ...seed,
+    mining: refreshUnlocks(withEndDevUiReady({
+      ...seed.mining,
+      lastSelectedGacha: "end_portal",
+      materials: {
+        ...seed.mining.materials,
+        ender_eye: Math.max(seed.mining.materials.ender_eye ?? 0, 16),
+      },
+      endQuest: {
+        ...emptyEndQuest(),
+        foundPortal: true,
+        eyes: 0,
+        linked: false,
+        theEndUnlocked: false,
+      },
+    })),
+  };
+}
+
+/** 開発専用。12はめ済みの接続ポータルからジ・エンドをひらく */
+export function buildEndTheEndUnlockSeed(input: BuildDevSandboxSeedInput): DevSandboxSeed {
+  const seed = buildEndPortalFillSeed(input);
+  return {
+    ...seed,
+    mining: refreshUnlocks(withEndDevUiReady({
+      ...seed.mining,
+      lastSelectedGacha: "end_portal",
+      endQuest: {
+        ...emptyEndQuest(),
+        foundPortal: true,
+        eyes: 12,
+        linked: true,
+        theEndUnlocked: false,
+      },
+    })),
+  };
+}
+
+/** 開発専用。ジ・エンドのエンドラ戦をすぐ試す */
+export function buildEndDragonTestSeed(input: BuildDevSandboxSeedInput): DevSandboxSeed {
+  const seed = buildEndTheEndUnlockSeed(input);
+  return {
+    ...seed,
+    mining: refreshUnlocks(withEndDevUiReady({
+      ...seed.mining,
+      lastSelectedGacha: "the_end",
+      materials: {
+        ...seed.mining.materials,
+        spare_bed: Math.max(seed.mining.materials.spare_bed ?? 0, 8),
+      },
+      endQuest: {
+        ...emptyEndQuest(),
+        foundPortal: true,
+        eyes: 12,
+        linked: true,
+        theEndUnlocked: true,
+      },
+      dragonFight: emptyDragonFight(),
+      specialGauge: 5,
+      specialHintSeen: false,
+      equipped: {
+        ...seed.mining.equipped,
+        tool: "sword_netherite",
+      },
+    })),
   };
 }

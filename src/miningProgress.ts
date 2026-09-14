@@ -47,6 +47,7 @@ import {
   type ToolKind,
 } from "./miningTypes";
 import { isEndChapterDevEnabled } from "./miningCombat";
+import { applyEndQuestOnVisit } from "./endChapter";
 
 const TIER_PLUS1: Record<GearTier, number> = {
   wood: 0.1,
@@ -108,6 +109,8 @@ export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   bastion: "netherrack",
   warped_forest: "ender_pearl",
   fortress: "blaze_rod",
+  end_portal: null,
+  the_end: null,
 };
 
 export function specialtyForGacha(gacha: GachaId): MiningSpecialty {
@@ -127,7 +130,7 @@ export function bestOwnedTool(
 }
 
 export function recommendToolKind(gacha: GachaId): ToolKind {
-  if (gacha === "warped_forest" || gacha === "fortress") return "sword";
+  if (gacha === "warped_forest" || gacha === "fortress" || gacha === "the_end") return "sword";
   if (isAxeGacha(gacha)) return "axe";
   return "pickaxe";
 }
@@ -248,9 +251,16 @@ export function refreshUnlocks(state: MiningState): MiningState {
       unlocked.add("fortress");
     }
   }
-  if (!isEndChapterDevEnabled()) {
+  if (isEndChapterDevEnabled()) {
+    if (state.endQuest?.foundPortal) unlocked.add("end_portal");
+    else unlocked.delete("end_portal");
+    if (state.endQuest?.theEndUnlocked) unlocked.add("the_end");
+    else unlocked.delete("the_end");
+  } else {
     unlocked.delete("warped_forest");
     unlocked.delete("fortress");
+    unlocked.delete("end_portal");
+    unlocked.delete("the_end");
   }
   return { ...state, unlockedGachas: [...unlocked] };
 }
@@ -285,6 +295,9 @@ export function gachaUnlockRequirementIds(gacha: GachaId): CraftedGearId[] {
     case "warped_forest":
     case "fortress":
       return NETHER_UNLOCK_REQ;
+    case "end_portal":
+    case "the_end":
+      return [];
     default:
       return [];
   }
@@ -304,8 +317,10 @@ export function gachaLockBadge(gacha: GachaId): string {
 }
 
 export function gachaLockHint(gacha: GachaId, state: MiningState): string {
-  const ids = gachaUnlockRequirementIds(gacha);
   const place = GACHA_META[gacha].label;
+  if (gacha === "end_portal") return "エンダーアイを持って、いろんな場所をほると見つかるよ";
+  if (gacha === "the_end") return "エンドポータルにアイを12こはめよう";
+  const ids = gachaUnlockRequirementIds(gacha);
   if (!ids.length) return `${place}はまだひらいてない`;
   const lines = ids.map((id) => {
     const done = isGachaUnlockReqMet(state, id);
@@ -1119,7 +1134,8 @@ export function resolveDig(params: {
     state.equipped = { ...state.equipped, tool: usedTool };
   }
 
-  state = refreshUnlocks(state);
+  const quested = applyEndQuestOnVisit(state, params.gacha, rand);
+  state = refreshUnlocks(quested.state);
 
   return {
     state,
@@ -1159,7 +1175,8 @@ export function resolveBucketFill(params: {
   state.tickets -= 1;
   state.materials[material] = getMaterialCount(state, material) + amount;
   state.miningPoints += 1;
-  state = refreshUnlocks(state);
+  const quested = applyEndQuestOnVisit(state, params.gacha);
+  state = refreshUnlocks(quested.state);
 
   return {
     state,
@@ -1195,9 +1212,6 @@ export function tryCraft(
   if (recipe.craftFlag && state.crafted[recipe.craftFlag]) {
     return { state, error: "もう持っているよ" };
   }
-  if (recipe.grantsBed && partySlotCount(state) >= MAX_BEDS) {
-    return { state, error: "ベッドはもう3つあるよ（なかまいっぱい）" };
-  }
   const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
   if (upgradeFrom && !state.crafted[upgradeFrom]) {
     return { state, error: `先に${gearLabel(upgradeFrom)} を作ってね` };
@@ -1225,7 +1239,6 @@ export function tryCraft(
 
   const maxTimes = maxCraftTimes(recipe, have, {
     fuel,
-    remainingBeds: recipe.grantsBed ? MAX_BEDS - partySlotCount(state) : undefined,
   });
   if (times > maxTimes) {
     return { state, error: recipe.fuelOptions?.length ? "材料か燃料が足りないよ" : "材料が足りないよ" };
@@ -1265,7 +1278,17 @@ export function tryCraft(
 
   let bedCount = partySlotCount(state);
   if (recipe.grantsBed) {
-    bedCount = Math.min(MAX_BEDS, bedCount + times);
+    const room = Math.max(0, MAX_BEDS - bedCount);
+    const toBeds = Math.min(room, times);
+    const toSpare = times - toBeds;
+    bedCount = bedCount + toBeds;
+    if (toSpare > 0) {
+      writeMaterialCount(
+        materials,
+        "spare_bed",
+        (materials.spare_bed ?? 0) + toSpare,
+      );
+    }
   }
 
   let next: MiningState = { ...state, materials, crafted, equipped, bedCount };

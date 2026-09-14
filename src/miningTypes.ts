@@ -31,7 +31,8 @@ export type MaterialId =
   | "blaze_rod"
   | "blaze_powder"
   | "warped_wart"
-  | "ender_eye";
+  | "ender_eye"
+  | "spare_bed";
 
 /** パーティ枠＝ベッド数（1〜3） */
 export const MAX_BEDS = 3;
@@ -59,7 +60,9 @@ export type GachaId =
   | "nether"
   | "bastion"
   | "warped_forest"
-  | "fortress";
+  | "fortress"
+  | "end_portal"
+  | "the_end";
 
 export type GearSlot = "tool" | "helmet" | "chest" | "leggings" | "boots";
 
@@ -94,7 +97,8 @@ export type CraftedGearId =
   | "furnace"
   | "bucket_iron"
   | "enchanting_table"
-  | "smithing_table";
+  | "smithing_table"
+  | "elytra";
 
 export type MiningSpecialty =
   | "wood"
@@ -127,7 +131,7 @@ export interface MiningState {
     held: MaterialId | null;
   };
   /** 歪んだ森／要塞の残りHP（倒すまで引き継ぐ） */
-  combatEncounters?: Partial<Record<"warped_forest" | "fortress", { mobs: { hp: number }[] }>>;
+  combatEncounters?: Partial<Record<"warped_forest" | "fortress", { mobs: { hp: number }[]; wave?: number }>>;
   /** チケット付与済みフェーズ（sessionTreatKey） */
   ticketStampedSessions: Record<string, boolean>;
   /** 全日クリアでチケット付与済みの日付 */
@@ -152,6 +156,38 @@ export interface MiningState {
   miningVersionNoticeSeen?: boolean;
   /** テーブル後の分岐カード（はやく／つよく）を見たか */
   miningRouteBranchSeen?: boolean;
+  /** エンダーアイ探索〜ジ・エンド解放 */
+  endQuest?: EndQuestState;
+  /** エンドラ戦（倒すまでHPを残す） */
+  dragonFight?: DragonFightState;
+  /** プレイヤーHP。1ハート=2。最大20 */
+  playerHp?: number;
+  /** ハートを満タンにした日付（翌日リセット用） */
+  playerHpDate?: string;
+  /** エンドラ反撃回数。4の倍数が強攻撃 */
+  dragonRageSeq?: number;
+  /** 必殺ゲージ 0–5。倒されると0 */
+  specialGauge?: number;
+  /** 必殺の説明を一度出したか */
+  specialHintSeen?: boolean;
+}
+
+export interface EndQuestState {
+  mark: GachaId | null;
+  visited: GachaId[];
+  fifth: GachaId | null;
+  fifthStreak: number;
+  foundPortal: boolean;
+  /** はめた数 0–12 */
+  eyes: number;
+  linked: boolean;
+  theEndUnlocked: boolean;
+}
+
+export interface DragonFightState {
+  crystals: number[];
+  hp: number;
+  defeated: boolean;
 }
 
 export const MATERIAL_META: Record<
@@ -193,6 +229,7 @@ export const MATERIAL_META: Record<
   blaze_powder: { label: "ブレイズパウダー", emoji: "✨", image: "/mining/Blaze_Powder.webp" },
   warped_wart: { label: "歪んだウォートブロック", emoji: "🟦", image: "/mining/Warped_Wart.png" },
   ender_eye: { label: "エンダーアイ", emoji: "👁", image: "/mining/Eye_of_Ender.png" },
+  spare_bed: { label: "ベッド", emoji: "🛏️", image: "/mining/White_Bed.png" },
 };
 
 /** 装備・設備の画像（あれば表示） */
@@ -236,6 +273,7 @@ export const GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
   chest_netherite: "/mining/netherite_chestplate.png",
   leggings_netherite: "/mining/netherite_leggings.png",
   boots_netherite: "/mining/Netherite_Boots.webp",
+  elytra: "/mining/Elytra.png",
 };
 
 export function materialImage(id: MaterialId): string | undefined {
@@ -262,6 +300,8 @@ export const GACHA_ORDER: GachaId[] = [
   "bastion",
   "warped_forest",
   "fortress",
+  "end_portal",
+  "the_end",
 ];
 
 /** こううん日の抽選から外す（バケツ専用など） */
@@ -270,6 +310,8 @@ export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set([
   "river",
   "warped_forest",
   "fortress",
+  "end_portal",
+  "the_end",
 ]);
 
 export function isBucketGacha(gacha: GachaId): gacha is "river" | "lava_cave" {
@@ -303,6 +345,8 @@ export const GACHA_META: Record<
   bastion: { label: "砦の遺跡", emoji: "🏰", specialty: "netherite", badge: "鍛冶型" },
   warped_forest: { label: "歪んだ森", emoji: "🟣", specialty: "netherite", badge: "エンドマン" },
   fortress: { label: "ネザー要塞", emoji: "🔥", specialty: "netherite", badge: "ブレイズ" },
+  end_portal: { label: "エンドポータル", emoji: "🟣", specialty: "netherite", badge: "アイをはめる" },
+  the_end: { label: "ジ・エンド", emoji: "🐉", specialty: "netherite", badge: "エンドラ" },
 };
 
 /**
@@ -325,6 +369,8 @@ export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
   bastion: "/mining/Bastion.webp",
   warped_forest: "/mining/Warped_Forest.webp",
   fortress: "/mining/Nether_Fortress.jpg",
+  end_portal: "/mining/End_Portal_Empty.jpg",
+  the_end: "/mining/The_End.webp",
 };
 
 export const ENCHANT_META: Record<
@@ -429,6 +475,8 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
     if (gacha === "nether") return "いま効く：残骸が出やすい";
     if (gacha === "bastion") return "いま効く：チェストをあけやすい";
     if (gacha === "warped_forest" || gacha === "fortress") return "たたかうときは剣";
+    if (gacha === "end_portal") return "アイをはめる（チケットなし）";
+    if (gacha === "the_end") return "たたかうときは剣";
     if (gacha === "coal") return "いま効く：石炭+1";
     if (gacha === "lapis_cave") return "いま効く：ラピス";
     return "いま効く：たくさんほれる";
@@ -439,6 +487,8 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (gacha === "bastion") return "たまに+3（鍛冶型は運）";
   if (gacha === "warped_forest") return "剣でエンドマンをたたく";
   if (gacha === "fortress") return "剣でブレイズをたたく";
+  if (gacha === "end_portal") return "エンダーアイをはめる";
+  if (gacha === "the_end") return "剣でエンドラをたたく";
   return "たまに素材+3";
 }
 
@@ -513,7 +563,9 @@ function normalizeCombatEncounters(
         return Number.isFinite(hp) ? { hp: Math.max(0, hp) } : null;
       })
       .filter((m): m is { hp: number } => !!m);
-    if (mobs.length) out[key] = { mobs };
+    const waveRaw = Number((rec as { wave?: unknown }).wave);
+    const wave = Number.isFinite(waveRaw) ? Math.max(0, Math.floor(waveRaw)) : 0;
+    if (mobs.length) out[key] = { mobs, wave };
   }
   return out;
 }
@@ -548,6 +600,26 @@ export function emptyMiningState(): MiningState {
     firstEnchantClaimed: false,
     miningVersionNoticeSeen: false,
     miningRouteBranchSeen: false,
+    endQuest: {
+      mark: null,
+      visited: [],
+      fifth: null,
+      fifthStreak: 0,
+      foundPortal: false,
+      eyes: 0,
+      linked: false,
+      theEndUnlocked: false,
+    },
+    dragonFight: {
+      crystals: [16, 16, 16, 16, 16, 16, 16, 16],
+      hp: 2000,
+      defeated: false,
+    },
+    playerHp: 20,
+    playerHpDate: "",
+    dragonRageSeq: 0,
+    specialGauge: 0,
+    specialHintSeen: false,
   };
 }
 
@@ -567,6 +639,8 @@ const ALL_GACHA_IDS: GachaId[] = [
   "bastion",
   "warped_forest",
   "fortress",
+  "end_portal",
+  "the_end",
 ];
 
 function isGachaId(id: unknown): id is GachaId {
@@ -694,7 +768,63 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
     firstEnchantClaimed: !!raw.firstEnchantClaimed,
     miningVersionNoticeSeen: !!raw.miningVersionNoticeSeen,
     miningRouteBranchSeen: !!raw.miningRouteBranchSeen,
+    endQuest: normalizeEndQuest(raw.endQuest),
+    dragonFight: normalizeDragonFight(raw.dragonFight),
+    playerHp: normalizePlayerHp(raw.playerHp),
+    playerHpDate: typeof raw.playerHpDate === "string" ? raw.playerHpDate : "",
+    dragonRageSeq: Math.max(0, Math.floor(Number(raw.dragonRageSeq) || 0)),
+    specialGauge: normalizeSpecialGauge(raw.specialGauge),
+    specialHintSeen: !!raw.specialHintSeen,
   };
+}
+
+function normalizePlayerHp(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return 20;
+  return Math.max(0, Math.min(20, n));
+}
+
+function normalizeSpecialGauge(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(5, n));
+}
+
+function normalizeEndQuest(raw: unknown): EndQuestState {
+  const base = emptyMiningState().endQuest!;
+  if (!raw || typeof raw !== "object") return base;
+  const rec = raw as Record<string, unknown>;
+  const mark = isGachaId(rec.mark) ? rec.mark : null;
+  const fifth = isGachaId(rec.fifth) ? rec.fifth : null;
+  const visited = Array.isArray(rec.visited)
+    ? rec.visited.filter((id): id is GachaId => isGachaId(id))
+    : [];
+  const eyes = Math.max(0, Math.min(12, Math.floor(Number(rec.eyes) || 0)));
+  const fifthStreak = Math.max(0, Math.floor(Number(rec.fifthStreak) || 0));
+  return {
+    mark,
+    visited,
+    fifth,
+    fifthStreak,
+    foundPortal: !!rec.foundPortal,
+    eyes,
+    linked: !!rec.linked || eyes >= 12,
+    theEndUnlocked: !!rec.theEndUnlocked,
+  };
+}
+
+function normalizeDragonFight(raw: unknown): DragonFightState {
+  const base = emptyMiningState().dragonFight!;
+  if (!raw || typeof raw !== "object") return base;
+  const rec = raw as Record<string, unknown>;
+  const crystalsRaw = Array.isArray(rec.crystals) ? rec.crystals : [];
+  const crystals = Array.from({ length: 8 }, (_, i) => {
+    const n = Math.floor(Number(crystalsRaw[i]));
+    return Number.isFinite(n) ? Math.max(0, Math.min(16, n)) : 16;
+  });
+  const hpRaw = Math.floor(Number(rec.hp));
+  const hp = Number.isFinite(hpRaw) ? Math.max(0, Math.min(2000, hpRaw)) : 2000;
+  return { crystals, hp, defeated: !!rec.defeated || hp <= 0 };
 }
 
 function normalizeEnchants(raw: unknown): Partial<Record<EnchantTarget, GearEnchant>> {
@@ -745,6 +875,7 @@ export function gearLabel(id: CraftedGearId): string {
   if (id === "bucket_iron") return "鉄のバケツ";
   if (id === "enchanting_table") return "エンチャントテーブル";
   if (id === "smithing_table") return "鍛冶台";
+  if (id === "elytra") return "エリトラ";
   const [kind, tier] = id.split("_") as [string, GearTier];
   if (kind === "sword" || kind === "axe" || kind === "pickaxe") {
     return `${GEAR_TIER_LABEL[tier]}の${TOOL_KIND_LABEL[kind]}`;

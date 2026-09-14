@@ -67,7 +67,7 @@ import {
   normalizeParentRescuePassword,
   resolveParentRescuePassword,
 } from "./parentRescueAuth";
-import { MiningScreen } from "./MiningScreen";
+import { MiningScreen, type MiningDevJump } from "./MiningScreen";
 import {
   MiningHamburgerCoachmark,
   MiningMenuTipBanner,
@@ -79,6 +79,12 @@ import {
 import {
   buildDevSandboxSeed,
   buildDevTicketsOnlySeed,
+  buildWarpedForestTestSeed,
+  buildEndEyeCraftSeed,
+  buildEndChapterHuntSeed,
+  buildEndPortalFillSeed,
+  buildEndTheEndUnlockSeed,
+  buildEndDragonTestSeed,
   topUpDevTicketsPoints,
 } from "./devSandboxSeed";
 import { DuplicateTokenShop } from "./DuplicateTokenShop";
@@ -1710,6 +1716,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [showMiningNightEnd, setShowMiningNightEnd] = useState(false);
   const miningNightEndShownRef = useRef<string | null>(null);
   const blockNightPlay = () => {
+    if (import.meta.env.DEV) return false;
     if (!isMiningNightLocked({ enabled: miningNightLockEnabled })) return false;
     setShowMiningNightEnd(true);
     return true;
@@ -1773,6 +1780,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   const [floatColor,   setFloatColor]   = useState(theme.category.green);
   const [prevScreen,   setPrevScreen]   = useState<ScreenId>(getInitialScreen());
   const [showMenu,     setShowMenu]     = useState(false);
+  const [miningDevJump, setMiningDevJump] = useState<MiningDevJump | null>(null);
   const [miningMenuTutorial, setMiningMenuTutorial] = useState<MiningMenuTutorialStep>("idle");
   const miningMenuTutorialStartedRef = useRef(false);
   const miningMenuItemRef = useRef<HTMLButtonElement | null>(null);
@@ -3049,6 +3057,91 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     buddyIdRef.current = seed.buddyId;
     setBuddyXpToast("開発用の体験データをセットしました");
     setTimeout(() => setBuddyXpToast(null), 2200);
+  };
+
+  const applyWarpedForestTestSeed = () => {
+    const seed = buildWarpedForestTestSeed({
+      mining: miningRef.current,
+      duplicateTokens,
+      stickerAlbum: stickerAlbumRef.current,
+      buddyProgress: buddyProgressRef.current,
+      buddyId: buddyIdRef.current,
+    });
+
+    setDuplicateTokens(seed.duplicateTokens);
+    commitMining(() => seed.mining);
+    setStickerAlbum(seed.stickerAlbum);
+    stickerAlbumRef.current = seed.stickerAlbum;
+    saveStickerAlbum(seed.stickerAlbum, storageChildId);
+    setBuddyProgress(seed.buddyProgress);
+    buddyProgressRef.current = seed.buddyProgress;
+    setBuddyId(seed.buddyId);
+    buddyIdRef.current = seed.buddyId;
+    setBuddyXpToast("歪んだ森テスト：ほる→行き先の下");
+    setTimeout(() => setBuddyXpToast(null), 2800);
+  };
+
+  const applyMiningDevSeed = (
+    build: typeof buildEndChapterHuntSeed,
+    toast: string,
+    jump: Omit<MiningDevJump, "nonce">,
+  ) => {
+    const seed = build({
+      mining: miningRef.current,
+      duplicateTokens,
+      stickerAlbum: stickerAlbumRef.current,
+      buddyProgress: buddyProgressRef.current,
+      buddyId: buddyIdRef.current,
+    });
+
+    setDuplicateTokens(seed.duplicateTokens);
+    commitMining(() => seed.mining);
+    setStickerAlbum(seed.stickerAlbum);
+    stickerAlbumRef.current = seed.stickerAlbum;
+    saveStickerAlbum(seed.stickerAlbum, storageChildId);
+    setBuddyProgress(seed.buddyProgress);
+    buddyProgressRef.current = seed.buddyProgress;
+    setBuddyId(seed.buddyId);
+    buddyIdRef.current = seed.buddyId;
+    setMiningDevJump({ ...jump, nonce: Date.now() });
+    setBuddyXpToast(toast);
+    setTimeout(() => setBuddyXpToast(null), 3200);
+  };
+
+  const applyEndEyeCraftSeed = () => {
+    applyMiningDevSeed(buildEndEyeCraftSeed, "エンド1：クラフトで粉→アイ", {
+      tab: "craft",
+      craftTab: "material",
+      highlightRecipeId: "blaze_powder_batch",
+    });
+  };
+
+  const applyEndChapterHuntSeed = () => {
+    applyMiningDevSeed(buildEndChapterHuntSeed, "エンド2：どこかをほるとマーク", {
+      tab: "mine",
+      destStep: "place",
+    });
+  };
+
+  const applyEndPortalFillSeed = () => {
+    applyMiningDevSeed(buildEndPortalFillSeed, "エンド3：ポータルにアイをはめる", {
+      tab: "mine",
+      destStep: "rock",
+    });
+  };
+
+  const applyEndTheEndUnlockSeed = () => {
+    applyMiningDevSeed(buildEndTheEndUnlockSeed, "エンド4：つながったポータルをタップ", {
+      tab: "mine",
+      destStep: "rock",
+    });
+  };
+
+  const applyEndDragonTestSeed = () => {
+    applyMiningDevSeed(buildEndDragonTestSeed, "エンド5：ジ・エンドでエンドラ", {
+      tab: "mine",
+      destStep: "rock",
+    });
   };
 
   /** チケット／エメラルドだけ潤沢。装備・素材・解放は初期状態 */
@@ -4360,6 +4453,10 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   goHomeRef.current = goHome;
 
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      setShowMiningNightEnd(false);
+      return;
+    }
     if (!miningNightLockEnabled) return;
 
     const tick = () => {
@@ -5006,6 +5103,36 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
                 } },
                 { icon: "🧰", label: "体験フルセットを入れる（開発用）", action: () => {
                   applyDevSandboxSeed();
+                  tryOpenMining();
+                  setShowMenu(false);
+                } },
+                { icon: "🟣", label: "歪んだ森テスト（開発用）", action: () => {
+                  applyWarpedForestTestSeed();
+                  tryOpenMining();
+                  setShowMenu(false);
+                } },
+                { icon: "✨", label: "エンド1：アイクラフト（開発用）", action: () => {
+                  applyEndEyeCraftSeed();
+                  tryOpenMining();
+                  setShowMenu(false);
+                } },
+                { icon: "👁", label: "エンド2：ポータル探し（開発用）", action: () => {
+                  applyEndChapterHuntSeed();
+                  tryOpenMining();
+                  setShowMenu(false);
+                } },
+                { icon: "🟣", label: "エンド3：12はめ（開発用）", action: () => {
+                  applyEndPortalFillSeed();
+                  tryOpenMining();
+                  setShowMenu(false);
+                } },
+                { icon: "🚪", label: "エンド4：ジ・エンド解放（開発用）", action: () => {
+                  applyEndTheEndUnlockSeed();
+                  tryOpenMining();
+                  setShowMenu(false);
+                } },
+                { icon: "🐉", label: "エンド5：エンドラ戦（開発用）", action: () => {
+                  applyEndDragonTestSeed();
                   tryOpenMining();
                   setShowMenu(false);
                 } },
@@ -5732,6 +5859,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             dateKey={todayKey()}
             onChange={commitMining}
             onBack={goHome}
+            devJump={miningDevJump}
+            onDevJumpConsumed={() => setMiningDevJump(null)}
           />
         )}
 

@@ -409,7 +409,13 @@ export type MiningSfx =
   | "chapter"
   | "ambient_wood"
   | "ambient_cave"
-  | "ambient_nether";
+  | "ambient_nether"
+  | "slash"
+  | "eye_insert"
+  | "end_discover"
+  | "end_unlock"
+  | "end_dragon_win"
+  | "dragon_breath";
 
 export async function playMiningSfx(kind: MiningSfx): Promise<boolean> {
   const ok = await unlockAudio();
@@ -475,6 +481,73 @@ export async function playMiningSfx(kind: MiningSfx): Promise<boolean> {
       sweep(ctx, t, 90, 140, "sawtooth", 0.12, 0.35);
       tone(ctx, t, 70, "square", 0.1, 0.2, 0.1);
       break;
+    case "slash":
+      noiseBurst(ctx, t, 0.05, 0.5, 2400);
+      sweep(ctx, t, 980, 220, "sawtooth", 0.28, 0.12);
+      tone(ctx, t, 1480, "square", 0.16, 0.04);
+      break;
+    case "eye_insert":
+      tone(ctx, t, 740, "triangle", 0.32, 0.08);
+      tone(ctx, t, 1180, "sine", 0.28, 0.12, 0.05);
+      noiseBurst(ctx, t, 0.04, 0.22, 1800, 0.02);
+      break;
+    case "end_discover":
+      noiseBurst(ctx, t, 0.18, 0.55, 180);
+      sweep(ctx, t, 80, 320, "sawtooth", 0.32, 0.7);
+      sweep(ctx, t + 0.35, 220, 880, "sine", 0.28, 0.9);
+      tone(ctx, t + 0.7, 523, "triangle", 0.34, 0.22);
+      tone(ctx, t + 0.88, 784, "triangle", 0.32, 0.24);
+      tone(ctx, t + 1.08, 1046, "sine", 0.3, 0.32);
+      tone(ctx, t + 1.4, 1318, "sine", 0.26, 0.4);
+      break;
+    case "end_unlock":
+      noiseBurst(ctx, t, 0.3, 0.72, 90);
+      sweep(ctx, t, 40, 220, "sawtooth", 0.4, 1.0);
+      sweep(ctx, t + 0.35, 120, 480, "triangle", 0.28, 0.7);
+      tone(ctx, t + 0.45, 196, "triangle", 0.3, 0.28);
+      tone(ctx, t + 0.7, 294, "triangle", 0.28, 0.22);
+      tone(ctx, t + 0.95, 392, "sine", 0.26, 0.2);
+      noiseBurst(ctx, t + 2.45, 0.32, 0.78, 70);
+      sweep(ctx, t + 2.42, 70, 980, "sawtooth", 0.42, 0.65);
+      sweep(ctx, t + 2.58, 280, 1680, "sine", 0.36, 1.05);
+      tone(ctx, t + 2.75, 523, "triangle", 0.34, 0.22);
+      tone(ctx, t + 2.92, 659, "sine", 0.32, 0.24);
+      tone(ctx, t + 3.1, 784, "sine", 0.3, 0.28);
+      tone(ctx, t + 3.32, 1046, "triangle", 0.28, 0.34);
+      tone(ctx, t + 3.55, 1318, "sine", 0.26, 0.42);
+      tone(ctx, t + 3.85, 1568, "sine", 0.22, 0.55);
+      noiseBurst(ctx, t + 3.2, 0.16, 0.45, 1100);
+      break;
+    case "end_dragon_win":
+      noiseBurst(ctx, t, 0.32, 0.95, 50);
+      sweep(ctx, t, 36, 280, "sawtooth", 0.42, 0.55);
+      noiseBurst(ctx, t + 0.18, 0.24, 0.85, 140);
+      tone(ctx, t + 0.22, 262, "triangle", 0.36, 0.16);
+      tone(ctx, t + 0.4, 392, "triangle", 0.34, 0.18);
+      noiseBurst(ctx, t + 0.42, 0.2, 0.7, 220);
+      sweep(ctx, t + 0.45, 180, 1100, "sawtooth", 0.36, 0.5);
+      tone(ctx, t + 0.62, 523, "triangle", 0.32, 0.2);
+      tone(ctx, t + 0.82, 659, "sine", 0.32, 0.22);
+      tone(ctx, t + 1.02, 784, "sine", 0.3, 0.24);
+      noiseBurst(ctx, t + 1.08, 0.2, 0.7, 800);
+      tone(ctx, t + 1.22, 988, "triangle", 0.28, 0.26);
+      tone(ctx, t + 1.42, 1175, "sine", 0.28, 0.3);
+      sweep(ctx, t + 1.48, 520, 1860, "sine", 0.32, 0.85);
+      tone(ctx, t + 1.7, 1318, "sine", 0.26, 0.34);
+      tone(ctx, t + 1.92, 1568, "sine", 0.24, 0.42);
+      tone(ctx, t + 2.14, 2093, "triangle", 0.22, 0.5);
+      noiseBurst(ctx, t + 2.05, 0.16, 0.5, 1400);
+      tone(ctx, t + 2.4, 1568, "sine", 0.2, 0.62);
+      break;
+    case "dragon_breath":
+      noiseBurst(ctx, t, 0.28, 0.82, 220);
+      sweep(ctx, t, 70, 36, "sawtooth", 0.34, 0.75);
+      sweep(ctx, t, 320, 90, "sine", 0.22, 0.7);
+      tone(ctx, t, 48, "square", 0.18, 0.45);
+      noiseBurst(ctx, t + 0.14, 0.32, 0.7, 700);
+      sweep(ctx, t + 0.18, 180, 70, "sawtooth", 0.26, 0.55);
+      noiseBurst(ctx, t + 0.4, 0.2, 0.45, 1400);
+      break;
   }
   return true;
 }
@@ -483,7 +556,7 @@ export async function playMiningSfx(kind: MiningSfx): Promise<boolean> {
 export function playGachaAmbient(gacha: GachaIdLike): void {
   void playMiningSfx(
     gacha === "wood" ? "ambient_wood"
-      : gacha === "nether" || gacha === "bastion" || gacha === "warped_forest" || gacha === "fortress" ? "ambient_nether"
+      : gacha === "nether" || gacha === "bastion" || gacha === "warped_forest" || gacha === "fortress" || gacha === "end_portal" || gacha === "the_end" ? "ambient_nether"
         : "ambient_cave",
   );
 }
@@ -503,4 +576,6 @@ type GachaIdLike =
   | "nether"
   | "bastion"
   | "warped_forest"
-  | "fortress";
+  | "fortress"
+  | "end_portal"
+  | "the_end";

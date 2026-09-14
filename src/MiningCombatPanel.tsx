@@ -1,21 +1,22 @@
 /** 歪んだ森／要塞の戦闘3択 */
 
 import { useEffect, useState } from "react";
+import { SpecialGaugeBar } from "./CombatOverlays";
+import { DamageFloater, IncomingHitFx, SlashBurst, type IncomingKind, type SlashEmphasis } from "./endFx";
 import type { HelmetRockHint } from "./miningProgress";
 import type { MiningState } from "./miningTypes";
 import {
   BLAZE_IMAGE,
   ENDERMAN_IMAGE,
-  HEART_FULL_IMAGE,
-  HEART_HALF_IMAGE,
   combatHeartCount,
   combatMaxHp,
   combatSwordId,
   combatSwordImage,
-  ensureCombatEncounter,
-  heartSlots,
+  visibleCombatEncounter,
   type CombatGachaId,
 } from "./miningCombat";
+import { HeartRow, PlayerCombatHud } from "./PlayerCombatHud";
+import { canPlayerFight, specialGaugeReady } from "./playerCombat";
 
 type Props = {
   mining: MiningState;
@@ -24,36 +25,20 @@ type Props = {
   busy: boolean;
   fallen: number[];
   flash: number[];
+  gone: number[];
+  swings: number;
+  hitDamage?: number;
+  emphasis?: SlashEmphasis;
+  slashSeed?: number;
   tickets: number;
+  takenHearts: number | null;
+  playerDied: boolean;
+  incoming: { kind: IncomingKind; hearts: number } | null;
+  striking: number[];
+  onFireSpecial: () => void;
   onPick: (index: number) => void;
+  onRevive: () => void;
 };
-
-function HeartRow({ hp, hearts }: { hp: number; hearts: number }) {
-  const slots = heartSlots(hp, hearts);
-  const mid = Math.ceil(slots.length / 2);
-  const rows = slots.length > 10 ? [slots.slice(0, mid), slots.slice(mid)] : [slots];
-  return (
-    <div className="mining-combat-hearts">
-      {rows.map((row, ri) => (
-        <div key={ri} className="mining-combat-heart-row">
-          {row.map((kind, i) => (
-            kind === "empty" ? (
-              <span key={`${ri}-${i}`} className="mining-combat-heart is-empty" />
-            ) : (
-              <img
-                key={`${ri}-${i}`}
-                className="mining-combat-heart"
-                src={kind === "half" ? HEART_HALF_IMAGE : HEART_FULL_IMAGE}
-                alt=""
-                draggable={false}
-              />
-            )
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function MiningCombatPanel({
   mining,
@@ -62,15 +47,27 @@ export function MiningCombatPanel({
   busy,
   fallen,
   flash,
+  gone,
+  swings,
+  hitDamage = 0,
+  emphasis = "normal",
+  slashSeed = 1,
   tickets,
+  takenHearts,
+  playerDied,
+  incoming,
+  striking,
+  onFireSpecial,
   onPick,
+  onRevive,
 }: Props) {
-  const encounter = ensureCombatEncounter(mining, gacha);
+  const encounter = visibleCombatEncounter(mining, gacha);
   const sprite = gacha === "warped_forest" ? ENDERMAN_IMAGE : BLAZE_IMAGE;
   const hearts = combatHeartCount(gacha);
   const maxHp = combatMaxHp(gacha);
   const swordId = combatSwordId(mining);
   const swordImg = combatSwordImage(mining);
+  const fighting = canPlayerFight(mining) && !playerDied;
   const [swingPose, setSwingPose] = useState(false);
 
   useEffect(() => {
@@ -83,26 +80,65 @@ export function MiningCombatPanel({
     return () => window.clearTimeout(t);
   }, [busy, flash.join(",")]);
 
+  const incomingOn = !!incoming;
+  const shake = incomingOn;
+
   return (
-    <div className="mining-combat-stage">
+    <div className={`mining-combat-stage${fighting ? "" : " is-player-down"}${shake ? " is-shake" : ""}`}>
+      {incoming && (
+        <IncomingHitFx kind={incoming.kind} hearts={incoming.hearts} active />
+      )}
       <div className="mining-combat-mobs">
-        {encounter.mobs.map((mob, i) => (
-          <div
-            key={i}
-            className={`mining-combat-mob${flash.includes(i) ? " is-flash" : ""}${fallen.includes(i) || mob.hp <= 0 ? " is-fallen" : ""}`}
-          >
-            <img className="mining-combat-sprite" src={sprite} alt="" draggable={false} />
-            <HeartRow hp={mob.hp} hearts={hearts} />
-            <div className="mining-combat-hp-num">{mob.hp}/{maxHp}</div>
-          </div>
-        ))}
+        {encounter.mobs.map((mob, i) => {
+          const isGone = gone.includes(i);
+          const isFallen = (fallen.includes(i) || (mob.hp <= 0 && !busy)) && !isGone;
+          const isHit = flash.includes(i);
+          const isStrike = striking.includes(i);
+          return (
+            <div
+              key={`${encounter.wave ?? 0}-${i}`}
+              className={`mining-combat-mob${gacha === "fortress" ? " is-blaze" : " is-enderman"}${isHit ? " is-flash" : ""}${isStrike ? " is-striking" : ""}${isGone ? " is-gone" : ""}`}
+            >
+              <div className={`mining-combat-sprite-wrap${isFallen ? " is-fallen" : ""}`}>
+                <img className="mining-combat-sprite" src={sprite} alt="" draggable={false} />
+                <SlashBurst
+                  swings={swings}
+                  active={isHit && busy && !incomingOn}
+                  emphasis={emphasis}
+                  seed={slashSeed}
+                />
+                <DamageFloater
+                  damage={hitDamage}
+                  active={isHit && busy && !incomingOn}
+                  emphasis={emphasis}
+                  stay={emphasis === "jackpot"}
+                />
+              </div>
+              <HeartRow hp={mob.hp} hearts={hearts} />
+              <div className="mining-combat-hp-num">{mob.hp}/{maxHp}</div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="mining-rock-pick-stage-title">どれをたたく？</div>
-      <div className="mining-rock-pick-stage-sub">あたりはひみつ。すきなのを選ぼう</div>
       {!swordId && (
         <div className="mining-combat-need-sword">剣を作ってからたたこう</div>
       )}
+      <PlayerCombatHud
+        mining={mining}
+        takenHearts={takenHearts}
+        died={playerDied || !canPlayerFight(mining)}
+        busy={busy}
+        tickets={tickets}
+        onRevive={onRevive}
+        hideDown
+      />
+      <SpecialGaugeBar
+        mining={mining}
+        ready={specialGaugeReady(mining)}
+        disabled={busy || !fighting}
+        onFire={onFireSpecial}
+      />
       <div className="mining-rock-hero-row">
         {(["左", "まんなか", "みぎ"] as const).map((label, i) => {
           const isHitHint = hint.kind === "hit" && hint.index === i;
@@ -112,7 +148,7 @@ export function MiningCombatPanel({
               key={label}
               type="button"
               className={`mining-rock-tile v${i}${isHitHint ? " is-glow" : ""}${isMissHint ? " is-miss-hint" : ""}${swingPose ? " is-combat-swing" : ""}`}
-              disabled={busy || tickets < 1 || !swordId}
+              disabled={busy || tickets < 1 || !swordId || !fighting}
               onClick={() => onPick(i)}
             >
               <span className="mining-rock-tile-face" aria-hidden>

@@ -22,7 +22,9 @@ export type RecipeId =
   | "netherite_upgrade_dupe"
   | "paper_batch"
   | "book_craft"
-  | "obsidian_craft";
+  | "obsidian_craft"
+  | "blaze_powder_batch"
+  | "ender_eye_craft";
 
 export interface MiningRecipe {
   id: RecipeId;
@@ -398,6 +400,28 @@ export const MINING_RECIPES: MiningRecipe[] = [
   netheriteUpgrade("chest_netherite", "ネザライトのむねあて", "🛡️"),
   netheriteUpgrade("leggings_netherite", "ネザライトのレギンス", "🛡️"),
   netheriteUpgrade("boots_netherite", "ネザライトのブーツ", "🛡️"),
+
+  {
+    id: "blaze_powder_batch",
+    label: "ブレイズパウダー",
+    emoji: "✨",
+    outputs: [{ material: "blaze_powder", amount: 2 }],
+    costs: [{ material: "blaze_rod", amount: 1 }],
+    needsWorkbench: true,
+    requiresUnlock: "fortress",
+  },
+  {
+    id: "ender_eye_craft",
+    label: "エンダーアイ",
+    emoji: "👁",
+    outputs: [{ material: "ender_eye", amount: 1 }],
+    costs: [
+      { material: "ender_pearl", amount: 1 },
+      { material: "blaze_powder", amount: 1 },
+    ],
+    needsWorkbench: true,
+    requiresUnlock: "warped_forest",
+  },
 ];
 
 export function recipeProgress(
@@ -425,7 +449,7 @@ export function canAffordRecipe(
   return true;
 }
 
-/** いまの材料・燃料で何回つくれるか。装備／設備は常に最大1。ベッドは残り枠まで。 */
+/** いまの材料・燃料で何回つくれるか。装備／設備は常に最大1。ベッドは余剰ストックも可。 */
 export function maxCraftTimes(
   recipe: MiningRecipe,
   have: (id: MaterialId) => number,
@@ -457,11 +481,6 @@ export function maxCraftTimes(
   }
   if (!Number.isFinite(times)) times = 0;
   times = Math.max(0, times);
-
-  if (recipe.grantsBed) {
-    const remaining = Math.max(0, Math.floor(opts?.remainingBeds ?? 0));
-    times = Math.min(times, remaining);
-  }
   return times;
 }
 
@@ -704,6 +723,17 @@ export function craftGridForRecipe(recipe: MiningRecipe): (MaterialId | null)[] 
     g[4] = "netherite_upgrade";
     g[5] = "diamond";
     g[7] = "netherrack";
+    return g;
+  }
+  if (recipe.id === "blaze_powder_batch") {
+    const g = empty();
+    g[4] = "blaze_rod";
+    return g;
+  }
+  if (recipe.id === "ender_eye_craft") {
+    const g = empty();
+    g[3] = "ender_pearl";
+    g[5] = "blaze_powder";
     return g;
   }
   if (main && id.includes("netherite") && id !== "netherite_ingot_craft" && id !== "netherite_upgrade_dupe") {
