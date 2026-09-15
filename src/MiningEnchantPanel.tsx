@@ -222,7 +222,11 @@ export function MiningEnchantPanel({
         <div className="mining-enchant-success" role="status" aria-live="polite">
           <div className="mining-enchant-success-sparkle" aria-hidden />
           <div className="mining-enchant-success-icon" aria-hidden>
-            <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={64} alt="" />
+            {applySuccess.gear ? (
+              <MiningItemIcon gear={applySuccess.gear} enchanted size={64} alt="" />
+            ) : (
+              <MiningItemIcon src={ENCHANTED_BOOK_IMAGE} size={64} alt="" />
+            )}
           </div>
           <div className="mining-enchant-success-title">エンチャントがついた！</div>
           <div className="mining-enchant-success-sub">
@@ -293,7 +297,7 @@ export function MiningEnchantPanel({
                 >
                   <span className="mining-enchant-target-main">
                     {shown.gear ? (
-                      <MiningItemIcon gear={shown.gear} size={28} alt="" />
+                      <MiningItemIcon gear={shown.gear} mining={mining} size={28} alt="" />
                     ) : (
                       <span className="mining-enchant-target-placeholder">？</span>
                     )}

@@ -398,7 +398,7 @@ function MiningStrengthDetails({
           {boost.armorNotes.map((note) => (
             <div key={note.slot} className="mining-odds-armor-row">
               <span className="mining-odds-armor-slot">
-                <MiningItemIcon gear={note.gear} size={14} alt="" />
+                <MiningItemIcon gear={note.gear} mining={mining} size={14} alt="" />
                 {ARMOR_KIND_LABEL[note.slot]}
               </span>
               <span className="mining-odds-armor-text">{note.text}</span>
@@ -525,6 +525,7 @@ function DigCrackOverlay({
   maxStage,
   gacha,
   result,
+  mining,
   partyItems,
   shaking,
   hitting,
@@ -536,6 +537,7 @@ function DigCrackOverlay({
   maxStage: number;
   gacha: GachaId;
   result: DigResult | null;
+  mining: MiningState;
   partyItems: { id: string; item: RewardLookupEntry }[];
   shaking: boolean;
   hitting: boolean;
@@ -633,7 +635,7 @@ function DigCrackOverlay({
           <div className="mining-fp-sleeve" aria-hidden />
           <div className="mining-fp-tool">
             {result?.usedTool ? (
-              <MiningItemIcon gear={result.usedTool} size={148} alt="" />
+              <MiningItemIcon gear={result.usedTool} mining={mining} size={148} alt="" />
             ) : (
               <span className="mining-fp-hand-emoji">⛏️</span>
             )}
@@ -822,6 +824,7 @@ function DigFxOverlay({
   maxCrackStage,
   gacha,
   result,
+  mining,
   partyItems,
   digHitPulse,
   canDigAgain,
@@ -835,6 +838,7 @@ function DigFxOverlay({
   maxCrackStage: number;
   gacha: GachaId;
   result: DigResult | null;
+  mining: MiningState;
   partyItems: { id: string; item: RewardLookupEntry }[];
   digHitPulse: number;
   canDigAgain: boolean;
@@ -879,6 +883,7 @@ function DigFxOverlay({
           maxStage={maxCrackStage}
           gacha={gacha}
           result={result}
+          mining={mining}
           partyItems={partyItems}
           shaking={shaking}
           hitting={hitting}
@@ -1487,7 +1492,7 @@ export function MiningScreen({
     const icon = recipe.grantsBed ? (
       <MiningItemIcon bed emoji={recipe.emoji} size={56} alt="" />
     ) : recipe.craftFlag ? (
-      <MiningItemIcon gear={recipe.craftFlag} emoji={recipe.emoji} size={56} alt="" />
+      <MiningItemIcon gear={recipe.craftFlag} mining={nextState} emoji={recipe.emoji} size={56} alt="" />
     ) : recipe.outputs?.[0] ? (
       <MiningItemIcon material={recipe.outputs[0].material} emoji={recipe.emoji} size={56} alt="" />
     ) : (
@@ -1849,7 +1854,7 @@ export function MiningScreen({
                     className={`mining-next-hero-tool${t.done ? " is-done" : ""}${isNext ? " is-next" : ""}`}
                   >
                     <div className="mining-next-hero-tool-icon">
-                      <MiningItemIcon gear={t.id} size={22} alt="" />
+                      <MiningItemIcon gear={t.id} mining={mining} size={22} alt="" />
                     </div>
                     {t.done ? "✓" : isNext ? "●" : "○"} {t.label.replace(/^(木|石|鉄|ダイヤ)の/, "")}
                   </div>
@@ -1943,7 +1948,7 @@ export function MiningScreen({
                   >
                     <span className="mining-equip-strip-icon" aria-hidden>
                       {best ? (
-                        <MiningItemIcon gear={best} size={32} alt="" />
+                        <MiningItemIcon gear={best} mining={mining} size={32} alt="" />
                       ) : (
                         <span className="mining-equip-strip-empty">？</span>
                       )}
@@ -2027,7 +2032,7 @@ export function MiningScreen({
                     style={{ opacity: best ? 1 : 0.4 }}
                   >
                     <span className="mining-equip-tool-icon" aria-hidden>
-                      {best ? <MiningItemIcon gear={best} size={32} alt="" /> : "？"}
+                      {best ? <MiningItemIcon gear={best} mining={mining} size={32} alt="" /> : "？"}
                     </span>
                     <span className="mining-equip-tool-body">
                       <span className="mining-equip-tool-effect">{TOOL_EFFECT_BLURB[kind]}</span>
@@ -2064,7 +2069,7 @@ export function MiningScreen({
                       }
                     >
                       <span className="mining-equip-armor-icon" aria-hidden>
-                        {current ? <MiningItemIcon gear={current} size={28} alt="" /> : "＋"}
+                        {current ? <MiningItemIcon gear={current} mining={mining} size={28} alt="" /> : "＋"}
                       </span>
                       <span className="mining-equip-armor-body">
                         <span className="mining-equip-armor-title">
@@ -2105,7 +2110,7 @@ export function MiningScreen({
                                   }}
                                 >
                                   <span className="mining-equip-armor-pick-icon" aria-hidden>
-                                    <MiningItemIcon gear={id} size={28} alt="" />
+                                    <MiningItemIcon gear={id} mining={mining} size={28} alt="" />
                                   </span>
                                   <span className="mining-equip-armor-pick-body">
                                     <span className="mining-equip-armor-pick-label">{effectCopy}</span>
@@ -2280,7 +2285,7 @@ export function MiningScreen({
                           {recipe.grantsBed ? (
                             <MiningItemIcon bed emoji={recipe.emoji} size={28} alt="" />
                           ) : recipe.craftFlag ? (
-                            <MiningItemIcon gear={recipe.craftFlag} emoji={recipe.emoji} size={28} alt="" />
+                            <MiningItemIcon gear={recipe.craftFlag} mining={mining} emoji={recipe.emoji} size={28} alt="" />
                           ) : recipe.outputs?.[0] ? (
                             <MiningItemIcon material={recipe.outputs[0].material} emoji={recipe.emoji} size={28} alt="" />
                           ) : (
@@ -2314,7 +2319,7 @@ export function MiningScreen({
                         }}>
                           強化もと:{" "}
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle" }}>
-                            <MiningItemIcon gear={upgradeFrom} size={16} alt="" />
+                          <MiningItemIcon gear={upgradeFrom} mining={mining} size={16} alt="" />
                             {gearLabel(upgradeFrom)}
                           </span>{" "}
                           {hasUpgradeBase ? "OK" : "が必要"}
@@ -2902,7 +2907,7 @@ export function MiningScreen({
               </span>
               {Object.keys(mining.crafted).filter((k) => mining.crafted[k as CraftedGearId]).map((id) => (
                 <span key={id} style={{ ...btnGhost, padding: "8px 10px", cursor: "default", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <MiningItemIcon gear={id as CraftedGearId} size={22} alt="" />
+                  <MiningItemIcon gear={id as CraftedGearId} mining={mining} size={22} alt="" />
                   {gearLabel(id as CraftedGearId)}
                 </span>
               ))}
@@ -3321,6 +3326,7 @@ export function MiningScreen({
         maxCrackStage={MAX_CRACK_STAGE}
         gacha={selectedGacha}
         result={lastDig}
+        mining={mining}
         partyItems={partyDigItems}
         digHitPulse={digHitPulse}
         ownedCount={have}

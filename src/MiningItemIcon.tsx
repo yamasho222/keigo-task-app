@@ -1,10 +1,12 @@
 import type { CSSProperties } from "react";
 import {
-  GEAR_IMAGE,
   MATERIAL_META,
   BED_IMAGE,
   type CraftedGearId,
   type MaterialId,
+  type MiningState,
+  gearImage,
+  isGearEnchanted,
 } from "./miningTypes";
 
 interface Props {
@@ -14,6 +16,10 @@ interface Props {
   bed?: boolean;
   /** 直接指定した画像（エンチャント本など） */
   src?: string;
+  /** エンチャント済み画像を明示的に使う（成功演出など） */
+  enchanted?: boolean;
+  /** 所持状態からエンチャント済み画像を自動判定する */
+  mining?: MiningState;
   /** 絵文字フォールバック */
   emoji?: string;
   size?: number;
@@ -27,6 +33,8 @@ export function MiningItemIcon({
   gear,
   bed,
   src,
+  enchanted,
+  mining,
   emoji,
   size = 24,
   alt = "",
@@ -38,7 +46,7 @@ export function MiningItemIcon({
       : material
         ? MATERIAL_META[material].image
         : gear
-          ? GEAR_IMAGE[gear]
+          ? gearImage(gear, enchanted ?? (mining ? isGearEnchanted(mining, gear) : false))
           : undefined);
   const fallback = bed
     ? (emoji ?? "🛏️")

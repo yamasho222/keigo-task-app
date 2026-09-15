@@ -222,12 +222,36 @@ export const GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
   boots_netherite: "/mining/Netherite_Boots.webp",
 };
 
+/** エンチャント済み装備の画像（あれば通常画像から差し替え） */
+export const ENCHANTED_GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
+  sword_diamond: "/mining/Enchanted_Diamond_Sword.webp",
+  axe_diamond: "/mining/Enchanted_Diamond_Axe.gif",
+  pickaxe_diamond: "/mining/Enchanted_Diamond_Pickaxe.webp",
+  helmet_diamond: "/mining/Enchanted_Diamond_Helmet.gif",
+  chest_diamond: "/mining/Enchanted_Diamond_Chestplate.gif",
+  leggings_diamond: "/mining/Enchanted_Diamond_Leggings.gif",
+  boots_diamond: "/mining/Enchanted_Diamond_Boots.gif",
+  sword_netherite: "/mining/Enchanted_Netherite_Sword.gif",
+  axe_netherite: "/mining/Enchanted_Netherite_Axe.gif",
+  pickaxe_netherite: "/mining/Enchanted_Netherite_Pickaxe.gif",
+  helmet_netherite: "/mining/Enchanted_Netherite_Helmet.gif",
+  chest_netherite: "/mining/Enchanted_Netherite_Chestplate.gif",
+  leggings_netherite: "/mining/Enchanted_Netherite_Leggings.gif",
+  boots_netherite: "/mining/Enchanted_Netherite_Boots.gif",
+};
+
 export function materialImage(id: MaterialId): string | undefined {
   return MATERIAL_META[id].image;
 }
 
-export function gearImage(id: CraftedGearId): string | undefined {
-  return GEAR_IMAGE[id];
+export function gearImage(id: CraftedGearId, enchanted = false): string | undefined {
+  return (enchanted && ENCHANTED_GEAR_IMAGE[id]) || GEAR_IMAGE[id];
+}
+
+/** 対象種類のエンチャントが付いた所持装備か */
+export function isGearEnchanted(state: MiningState, id: CraftedGearId): boolean {
+  const target = enchantTargetOfGear(id);
+  return !!target && !!state.crafted[id] && !!state.enchants[target];
 }
 
 export const GACHA_ORDER: GachaId[] = [
