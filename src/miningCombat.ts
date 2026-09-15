@@ -1,7 +1,8 @@
 /** DEV限定：歪んだ森／要塞の戦闘 */
 
 import {
-  GEAR_IMAGE,
+  gearImage,
+  isGearEnchanted,
   getMaterialCount,
   parseToolId,
   writeMaterialCount,
@@ -199,7 +200,7 @@ export function combatSwordId(state: MiningState): CraftedGearId | null {
 
 export function combatSwordImage(state: MiningState): string {
   const id = combatSwordId(state);
-  return (id && GEAR_IMAGE[id]) || "/mining/Diamond_Sword.png";
+  return (id && gearImage(id, isGearEnchanted(state, id))) || "/mining/Diamond_Sword.png";
 }
 
 /** 1ハート=HP2。full / half / empty を左から並べる */
