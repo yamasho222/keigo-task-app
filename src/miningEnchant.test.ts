@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ENCHANT_APPLY_COST,
+  ENCHANT_LEVEL_UP_COST,
   ENCHANT_REROLL_COST,
   applyEnchant,
   ensureEnchantOffers,
+  levelUpEnchant,
   rerollEnchantOffers,
 } from "./miningEnchant";
 import { emptyMiningState, normalizeMiningState, type MiningState } from "./miningTypes";
@@ -51,6 +54,30 @@ describe("pending enchant offers", () => {
     expect(applied.error).toBeUndefined();
     expect(applied.state.pendingEnchantOffers?.helmet).toBeUndefined();
     expect(applied.state.enchants.helmet?.id).toBe(seeded.offers[0]);
+  });
+
+  it("charges the reduced apply cost after the first enchant", () => {
+    const seeded = ensureEnchantOffers(
+      withLapis(ENCHANT_APPLY_COST, { firstEnchantClaimed: true }),
+      "sword",
+      seqRand([0, 0.9]),
+    );
+    const applied = applyEnchant(seeded.state, "sword", seeded.offers[0]);
+    expect(applied.error).toBeUndefined();
+    expect(applied.state.materials.lapis).toBe(0);
+  });
+
+  it("charges the reduced level-up costs", () => {
+    const state = withLapis(ENCHANT_LEVEL_UP_COST[2] + ENCHANT_LEVEL_UP_COST[3], {
+      enchants: { sword: { id: "efficiency", level: 1 } },
+    });
+    const levelTwo = levelUpEnchant(state, "sword");
+    expect(levelTwo.error).toBeUndefined();
+    expect(levelTwo.state.materials.lapis).toBe(ENCHANT_LEVEL_UP_COST[3]);
+
+    const levelThree = levelUpEnchant(levelTwo.state, "sword");
+    expect(levelThree.error).toBeUndefined();
+    expect(levelThree.state.materials.lapis).toBe(0);
   });
 
   it("round-trips pending offers through normalize", () => {

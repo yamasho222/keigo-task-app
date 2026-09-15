@@ -11,9 +11,9 @@ import {
   type MiningState,
 } from "./miningTypes";
 
-export const ENCHANT_APPLY_COST = 9;
+export const ENCHANT_APPLY_COST = 6;
 export const ENCHANT_REROLL_COST = 3;
-export const ENCHANT_LEVEL_UP_COST: Record<2 | 3, number> = { 2: 18, 3: 36 };
+export const ENCHANT_LEVEL_UP_COST: Record<2 | 3, number> = { 2: 12, 3: 24 };
 
 const ALL_IDS = Object.keys(ENCHANT_META) as EnchantId[];
 
