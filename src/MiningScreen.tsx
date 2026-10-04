@@ -2453,7 +2453,7 @@ export function MiningScreen({
     showToast("ジ・エンドがひらいた！ほりばから行こう", "progress");
   };
 
-  /** party / equip / enchant は全画面置換。digDestination はボトムシートなので本体UIを残す */
+  /** party / equip / enchant は本体コンテンツを置き換え、共通ナビゲーションは残す */
   const blockingOverlay = overlay === "party" || overlay === "equip" || overlay === "enchant";
   const blockingTitle =
     overlay === "party" ? "なかま"
@@ -2461,11 +2461,10 @@ export function MiningScreen({
     : overlay === "enchant" ? "エンチャント"
     : "";
   const selectedMeta = GACHA_META[selectedGacha];
-  const contentPadBottom = blockingOverlay ? 96 : 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: contentPadBottom, width: "100%", minWidth: 0 }}>
-      {/* 固定ヘッダ: 本体タブ or そうび/なかま/エンチャント */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", width: "100%", minWidth: 0 }}>
+      {/* 固定ヘッダ: 戻る・画面名と本体タブ */}
       <div style={{ height: chromeSpacerHeight, flexShrink: 0 }} aria-hidden />
       <div
         ref={setChromeEl}
@@ -2484,43 +2483,37 @@ export function MiningScreen({
           backgroundColor: theme.bg.editor,
         }}
       >
-        {blockingOverlay ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ScrollSafeBackButton onBack={() => setOverlay(null)} />
-            <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, display: "inline-flex", alignItems: "center", gap: 8 }}>
-              {overlay === "enchant" && (
-                <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={28} alt="" />
-              )}
-              {blockingTitle}
-            </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <ScrollSafeBackButton onBack={blockingOverlay ? () => setOverlay(null) : onBack} />
+          <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {blockingOverlay ? (
+              <>
+                {overlay === "enchant" && <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={28} alt="" />}
+                {blockingTitle}
+              </>
+            ) : "こうざん／クラフト"}
           </div>
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <ScrollSafeBackButton onBack={onBack} />
-              <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>こうざん／クラフト</div>
-            </div>
-            <div className="mining-main-tabs">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => {
-                    setTab(t.id);
-                    if (t.id === "craft") {
-                      const scroll = document.querySelector("[data-app-scroll]");
-                      if (scroll instanceof HTMLElement) scroll.scrollTo({ top: 0, behavior: "smooth" });
-                    }
-                  }}
-                  className={`mining-main-tab${tab === t.id ? " is-active" : ""}`}
-                >
-                  <MiningItemIcon src={t.icon} size={22} alt="" />
-                  <span className="mining-main-tab-label">{t.label}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        </div>
+        <div className="mining-main-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setOverlay(null);
+                setTab(t.id);
+                if (t.id === "craft" || t.id === "bag") {
+                  const scroll = document.querySelector("[data-app-scroll]");
+                  if (scroll instanceof HTMLElement) scroll.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
+              className={`mining-main-tab${!blockingOverlay && tab === t.id ? " is-active" : ""}`}
+            >
+              <MiningItemIcon src={t.icon} size={22} alt="" />
+              <span className="mining-main-tab-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {!blockingOverlay && tab !== "mine" && (
@@ -3725,20 +3718,17 @@ export function MiningScreen({
         </div>
       )}
 
-      {!blockingOverlay && (
-        <div
-          aria-hidden
-          style={{ height: bottomChromeHeight + 12, flexShrink: 0 }}
-        />
-      )}
+      <div
+        aria-hidden
+        style={{ height: bottomChromeHeight + 12, flexShrink: 0 }}
+      />
 
-      {!blockingOverlay && (
-        <div
-          ref={setBottomChromeEl}
-          className="mining-bottom-chrome"
-          aria-label="ほる・そうび・なかま・エンチャント"
-        >
-          {tab === "mine" && overlay !== "digDestination" && (
+      <div
+        ref={setBottomChromeEl}
+        className="mining-bottom-chrome"
+        aria-label="ほる・そうび・なかま・エンチャント"
+      >
+          {tab === "mine" && !blockingOverlay && overlay !== "digDestination" && (
             <button
               type="button"
               className={`mining-dig-cta${mining.tickets >= 1 && !digBusy ? " is-ready" : ""}`}
@@ -3753,7 +3743,7 @@ export function MiningScreen({
           <div className="mining-main-tabs mining-bottom-tabs" aria-label="そうび・なかま・エンチャント">
             <button
               type="button"
-              className="mining-main-tab"
+              className={`mining-main-tab${overlay === "equip" ? " is-active" : ""}`}
               onClick={() => setOverlay("equip")}
             >
               <MiningItemIcon src="/mining/Iron_Chestplate.webp" size={22} alt="" />
@@ -3761,7 +3751,7 @@ export function MiningScreen({
             </button>
             <button
               type="button"
-              className="mining-main-tab"
+              className={`mining-main-tab${overlay === "party" ? " is-active" : ""}`}
               onClick={() => {
                 setOverlay("party");
                 setPartyStep("slots");
@@ -3774,7 +3764,7 @@ export function MiningScreen({
             </button>
             <button
               type="button"
-              className={`mining-main-tab${!tableReady ? " is-locked" : ""}`}
+              className={`mining-main-tab${overlay === "enchant" ? " is-active" : ""}${!tableReady ? " is-locked" : ""}`}
               aria-disabled={!tableReady}
               onClick={() => {
                 if (!tableReady) {
