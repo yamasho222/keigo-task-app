@@ -3778,8 +3778,7 @@ export function MiningScreen({
               <span className="mining-main-tab-label">エンチャント</span>
             </button>
           </div>
-        </div>
-      )}
+      </div>
 
       {overlay === "digDestination" && (
         <div
