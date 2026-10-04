@@ -554,8 +554,8 @@ export const SPECIALTY_META: Record<
   iron: { label: "鉄", emoji: "⛏️", gachaHint: "てつのこうざん" },
   coal: { label: "石炭", emoji: "⬛", gachaHint: "せきたんのやま" },
   gold: { label: "金", emoji: "🌟", gachaHint: "きんのこうざん" },
-  diamond: { label: "ダイヤ", emoji: "💎", gachaHint: "ダイヤのしんそう" },
-  netherite: { label: "ネザー", emoji: "🔥", gachaHint: "ネザー" },
+  diamond: { label: "ダイヤ", emoji: "💎", gachaHint: "ダイヤのしんそう・ラピスどうくつ" },
+  netherite: { label: "ネザー", emoji: "🔥", gachaHint: "ネザー・砦の遺跡など" },
 };
 
 export function specialtyOfCategory(category: string): MiningSpecialty {

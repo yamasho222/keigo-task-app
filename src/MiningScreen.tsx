@@ -2505,7 +2505,13 @@ export function MiningScreen({
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => setTab(t.id)}
+                  onClick={() => {
+                    setTab(t.id);
+                    if (t.id === "craft") {
+                      const scroll = document.querySelector("[data-app-scroll]");
+                      if (scroll instanceof HTMLElement) scroll.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  }}
                   className={`mining-main-tab${tab === t.id ? " is-active" : ""}`}
                 >
                   <MiningItemIcon src={t.icon} size={22} alt="" />
@@ -3473,9 +3479,17 @@ export function MiningScreen({
                       }}
                     >
                       <span>{cat.label}</span>
-                      <span className="mining-party-cat-meta">
-                        {meta.emoji} {meta.label}
-                        <span className="mining-party-cat-count">{count}人</span>
+                      <span
+                        className="mining-party-cat-meta"
+                        style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", textAlign: "right", lineHeight: 1.25 }}
+                      >
+                        <span>
+                          {meta.emoji} {meta.label}
+                          <span className="mining-party-cat-count">{count}人</span>
+                        </span>
+                        <span style={{ color: theme.text.secondary, fontSize: 10, fontWeight: 700 }}>
+                          {meta.gachaHint}
+                        </span>
                       </span>
                     </button>
                   );
