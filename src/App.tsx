@@ -4356,9 +4356,6 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     }
     setScreen(getSessionScreen());
   };
-  const goHomeRef = useRef(goHome);
-  goHomeRef.current = goHome;
-
   useEffect(() => {
     if (!miningNightLockEnabled) return;
 
@@ -4367,9 +4364,11 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       if (!isMiningNightHours(now)) return;
 
       if (screenRef.current === "mining") {
-        goHomeRef.current();
-        setShowMiningNightEnd(true);
-        miningNightEndShownRef.current = miningNightLockNightKey(now);
+        const nightKey = miningNightLockNightKey(now);
+        if (miningNightEndShownRef.current !== nightKey) {
+          setShowMiningNightEnd(true);
+          miningNightEndShownRef.current = nightKey;
+        }
         return;
       }
       setShowPendingRewardsSheet(false);
