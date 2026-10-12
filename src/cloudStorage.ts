@@ -6,6 +6,7 @@ import {
   getDocs,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -31,6 +32,7 @@ export interface CloudAppStateDocument {
   schemaVersion: number;
   state: unknown | null;
   stickerAlbum: string[];
+  revision?: number;
   updatedAt?: Timestamp;
   updatedByDeviceId?: string;
 }
@@ -38,6 +40,7 @@ export interface CloudAppStateDocument {
 export interface LoadedCloudAppState {
   snapshot: LocalAppStateSnapshot;
   updatedAtMs: number;
+  revision: number;
   updatedByDeviceId?: string;
 }
 
@@ -198,6 +201,9 @@ export async function loadCloudAppState(userId: string, childId: string): Promis
         : [],
     },
     updatedAtMs: timestampToMs(data.updatedAt),
+    revision: typeof data.revision === "number" && Number.isSafeInteger(data.revision) && data.revision >= 0
+      ? data.revision
+      : 0,
     updatedByDeviceId: typeof data.updatedByDeviceId === "string" ? data.updatedByDeviceId : undefined,
   };
 }
@@ -207,39 +213,56 @@ export async function saveCloudAppState(
   childId: string,
   snapshot: LocalAppStateSnapshot,
   deviceId: string,
+  expectedRevision?: number,
   expectedUpdatedAtMs?: number,
-): Promise<number> {
+): Promise<{ updatedAtMs: number; revision: number }> {
   const firestore = assertDb();
   const ref = doc(firestore, "users", userId, "children", childId, "appState", "main");
-  if (expectedUpdatedAtMs !== undefined) {
-    const remote = await getDoc(ref);
-    if (remote.exists()) {
-      const remoteMs = timestampToMs((remote.data() as Partial<CloudAppStateDocument>).updatedAt);
-      if (remoteMs > expectedUpdatedAtMs) {
-        throw new CloudConflictError();
-      }
-    }
-  }
   const state = stripUndefinedDeep(snapshot.state) ?? null;
   const stickerAlbum = Array.isArray(snapshot.stickerAlbum)
     ? snapshot.stickerAlbum.filter((id): id is string => typeof id === "string")
     : [];
-  const updatedAt = Timestamp.now();
-  const payload = {
-    schemaVersion: 1,
-    state,
-    stickerAlbum,
-    updatedAt,
-    updatedByDeviceId: deviceId,
-  };
   const mergeOptions = firestoreAppStateSetOptions();
-  if (mergeOptions) {
-    await setDoc(ref, payload, mergeOptions);
-  } else {
-    await setDoc(ref, payload);
-  }
+
+  const result = await runTransaction(firestore, async (transaction) => {
+    const remote = await transaction.get(ref);
+    const remoteData = remote.exists()
+      ? remote.data() as Partial<CloudAppStateDocument>
+      : undefined;
+    const remoteRevision = typeof remoteData?.revision === "number"
+      && Number.isSafeInteger(remoteData.revision)
+      && remoteData.revision >= 0
+      ? remoteData.revision
+      : 0;
+
+    const remoteUpdatedAtMs = timestampToMs(remoteData?.updatedAt);
+    if (
+      (expectedRevision !== undefined && remoteRevision > expectedRevision)
+      || (expectedUpdatedAtMs !== undefined && remoteUpdatedAtMs > expectedUpdatedAtMs)
+    ) {
+      throw new CloudConflictError();
+    }
+
+    const revision = remoteRevision + 1;
+    const updatedAt = Timestamp.now();
+    const payload = {
+      schemaVersion: 1,
+      state,
+      stickerAlbum,
+      revision,
+      updatedAt,
+      updatedByDeviceId: deviceId,
+    };
+    if (mergeOptions) {
+      transaction.set(ref, payload, mergeOptions);
+    } else {
+      transaction.set(ref, payload);
+    }
+    return { updatedAtMs: updatedAt.toMillis(), revision };
+  });
+
   await touchChildProfile(userId, childId);
-  return updatedAt.toMillis();
+  return result;
 }
 
 export async function deleteChildProfile(userId: string, childId: string): Promise<void> {
