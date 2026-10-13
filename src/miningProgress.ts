@@ -128,6 +128,17 @@ export function recommendToolKind(gacha: GachaId): ToolKind {
   return "pickaxe";
 }
 
+/** 選んだ道具を優先し、まだ選択がなければ場所に合う道具を初期値にする */
+export function lastSelectedToolKind(state: MiningState, fallbackGacha: GachaId): ToolKind {
+  const selected = parseToolId(state.equipped.tool)?.kind;
+  if (selected && bestOwnedTool(state, selected)) return selected;
+  const recommended = recommendToolKind(fallbackGacha);
+  if (bestOwnedTool(state, recommended)) return recommended;
+  const firstOwned = (["pickaxe", "sword", "axe"] as ToolKind[])
+    .find((kind) => !!bestOwnedTool(state, kind));
+  return firstOwned ?? recommended;
+}
+
 export function hasWorkbench(state: MiningState): boolean {
   return !!state.crafted.workbench;
 }

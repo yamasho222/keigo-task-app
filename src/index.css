@@ -3357,6 +3357,71 @@ button {
 .mining-rock-pick-stage {
   margin-top: 6px;
 }
+.mining-rock-tool-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 8px;
+  border: 1px solid var(--stroke-tertiary, #e5e5e5);
+  border-radius: 12px;
+  background: var(--fill-secondary, #f7f7f7);
+}
+.mining-rock-tool-option {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 54px;
+  padding: 6px 9px;
+  border: 1.5px solid var(--stroke-secondary, #ddd);
+  border-radius: 10px;
+  color: var(--text-primary, #222);
+  background: var(--fill-primary, #fff);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease, transform 0.12s ease;
+}
+.mining-rock-tool-option.is-selected {
+  border-color: var(--accent-primary, #5b8eff);
+  background: color-mix(in srgb, var(--accent-primary, #5b8eff) 11%, white);
+  box-shadow: inset 3px 0 0 var(--accent-primary, #5b8eff);
+}
+.mining-rock-tool-option:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent-primary, #5b8eff) 45%, transparent);
+  outline-offset: 2px;
+}
+.mining-rock-tool-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+}
+.mining-rock-tool-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.mining-rock-tool-name {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+.mining-rock-tool-effect {
+  color: var(--text-secondary, #666);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.mining-rock-tool-state {
+  min-width: 4.5em;
+  color: var(--accent-primary, #2f5bff);
+  font-size: 10px;
+  font-weight: 900;
+  text-align: right;
+}
 .mining-rock-pick-stage-title {
   font-size: 16px;
   font-weight: 900;

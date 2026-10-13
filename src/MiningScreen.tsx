@@ -25,11 +25,11 @@ import {
   hasFurnace,
   hasSmithingTable,
   hasWorkbench,
+  lastSelectedToolKind,
   luckyGachaForDate,
   netheriteFullComplete,
   ownedArmorForSlot,
   previewDigBoost,
-  recommendToolKind,
   strippedMiningStateForOdds,
   compareDigCountOdds,
   recipesForState,
@@ -108,6 +108,7 @@ import {
   MATERIAL_META,
   MAX_BEDS,
   TOOL_EFFECT_BLURB,
+  TOOL_KIND_LABEL,
   SPECIALTY_META,
   specialtyBlurb,
   specialtyOfCategory,
@@ -1046,7 +1047,7 @@ export function MiningScreen({
   const [toolKind, setToolKind] = useState<ToolKind>(() => {
     const last = mining.lastSelectedGacha;
     const gacha = last && mining.unlockedGachas.includes(last) ? last : "wood";
-    return recommendToolKind(gacha);
+    return lastSelectedToolKind(mining, gacha);
   });
   const [lastDig, setLastDig] = useState<DigResult | null>(null);
   const [digFx, setDigFx] = useState<DigFxPhase>("idle");
@@ -1266,6 +1267,8 @@ export function MiningScreen({
   };
 
   const have = useCallback((id: MaterialId) => getMaterialCount(mining, id), [mining]);
+  const ownedToolKinds = (["pickaxe", "sword", "axe"] as ToolKind[])
+    .filter((kind) => !!bestOwnedTool(mining, kind));
 
   const selectToolKind = (kind: ToolKind) => {
     setToolKind(kind);
@@ -1275,19 +1278,12 @@ export function MiningScreen({
     });
   };
 
-  /** 行き先を選び、おすすめどうぐを装備し、前回行き先を保存する */
+  /** 行き先を選び、前回行き先を保存する */
   const chooseGacha = (gid: GachaId) => {
     setSelectedGacha(gid);
-    const kind = recommendToolKind(gid);
-    setToolKind(kind);
     void unlockAudio();
     playGachaAmbient(gid);
-    onChange((prev) => {
-      let state: MiningState = { ...prev, lastSelectedGacha: gid };
-      const owned = bestOwnedTool(state, kind);
-      if (owned) state = equipTool(state, owned);
-      return state;
-    });
+    onChange((prev) => ({ ...prev, lastSelectedGacha: gid }));
   };
 
   const beginDigFx = (before: MiningState, result: DigResult) => {
@@ -1379,9 +1375,7 @@ export function MiningScreen({
       showToast(gachaLockHint(gacha, mining), "normal", 4000);
       return;
     }
-    const kind = recommendToolKind(gacha);
     setSelectedGacha(gacha);
-    setToolKind(kind);
     rollLuckySpots();
     setDigDestStep("rock");
     if (isBucketGacha(gacha) && !hasBucket(mining)) {
@@ -1752,10 +1746,8 @@ export function MiningScreen({
       return;
     }
     navigator.vibrate?.(12);
-    const kind = recommendToolKind(selectedGacha);
-    setToolKind(kind);
     setOverlay(null);
-    performDig(selectedGacha, kind, rockIndex === rockLuckyIndex);
+    performDig(selectedGacha, toolKind, rockIndex === rockLuckyIndex);
   };
 
   /** party / equip / enchant は全画面置換。digDestination はボトムシートなので本体UIを残す */
@@ -3136,6 +3128,35 @@ export function MiningScreen({
                   </div>
                 ) : (
                   <div className="mining-rock-pick-stage">
+                    {!isBucketGacha(selectedGacha) && !isChestGacha(selectedGacha) && (
+                      <div className="mining-rock-tool-select" role="group" aria-label="たたく道具">
+                        {ownedToolKinds.map((kind) => {
+                          const gear = bestOwnedTool(mining, kind);
+                          if (!gear) return null;
+                          const selected = toolKind === kind;
+                          return (
+                            <button
+                              key={kind}
+                              type="button"
+                              className={`mining-rock-tool-option${selected ? " is-selected" : ""}`}
+                              aria-pressed={selected}
+                              onClick={() => selectToolKind(kind)}
+                            >
+                              <span className="mining-rock-tool-icon" aria-hidden>
+                                <MiningItemIcon gear={gear} mining={mining} size={32} alt="" />
+                              </span>
+                              <span className="mining-rock-tool-copy">
+                                <span className="mining-rock-tool-name">{TOOL_KIND_LABEL[kind]}</span>
+                                <span className="mining-rock-tool-effect">{TOOL_EFFECT_BLURB[kind]}</span>
+                              </span>
+                              <span className="mining-rock-tool-state" aria-hidden>
+                                {selected ? "えらんでる" : ""}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="mining-rock-pick-stage-title">
                       {isBucketGacha(selectedGacha)
                         ? "どれをくむ？"
