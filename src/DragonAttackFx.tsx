@@ -98,4 +98,3 @@ export function DragonAllyFx({ buddies, stroke, special, impact, reduced }: { bu
     {impact && <i className="da-ally-contact" />}
   </div>;
 }
-
