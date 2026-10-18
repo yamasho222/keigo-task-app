@@ -89,11 +89,12 @@ export function DragonAttackFx({ stage, technique, special, counter, stroke, red
 }
 
 /** A separate beat after the player's hit. No new turn or damage calculation here. */
-export function DragonAllyFx({ buddies, stroke, special, impact, reduced }: { buddies: Props['buddies']; stroke: number; special: boolean; impact: boolean; reduced: boolean }) {
-  const party = special ? buddies.slice(0, 3) : buddies.length ? [buddies[stroke % buddies.length]] : [];
+export function DragonAllyFx({ buddies, stroke, special, impact, reduced, hits }: { buddies: Props['buddies']; stroke: number; special: boolean; impact: boolean; reduced: boolean; hits?: { id: string; amount: number }[] }) {
+  void stroke; void special;
+  const party = buddies.slice(0, 3).filter(buddy => !hits || hits.some(hit => hit.id === buddy.id));
   return <div className={`da-ally ${impact ? 'da-ally-impact' : ''} ${reduced ? 'da-reduced' : ''}`} aria-hidden="true">
     <div className="da-ally-band" /><b>なかまの ついげき！</b>
-    <div className="da-ally-portraits">{party.map((buddy, i) => <img key={buddy.id} src={buddy.image} alt="" style={{ '--da-delay': `${i * 60}ms` } as CSSProperties} />)}</div>
+    <div className="da-ally-portraits">{party.map((buddy, i) => <figure key={buddy.id}><img src={buddy.image} alt="" style={{ '--da-delay': `${i * 60}ms` } as CSSProperties} />{impact && hits && <b>−{hits.find(hit => hit.id === buddy.id)?.amount}</b>}</figure>)}</div>
     <svg className="da-ally-slash" viewBox="0 0 480 320"><path d="M24 268Q165 18 452 67Q228 75 67 288Z" /><path d="M49 274Q239 59 444 72" /></svg>
     {impact && <i className="da-ally-contact" />}
   </div>;

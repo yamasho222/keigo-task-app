@@ -1,5 +1,7 @@
 /** Standalone, deterministic battle rules. No storage or production-game dependencies. */
-import { attackDamage, incomingDamage, type CampaignEquipment, type SwordTier } from './campaignEquipment';
+import { attackDamage, incomingDamage, SWORD_POWER, type CampaignEquipment, type SwordTier } from './campaignEquipment';
+import { nextDragonCritical, type DragonCritical } from './dragonCriticalRules';
+import { absorbBattleDamage, grantBattleEffect, isBattleSkillAction, prepareBattleSkill, smallSkillBonus, type BattleSkillAction, type BattleSkillState } from './battleSkillRules';
 export type BlazeTarget = { enemyId: number; part: 'body' };
 export type BlazeIntent = 'ember' | 'charge' | 'burst';
 export type BlazeSwordTier = SwordTier;
@@ -53,7 +55,8 @@ export type BlazeEnemy = {
   step: number;
 };
 export type BlazePhase = 'battle' | 'won' | 'lost' | 'returned';
-export type BlazeRun = {
+export type BlazeRun = BattleSkillState & {
+  critical?: DragonCritical;
   item: BlazeItem;
   loadout: BlazeLoadout;
   hp: number;
@@ -70,11 +73,11 @@ export type BlazeRun = {
   log: string[];
 };
 export type BlazeEvent = {
-  kind: 'slash' | 'guard' | 'ultimate' | 'counter' | 'heal' | 'kill';
+  kind: 'slash' | 'guard' | 'ultimate' | 'counter' | 'heal' | 'kill' | 'critical' | 'burn' | 'effect' | 'stun';
   enemyId?: number;
   amount: number;
 };
-export type BlazeAction =
+export type BlazeAction = BattleSkillAction
   | { kind: 'equip'; item: BlazeItem }
   | { kind: 'strike'; target: BlazeTarget }
   | { kind: 'ultimate'; enemyId: number }
@@ -95,7 +98,7 @@ export function createBlazeRun(options: BlazeStartOptions = {}): BlazeRun {
     gauge: 0,
     turn: 0,
     enemies: [
-      { id: 0, hp: 28, maxHp: 28, intent: 'charge', step: 0 },
+      { id: 0, hp: 24, maxHp: 24, intent: 'charge', step: 0 },
     ],
     phase: 'battle',
     pendingRods: 0,
@@ -114,7 +117,14 @@ export function actOnBlaze(
   run: BlazeRun,
   action: BlazeAction,
 ): { state: BlazeRun; events: BlazeEvent[]; error?: string } {
-  const reject = (error: string) => ({ state: run, events: [] as BlazeEvent[], error });
+  const original = run;
+  let cast: { score: number; mode: import('./dragonSkillRules').DragonSkillKind } | undefined;
+  if (isBattleSkillAction(action.kind)) {
+    const prepared = prepareBattleSkill(run, action as BattleSkillAction);
+    if (prepared.error || !prepared.cast) return { ...prepared, events: [] };
+    run = prepared.state; cast = prepared.cast; action = { kind: 'ultimate', enemyId: 0 };
+  } else if (run.skills?.pending || action.kind === 'ultimate' && run.skills) return { state: original, events: [], error: 'ひっさつを えらんで はなとう。' };
+  const reject = (error: string) => ({ state: original, events: [] as BlazeEvent[], error });
   if (run.phase !== 'battle') return reject('この たたかいは おわっているよ。');
   if (run.hp <= 0) return reject('いまは こうどうできないよ。');
 
@@ -188,13 +198,29 @@ export function actOnBlaze(
     events.push({ kind: 'guard', enemyId: enemy.id, amount: blazeIncomingDamage(state.loadout, enemy.intent) - blazeIncomingDamage(state.loadout, enemy.intent, true, state.item === 'shield') });
     appendLog(state, enemy.intent === 'charge' ? 'まもった！ ブレイズは ひのたまを ためている。' : 'まもった！ ひのたまを よわめた！');
   } else {
-    const damage = Math.min(enemy.hp, blazeAttackDamage(state.loadout, isUltimate));
+    let power = blazeAttackDamage(state.loadout, isUltimate);
+    if (cast) power += smallSkillBonus(SWORD_POWER[state.loadout.sword] * 2, cast.score);
+    if (!isUltimate && state.critical) {
+      const roll = nextDragonCritical(state.critical); state.critical = roll.state;
+      if (roll.hit) { power += blazeAttackDamage(state.loadout); events.push({ kind: 'critical', enemyId: enemy.id, amount: blazeAttackDamage(state.loadout) }); }
+    }
+    const damage = Math.min(enemy.hp, power);
     enemy.hp -= damage;
     state.gauge = isUltimate ? 0 : Math.min(3, state.gauge + 1);
     events.push({ kind: isUltimate ? 'ultimate' : 'slash', enemyId: enemy.id, amount: damage });
     appendLog(state, isUltimate ? 'ひっさつ！ ブレイズを おしきった！' : 'ブレイズに こうげき！');
   }
 
+  if ((original.effects?.burn ?? 0) > 0 && enemy.hp > 0) {
+    state.effects = { ...original.effects!, burn: original.effects!.burn - 1 };
+    const amount = Math.min(5, enemy.hp); enemy.hp -= amount; events.push({ kind: 'burn', amount, enemyId: enemy.id });
+  }
+  if (cast) {
+    const effect = grantBattleEffect(state.effects, cast.mode, state.hp, state.maxHp);
+    state.effects = effect.effects; state.hp += effect.healed;
+    events.push({ kind: 'effect', amount: 0 });
+    if (effect.healed) events.push({ kind: 'heal', amount: effect.healed });
+  }
   if (enemy.hp === 0) {
     state.pendingRods += 1;
     events.push({ kind: 'kill', enemyId: enemy.id, amount: 1 });
@@ -204,7 +230,7 @@ export function actOnBlaze(
   if (state.enemies.every((candidate) => candidate.hp === 0)) {
     state.securedRods += state.pendingRods;
     state.pendingRods = 0;
-    state.handsLeft = 0;
+    state.effects = undefined;
     state.phase = 'won';
     appendLog(state, 'だいしょうり！ ロッドを もって かえろう！');
     return { state, events };
@@ -221,9 +247,15 @@ export function actOnBlaze(
       continue;
     }
     const intent = survivor.intent;
-    const counterDamage = blazeIncomingDamage(state.loadout, intent, isGuard, state.item === 'shield');
+    let counterDamage = blazeIncomingDamage(state.loadout, intent, isGuard, state.item === 'shield');
     survivor.intent = intent === 'charge' ? 'burst' : intent === 'burst' ? 'ember' : 'charge';
-    if (counterDamage > 0) {
+    if (counterDamage > 0 && (original.effects?.stun ?? 0) > 0) {
+      state.effects = { ...state.effects!, stun: Math.max(0, state.effects!.stun - 1) };
+      events.push({ kind: 'stun', amount: 0 }); continue;
+    }
+    const attackAttempted = counterDamage > 0;
+    const ward = absorbBattleDamage(state.effects, counterDamage); state.effects = ward.effects; counterDamage = ward.damage;
+    if (attackAttempted) {
       incomingDamage += counterDamage;
       events.push({ kind: 'counter', enemyId: survivor.id, amount: counterDamage });
       appendLog(state, intent === 'burst' ? 'おおきな ひのたまが きた！' : 'ちいさな ひのたまが きた！');
@@ -236,6 +268,7 @@ export function actOnBlaze(
     state.phase = 'lost';
     state.pendingRods = 0;
     state.handsLeft = 0;
+    state.effects = undefined;
     appendLog(state, 'たおされた…。ひろった ロッドは おとしてしまった。');
   }
   return { state, events };

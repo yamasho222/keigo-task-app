@@ -2,9 +2,13 @@ import { isDragonCampaign, validCampaignDay, type DragonCampaign } from './drago
 import type { BlazeRun } from './blazePrototypeEngine';
 import type { EndermanRun } from './endermanPrototypeEngine';
 import type { AttackEnchant, DefenseEnchant, EnchantRank } from './campaignEquipment';
+import { validDragonCritical, type DragonCritical } from './dragonCriticalRules';
+import { validSmallBattleSkills } from './battleSkillRules';
+import { validDragonEffects } from './dragonBattleEffects';
 
 export type AdventureLocation = 'fortress' | 'warped_forest' | 'the_end';
 export type AdventureState = {
+  critical?: DragonCritical;
   version: 1; revision: number; day: string; hp: number; hands: number; gauge: number;
   foodToday: number; fallen: boolean; seed: number; endermanDefeats: number;
   lessons: Partial<Record<AdventureLocation, boolean>>;
@@ -30,10 +34,13 @@ export function readAdventure(raw: unknown): AdventureState | undefined {
     && Array.isArray(run.log) && run.log.length <= 12 && run.log.every(line => typeof line === 'string' && line.length <= 500);
   if (s.blaze && (!common(s.blaze) || !Array.isArray(s.blaze.enemies) || s.blaze.enemies.length !== 1
     || !['none', 'shield'].includes(s.blaze.item) || !int(s.blaze.pendingRods, 1e9) || !int(s.blaze.securedRods, 1e9)
-    || s.blaze.enemies.some(enemy => !enemy || enemy.id !== 0 || !int(enemy.hp, 28) || enemy.maxHp !== 28 || !['ember', 'charge', 'burst'].includes(enemy.intent) || !int(enemy.step, 1e9)))) return fail();
-  if (s.enderman && (!common(s.enderman) || !int(s.enderman.enemyHp, 36) || s.enderman.enemyMaxHp !== 36
+    || s.blaze.enemies.some(enemy => !enemy || enemy.id !== 0 || ![24, 28].includes(enemy.maxHp) || !int(enemy.hp, enemy.maxHp) || !['ember', 'charge', 'burst'].includes(enemy.intent) || !int(enemy.step, 1e9)))) return fail();
+  if (s.enderman && (!common(s.enderman) || ![36, 52].includes(s.enderman.enemyMaxHp) || !int(s.enderman.enemyHp, s.enderman.enemyMaxHp)
     || !['none', 'water', 'stone', 'shield'].includes(s.enderman.item) || !int(s.enderman.pearls, 1e9)
     || !['warp', 'ambush', 'approach', 'opening'].includes(s.enderman.intent) || !int(s.enderman.misses, 1e9))) return fail();
   if (s.dragon && !isDragonCampaign(s.dragon)) return fail();
+  if (s.critical !== undefined && !validDragonCritical(s.critical)) return fail();
+  if ([s.blaze, s.enderman].some(run => run?.critical !== undefined && !validDragonCritical(run.critical))) return fail();
+  if ([s.blaze, s.enderman].some(run => run && (!validSmallBattleSkills(run) || run.effects !== undefined && !validDragonEffects(run.effects)))) return fail();
   return structuredClone(s);
 }

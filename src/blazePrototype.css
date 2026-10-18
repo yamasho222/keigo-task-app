@@ -137,6 +137,9 @@
 .bp-command { min-width:0; min-height:0; border-radius:20px; border:2px solid #e6c18a75; border-bottom-width:6px; display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; gap:4px; background:linear-gradient(#a76a37,#7b4429); color:#fff5d6; padding:8px; }
 .bp-command strong { font-size:17px; letter-spacing:.04em; line-height:1.2; }
 .bp-command>.bp-icon { width:55px; height:55px; }
+.bp-command>.dm-glyph { width:55px; height:55px; fill:#97faff; filter:drop-shadow(0 0 8px #0daacb88); }
+.bp-command>.dm-glyph .dm-line { fill:none; stroke:#d8fbff; stroke-width:5; }
+.bp-command:disabled>.dm-glyph { opacity:.55; }
 .bp-sword-art { display:block; width:58px; height:58px; position:relative; flex-shrink:0; }
 .bp-sword-art img { width:100%; height:100%; filter:drop-shadow(2px 3px 1px #23171966); }
 .bp-sword-art.is-special img { filter:drop-shadow(0 0 8px #e8d0ff); }

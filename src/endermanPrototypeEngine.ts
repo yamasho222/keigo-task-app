@@ -1,25 +1,28 @@
 import { BLAZE_ACTIONS_PER_TICKET, blazeArmorReductionRate, blazeAttackDamage, blazeFullArmor, type BlazeLoadout } from './blazePrototypeEngine';
-import { incomingDamage } from './campaignEquipment';
+import { incomingDamage, SWORD_POWER } from './campaignEquipment';
+import { nextDragonCritical, type DragonCritical } from './dragonCriticalRules';
+import { absorbBattleDamage, grantBattleEffect, isBattleSkillAction, prepareBattleSkill, smallSkillBonus, type BattleSkillAction, type BattleSkillState } from './battleSkillRules';
 
 export const ENDERMAN_ACTIONS_PER_TICKET = BLAZE_ACTIONS_PER_TICKET;
 export type EndermanItem = 'none' | 'water' | 'stone' | 'shield';
 export type EndermanIntent = 'warp' | 'ambush' | 'approach' | 'opening';
 export type EndermanSetup = { loadout: BlazeLoadout; item: EndermanItem; startHp: 'full' | 'half' };
-export type EndermanRun = EndermanSetup & {
+export type EndermanRun = EndermanSetup & BattleSkillState & {
+  critical?: DragonCritical;
   hp: number; maxHp: number; enemyHp: number; enemyMaxHp: number;
   tickets: number; handsLeft: number; bread: number; gauge: number; turn: number;
   intent: EndermanIntent; phase: 'battle' | 'won' | 'lost' | 'returned';
   pearls: number; misses: number; log: string[];
 };
-export type EndermanAction = { kind: 'strike' | 'ultimate' | 'guard' | 'eat' | 'return' } | { kind: 'equip'; item: EndermanItem };
-export type EndermanEvent = { kind: 'hit' | 'miss' | 'guard' | 'pin' | 'splash' | 'counter' | 'heal' | 'kill'; amount: number };
+export type EndermanAction = BattleSkillAction | { kind: 'strike' | 'ultimate' | 'guard' | 'eat' | 'return' } | { kind: 'equip'; item: EndermanItem };
+export type EndermanEvent = { kind: 'hit' | 'miss' | 'guard' | 'pin' | 'splash' | 'counter' | 'heal' | 'kill' | 'critical' | 'burn' | 'effect' | 'stun'; amount: number };
 export type EndermanOutcome = { state: EndermanRun; events: EndermanEvent[]; error?: string };
 
 export function createEndermanRun(options: Partial<EndermanSetup> = {}): EndermanRun {
   const loadout = options.loadout ?? { sword: 'diamond', armor: blazeFullArmor('iron') };
   return {
     loadout: { ...loadout, armor: { ...loadout.armor } }, item: options.item ?? 'none', startHp: options.startHp ?? 'full',
-    hp: options.startHp === 'half' ? 10 : 20, maxHp: 20, enemyHp: 36, enemyMaxHp: 36,
+    hp: options.startHp === 'half' ? 10 : 20, maxHp: 20, enemyHp: 52, enemyMaxHp: 52,
     tickets: 4, handsLeft: 0, bread: 2, gauge: 0, turn: 0, intent: 'warp', phase: 'battle',
     pearls: 0, misses: 0, log: ['エンダーマンが あらわれた！ むらさきの つぶが まっている…。'],
   };
@@ -40,7 +43,14 @@ export function endermanIncomingDamage(run: Pick<EndermanRun, 'loadout' | 'item'
 
 /** Pure rules: no random misses, storage, real inventory or timers. */
 export function actOnEnderman(run: EndermanRun, action: EndermanAction): EndermanOutcome {
-  const reject = (error: string): EndermanOutcome => ({ state: run, events: [], error });
+  const original = run;
+  let cast: { score: number; mode: import('./dragonSkillRules').DragonSkillKind } | undefined;
+  if (isBattleSkillAction(action.kind)) {
+    const prepared = prepareBattleSkill(run, action as BattleSkillAction);
+    if (prepared.error || !prepared.cast) return { ...prepared, events: [] };
+    run = prepared.state; cast = prepared.cast; action = { kind: 'ultimate' };
+  } else if (run.skills?.pending || action.kind === 'ultimate' && run.skills) return { state: original, events: [], error: 'ひっさつを えらんで はなとう。' };
+  const reject = (error: string): EndermanOutcome => ({ state: original, events: [], error });
   if (run.phase !== 'battle' || run.hp <= 0 || run.enemyHp <= 0) return reject('この たたかいは おわっているよ。');
   if (!['strike', 'ultimate', 'guard', 'eat', 'return', 'equip'].includes(action.kind)) return reject('こうどうを えらんでね。');
   if (action.kind === 'equip' && !['none', 'water', 'stone', 'shield'].includes(action.item)) return reject('そうびを えらんでね。');
@@ -80,26 +90,46 @@ export function actOnEnderman(run: EndermanRun, action: EndermanAction): Enderma
     log(state.intent === 'warp' ? 'まもって まった！ あらわれた ところに すきが！' : 'まもった！ ダメージを へらした。');
   } else {
     state.gauge = special ? 0 : Math.min(3, state.gauge + 1);
+    let critical = false;
+    if (!special && state.critical) { const roll = nextDragonCritical(state.critical); state.critical = roll.state; critical = roll.hit; }
     if (dodged) {
       state.misses += 1; events.push({ kind: 'miss', amount: 0 });
       log('ワープで よけられた！ でも ひっさつの ひかりが たまった。');
     } else {
-      const amount = Math.min(state.enemyHp, endermanAttackDamage(state, special));
+      const bonus = critical ? blazeAttackDamage(state.loadout) : 0;
+      const amount = Math.min(state.enemyHp, endermanAttackDamage(state, special) + bonus + (cast ? smallSkillBonus(SWORD_POWER[state.loadout.sword] * 2, cast.score) : 0));
+      if (critical) events.push({ kind: 'critical', amount: bonus });
       state.enemyHp -= amount; events.push({ kind: 'hit', amount });
       if (special) { events.push({ kind: 'pin', amount: 0 }); log('ひっさつ！ ワープごと つかまえた！'); }
       else log(`こうげき！ ${amount}ダメージ！`);
     }
   }
   if (wet && run.intent === 'warp') { events.push({ kind: 'splash', amount: 0 }); log('びくっ！ ワープが とまった！'); }
+  if ((original.effects?.burn ?? 0) > 0 && state.enemyHp > 0) {
+    state.effects = { ...original.effects!, burn: original.effects!.burn - 1 };
+    const amount = Math.min(5, state.enemyHp); state.enemyHp -= amount; events.push({ kind: 'burn', amount });
+  }
+  if (cast) {
+    const effect = grantBattleEffect(state.effects, cast.mode, state.hp, state.maxHp);
+    state.effects = effect.effects; state.hp += effect.healed;
+    events.push({ kind: 'effect', amount: 0 });
+    if (effect.healed) events.push({ kind: 'heal', amount: effect.healed });
+  }
   if (state.enemyHp === 0) {
-    state.phase = 'won'; state.pearls = 1; state.handsLeft = 0;
+    state.phase = 'won'; state.pearls = 1; state.effects = undefined;
     events.push({ kind: 'kill', amount: 1 }); log('エンダーパールを 1こ てにいれた！');
     return { state, events };
   }
 
   // The current picture is the counter that resolves. No rerolls from eating/equipping.
-  const incoming = special ? 0 : endermanIncomingDamage(run, guarding);
-  if (incoming > 0) {
+  let incoming = special ? 0 : endermanIncomingDamage(run, guarding);
+  if (incoming > 0 && (original.effects?.stun ?? 0) > 0) {
+    state.effects = { ...state.effects!, stun: Math.max(0, state.effects!.stun - 1) };
+    incoming = 0; events.push({ kind: 'stun', amount: 0 });
+  }
+  const attackAttempted = incoming > 0;
+  const ward = absorbBattleDamage(state.effects, incoming); state.effects = ward.effects; incoming = ward.damage;
+  if (attackAttempted) {
     state.hp = Math.max(0, state.hp - incoming);
     events.push({ kind: 'counter', amount: Math.min(run.hp, incoming) }); log('エンダーマンが とびかかってきた！');
   }
@@ -107,6 +137,6 @@ export function actOnEnderman(run: EndermanRun, action: EndermanAction): Enderma
   else if (run.intent === 'warp') state.intent = 'ambush';
   else if (run.intent === 'opening') state.intent = 'approach';
   else state.intent = 'warp';
-  if (state.hp === 0) { state.phase = 'lost'; state.handsLeft = 0; state.pearls = 0; log('たおされた…。もりの ようすを おもいだしてみよう。'); }
+  if (state.hp === 0) { state.phase = 'lost'; state.handsLeft = 0; state.effects = undefined; state.pearls = 0; log('たおされた…。もりの ようすを おもいだしてみよう。'); }
   return { state, events };
 }

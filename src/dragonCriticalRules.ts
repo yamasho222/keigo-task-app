@@ -1,6 +1,6 @@
 /** Independent, persisted stream: harvesting, previews and replays cannot reroll a hit. */
 export type DragonCritical = { version: 1; seed: number };
-export const DRAGON_CRITICAL_CHANCE = .2;
+export const DRAGON_CRITICAL_CHANCE = .1;
 export function nextDragonCritical(input: DragonCritical) {
   const seed = (Math.imul(input.seed, 1664525) + 1013904223) >>> 0;
   return { state: { version: 1 as const, seed }, hit: seed / 4294967296 < DRAGON_CRITICAL_CHANCE };

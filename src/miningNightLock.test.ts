@@ -23,12 +23,14 @@ describe("normalizeMiningNightLockEnabled", () => {
 });
 
 describe("isMiningNightHours", () => {
-  it("is open just before 21:00", () => {
-    expect(isMiningNightHours(at(20, 59))).toBe(false);
+  it("is open until 20:29:59.999", () => {
+    expect(isMiningNightHours(at(20, 29))).toBe(false);
+    expect(isMiningNightHours(new Date(2026, 7, 29, 20, 29, 59, 999))).toBe(false);
   });
 
-  it("locks from 21:00 inclusive", () => {
-    expect(isMiningNightHours(at(21, 0))).toBe(true);
+  it("locks from 20:30 inclusive", () => {
+    expect(isMiningNightHours(at(20, 30))).toBe(true);
+    expect(isMiningNightHours(at(20, 59))).toBe(true);
     expect(isMiningNightHours(at(23, 0))).toBe(true);
   });
 
@@ -50,15 +52,15 @@ describe("isMiningNightLocked", () => {
   });
 
   it("follows night hours when ON", () => {
-    expect(isMiningNightLocked({ enabled: true, now: at(20, 59) })).toBe(false);
-    expect(isMiningNightLocked({ enabled: true, now: at(21, 0) })).toBe(true);
+    expect(isMiningNightLocked({ enabled: true, now: at(20, 29) })).toBe(false);
+    expect(isMiningNightLocked({ enabled: true, now: at(20, 30) })).toBe(true);
     expect(isMiningNightLocked({ enabled: true, now: at(6, 30, 30) })).toBe(false);
   });
 });
 
 describe("miningNightLockNightKey", () => {
   it("uses the evening date across midnight", () => {
-    expect(miningNightLockNightKey(at(21, 0))).toBe("2026-08-29");
+    expect(miningNightLockNightKey(at(20, 30))).toBe("2026-08-29");
     expect(miningNightLockNightKey(at(2, 0, 30))).toBe("2026-08-29");
     expect(miningNightLockNightKey(at(6, 29, 30))).toBe("2026-08-29");
     expect(miningNightLockNightKey(at(6, 30, 30))).toBe("2026-08-30");
@@ -67,7 +69,7 @@ describe("miningNightLockNightKey", () => {
 
 describe("shouldAutoShowMiningNightEnd", () => {
   it("shows once per night while locked", () => {
-    const now = at(21, 0);
+    const now = at(20, 30);
     expect(shouldAutoShowMiningNightEnd({
       enabled: true,
       now,
@@ -83,7 +85,7 @@ describe("shouldAutoShowMiningNightEnd", () => {
   it("does not auto-show when unlocked or setting is OFF", () => {
     expect(shouldAutoShowMiningNightEnd({
       enabled: true,
-      now: at(20, 59),
+      now: at(20, 29),
       shownNightKey: null,
     }).show).toBe(false);
     expect(shouldAutoShowMiningNightEnd({

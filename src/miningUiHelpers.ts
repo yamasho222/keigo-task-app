@@ -514,7 +514,7 @@ function parseArmorKind(id: CraftedGearId): ArmorKind | null {
 
 /** クラフトカードに出す効果・役割の一言 */
 export function recipeEffectLine(recipe: MiningRecipe): string | null {
-  if (recipe.id === "shield_craft") return "持ち物にそうびして、まもるを強くする";
+  if (recipe.id === "shield_craft") return "もちものに しまっておこう";
   if (recipe.id === "plank_batch") return "作業台やどうぐの材料";
   if (recipe.id === "stick_batch") return "どうぐの取っ手（作業台にはいらない）";
   if (recipe.id === "workbench") return "どうぐ・ベッド・かまどがつくれる";

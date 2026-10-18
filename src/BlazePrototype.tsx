@@ -1,4 +1,12 @@
 import type { BlazePort } from './adventurePorts';
+import { enableDragonCritical } from './dragonCriticalRules';
+import { BattleBagIcon } from './BattleItemsDialog';
+import { BattleSkillActivity } from './BattleSkillActivity';
+import { DragonAttackFx } from './DragonAttackFx';
+import { DragonStatusArt, DragonStatusBadges } from './DragonBattleEffectsArt';
+import { enableBattleSkills, isBattleUltimate } from './battleSkillRules';
+import { playableSkill } from './dragonSkillRules';
+import { SkillGlyph } from './DragonSkillGame';
 import { BreadRecoveryHelp } from './EndChapterNoticePanel';
 import { recoveryAvailability } from './endChapterNotices';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -26,7 +34,7 @@ function armorImage(slot: BlazeArmorSlot, tier: BlazeArmorTier) {
 function percent(n: number) { return (n * 100).toLocaleString('ja-JP', { maximumFractionDigits: 2 }); }
 
 export default function BlazePrototype({ production }: { production?: BlazePort } = {}) {
-  const [localRun, setRun] = useState(() => createBlazeRun());
+  const [localRun, setRun] = useState<BlazeRun>(() => enableBattleSkills(enableDragonCritical({ ...createBlazeRun(), seed: 10617 }), ['repel']));
   const run = production?.run ?? localRun;
   const [setup, setSetup] = useState<Setup>(() => ({ loadout: createBlazeRun().loadout, startHp: 'full', item: 'none' }));
   const [draft, setDraft] = useState(() => cloneSetup(setup));
@@ -42,6 +50,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
   const resultHeading = useRef<HTMLHeadingElement>(null), titleHeading = useRef<HTMLHeadingElement>(null);
   const [notice, setNotice] = useState('');
   const [recoveryHelp, setRecoveryHelp] = useState(false);
+  const [liveSkill, setLiveSkill] = useState('');
   useLayoutEffect(() => { current.current = run; }, [run]);
   useEffect(() => () => { timers.current.forEach(window.clearTimeout); audio.current?.dispose(); }, []);
   useEffect(() => {
@@ -63,6 +72,10 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     const result = production ? production.act(action) : actOnBlaze(before, action);
     if (result.error) { setNotice(result.error); return; }
     setNotice('');
+    if (action.kind === 'beginSkill' || action.kind === 'chooseSkill') {
+      const p = result.state.skills?.pending; if (p?.mode) setLiveSkill(`${p.token}:${p.mode}`);
+    }
+    if (['beginSkill', 'chooseSkill', 'cancelSkill'].includes(action.kind)) { commit(result.state); return; }
     if (action.kind === 'return') { commit(result.state); return; }
     if (sound) { audio.current ??= createBlazeAudio(); audio.current.unlock(); }
     busyRef.current = true; setBusy(true);
@@ -73,12 +86,12 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       const show = () => {
         setAnimation({ id, action, before, frame, events: result.events });
         const counter = result.events.some(event => event.kind === 'counter');
-        if (frame.stage === 'strike') playCue(action.kind === 'ultimate' ? 'ultimate' : 'slash');
+        if (frame.stage === 'strike') playCue(isBattleUltimate(action.kind) ? 'ultimate' : 'slash');
         if (frame.stage === 'heal') playCue('heal');
-        if (frame.stage === 'impact' && result.events.some(event => event.kind === 'slash' || event.kind === 'ultimate')) playCue('impact');
+        if (frame.stage === 'impact' && result.events.some(event => event.kind === 'slash' || event.kind === 'ultimate')) playCue(result.events.some(event => event.kind === 'critical') ? 'critical' : 'impact');
         if (frame.stage === 'impact' && result.events.some(event => event.kind === 'kill')) playCue('break');
         if (frame.stage === 'counter' && counter) playCue(before.enemies[0].intent === 'burst' ? 'enemyUltimate' : 'enemy');
-        if (frame.stage === 'counter' && action.kind === 'ultimate' && before.enemies[0].intent !== 'charge') playCue('break');
+        if (frame.stage === 'counter' && isBattleUltimate(action.kind) && before.enemies[0].intent !== 'charge') playCue('break');
         if (frame.stage === 'hurt' && counter) playCue(action.kind === 'guard' ? 'guard' : 'impact');
       };
       if (frame.at === 0) show();
@@ -90,11 +103,11 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     }, playback.duration));
   }
   function reset(next: Setup = setup) {
-    if (production) { run.phase === 'lost' ? production.retry() : production.next(); return; }
+    if (production) { if (run.phase === 'lost') production.retry(); else production.next(); return; }
     audio.current?.stop();
     timers.current.forEach(window.clearTimeout); timers.current = [];
     busyRef.current = false; setBusy(false); setAnimation(null); setNotice('');
-    const snapshot = cloneSetup(next); setSetup(snapshot); commit(createBlazeRun(snapshot)); setModal(null);
+    const snapshot = cloneSetup(next); setSetup(snapshot); commit(enableBattleSkills(enableDragonCritical({ ...createBlazeRun(snapshot), seed: 10617 }), ['repel'])); setModal(null);
     timers.current.push(window.setTimeout(() => titleHeading.current?.focus(), 0));
   }
   function openSetup() { if (!busyRef.current) { setDraft(cloneSetup(setup)); setModal('setup'); } }
@@ -117,7 +130,9 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
   const recovery = recoveryAvailability(production?.breadStock ?? run.bread, production?.foodToday ?? 0, run.hp, run.maxHp);
   const disabled = busy || !playing || !canSpend;
   const guarding = action?.kind === 'guard';
-  const ultimate = action?.kind === 'ultimate';
+  const ultimate = isBattleUltimate(action?.kind);
+  const cast = animation?.before.skills?.pending?.mode;
+  const critical = !!animation?.events.some(event => event.kind === 'critical');
   const damageDealt = Math.max(0, (animation?.before.enemies[0].hp ?? enemy.hp) - enemy.hp);
   const counter = animation?.events.some(event => event.kind === 'counter') ?? false;
   const receivesFire = counter && (stage === 'counter' || stage === 'hurt');
@@ -133,7 +148,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     : stage === 'heal' ? 'ハートが回復した！'
     : guardedFire ? 'まもった！ ダメージをへらした。'
     : hurt ? '火球に当たって、ハートが減った。'
-    : stage === 'counter' && ultimate ? '必殺で反撃をとめた！'
+    : stage === 'counter' && ultimate ? 'ブレイズが火をためている。'
     : stage === 'counter' ? 'ブレイズが火をためている。'
     : playing ? !canSpend ? 'チケットがないよ。帰ろう。' : enemy.intent === 'charge' ? '火をためている。次は大きな火球。' : enemy.intent === 'burst' ? '大きな火球がくる。' : '小さな火球がくる。'
     : run.phase === 'won' ? 'ブレイズをたおした！ ブレイズロッドを1本てにいれた！' : run.phase === 'lost' ? 'たおされてしまった。' : 'ぶじに帰った。';
@@ -143,7 +158,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     <header className="bp-header">
       <button className="bp-icon-button" aria-label="かえる" disabled={busy || !playing} onClick={() => setModal('leave')}><BattleIcon kind="back" /></button>
       <h1 ref={titleHeading} tabIndex={-1}>ネザーようさい {!production && <small>おためし</small>}</h1>
-      <button className="bp-gear-button" aria-label={`そうび、もちもの：${run.item === 'shield' ? 'たて' : 'なし'}`} disabled={busy || (!!production && !playing)} onClick={() => { setNotice(''); setModal('gear'); }}><GuardArt shield={run.item === 'shield'} /><span>そうび</span></button>
+      <button className="bp-gear-button" aria-label="もちもの" disabled={busy || (!!production && !playing)} onClick={() => { setNotice(''); setModal('gear'); }}><BattleBagIcon /><span>もちもの</span></button>
       <button className="bp-icon-button bp-help-button" aria-label="絵であそびかたを見る" disabled={busy} onClick={() => { setLesson(0); setModal('help'); }}>?</button>
       {!production && <button className="bp-icon-button bp-parent-button" aria-label="保護者用の試験設定" disabled={busy} onClick={openSetup}><BattleIcon kind="settings" /></button>}
     </header>
@@ -158,7 +173,10 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
         <img className="bp-blaze-sprite" src="/mining/Blaze.webp" alt="ブレイズ" />
         {!dead && playing && (!busy || (stage === 'counter' && enemy.intent === 'charge' && !ultimate)) && <BlazeTelegraph intent={enemy.intent} />}
       </div>
-      {animation && (action?.kind === 'strike' || ultimate) && stage !== 'ticket' && <BattleSpectacle key={`attack${animation.id}`} kind={ultimate ? 'ultimate' : 'slash'} phase={attackPhase} reduced={reduced} seed={animation.id} amount={damageDealt} />}
+      {animation && ultimate && cast && stage !== 'ticket' && <DragonAttackFx stage={attackPhase} technique="cleave" special counter={false} stroke={animation.id} reduced={reduced} buddies={[]} sword={run.loadout.sword} skill={playableSkill(cast)} power={action?.kind === 'releaseSkill' ? action.score / 100 : 0} />}
+      {animation && (action?.kind === 'strike' || ultimate && !cast) && stage !== 'ticket' && <BattleSpectacle key={`attack${animation.id}`} kind={ultimate ? 'ultimate' : 'slash'} phase={attackPhase} critical={critical} reduced={reduced} seed={animation.id} amount={damageDealt} />}
+      <DragonStatusArt effects={shown.effects} pulse={stage} />
+      {stage === 'effect' && animation?.events.filter(event => event.kind === 'burn' || event.kind === 'heal').map((event, i) => <span className="dc-damage dc-effect-number" key={i}>{event.kind === 'burn' ? `🔥 −${event.amount}` : `♥ ＋${event.amount}`}</span>)}
       {receivesFire && <BattleSpectacle key={`enemy${animation!.id}`} kind={enemy.intent === 'burst' ? 'enemyUltimate' : 'enemy'} phase={stage === 'counter' ? 'strike' : 'impact'} shield={guarding} reduced={reduced} seed={animation!.id} />}
       {guarding && stage !== 'ticket' && <BattleSpectacle key={`guard${animation!.id}`} kind="guard" phase={stage === 'hurt' && counter ? 'impact' : 'windup'} shield={run.item === 'shield'} reduced={reduced} seed={animation!.id} />}
       {ultimate && (stage === 'counter' || stage === 'hurt') && enemy.intent !== 'charge' && <BattleSpectacle key={`break${animation!.id}`} kind="break" phase={stage === 'counter' ? 'impact' : 'recover'} reduced={reduced} seed={animation!.id} />}
@@ -181,9 +199,10 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     <section className="bp-actions" aria-label="戦いの操作">
       <button className="bp-command bp-attack" disabled={disabled} aria-label="こうげき" onClick={() => act({ kind: 'strike', target: { enemyId: 0, part: 'body' } })}><SwordArt tier={run.loadout.sword} /><strong>こうげき</strong><span className="bp-command-token" aria-hidden="true" /></button>
       <button className="bp-command bp-guard" disabled={disabled} aria-label="まもる" onClick={() => act({ kind: 'guard' })}><GuardArt shield={run.item === 'shield'} /><strong>まもる</strong><span className="bp-command-token" aria-hidden="true" /></button>
-      <button className={`bp-command bp-ultimate ${shown.gauge >= 3 ? 'is-ready' : ''}`} disabled={disabled || run.gauge < 3} aria-label={`ひっさつ、光${shown.gauge}個、3個で使える`} onClick={() => act({ kind: 'ultimate', enemyId: 0 })}><SwordArt tier={run.loadout.sword} special /><strong>ひっさつ</strong><span className="bp-charge-lights" aria-hidden="true">{[0, 1, 2].map(i => <i key={i} className={`${i < shown.gauge ? 'is-filled' : ''} ${stage === 'impact' && shown.gauge > animation!.before.gauge && i === shown.gauge - 1 ? 'just-charged' : ''}`} />)}</span><span className="bp-command-token" aria-hidden="true" /></button>
+      <button className={`bp-command bp-ultimate ${shown.gauge >= 3 ? 'is-ready' : ''}`} disabled={disabled || run.gauge < 3} aria-label={`ひっさつ、光${shown.gauge}個、3個で使える`} onClick={() => act({ kind: 'beginSkill' })}>{run.unlockedSkills?.length === 1 ? <SkillGlyph kind={run.unlockedSkills[0]} /> : <SwordArt tier={run.loadout.sword} special />}<strong>ひっさつ</strong><span className="bp-charge-lights" aria-hidden="true">{[0, 1, 2].map(i => <i key={i} className={`${i < shown.gauge ? 'is-filled' : ''} ${stage === 'impact' && shown.gauge > animation!.before.gauge && i === shown.gauge - 1 ? 'just-charged' : ''}`} />)}</span><span className="bp-command-token" aria-hidden="true" /></button>
       <button className="bp-command bp-eat" disabled={busy || !playing || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : `かいふく、パン残り${shown.bread}個`} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
     </section>
+    <DragonStatusBadges effects={shown.effects} />
     <p className="bp-sr-only" role="status" aria-live="polite">{notice || speaking}</p>
   </div>
 
@@ -192,7 +211,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       <div className="bp-dialog-top"><h2 id="bp-dialog-title">えで みてみよう</h2><button className="bp-icon-button" aria-label="説明をとじて遊ぶ" onClick={dismissModal}><BattleIcon kind="close" /></button></div>
       <BattleDemo lesson={lesson} />
       <h3 className="bp-lesson-title">{BLAZE_LESSONS[lesson]}</h3>
-      <p className="bp-lesson-caption">{['けんで たたく！', 'ひのたまを ふせぐ！', 'たべると ハートが もどる！', `1まいで ${BLAZE_ACTIONS_PER_TICKET}かい。まもるも おなじ。`, 'ひかりが 3こで、つかえる！', 'ためたら、つぎは おおきな ひのたま！'][lesson]}</p>
+      <p className="bp-lesson-caption">{['けんで たたく！', 'ひのたまを ふせぐ！', 'たべると ハートが もどる！', `1まいで ${BLAZE_ACTIONS_PER_TICKET}かい。まもるも おなじ。`, 'ひかりが 3こで、たまを うちかえす！', 'ためたら、つぎは おおきな ひのたま！'][lesson]}</p>
       <div className="bp-lesson-navigation"><button className="bp-icon-button" aria-label="前の実演" disabled={lesson === 0} onClick={() => setLesson(value => value - 1)}><BattleIcon kind="back" /></button><div className="bp-lesson-dots" role="img" aria-label={`実演${lesson + 1} / ${BLAZE_LESSONS.length}`}>{BLAZE_LESSONS.map((name, i) => <span key={name} className={i === lesson ? 'is-current' : ''} />)}</div><button className="bp-icon-button" aria-label={lesson === BLAZE_LESSONS.length - 1 ? '実演をおえて遊ぶ' : '次の実演'} onClick={() => lesson === BLAZE_LESSONS.length - 1 ? (production?.onHelp(), setModal(null)) : setLesson(value => value + 1)}><BattleIcon kind={lesson === BLAZE_LESSONS.length - 1 ? 'play' : 'next'} /></button></div>
       <button className="bp-large-button" onClick={dismissModal}><BattleIcon kind="play" />あそぶ</button>
     </> : modal === 'gear' ? <>
@@ -220,5 +239,6 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     </> : modal === 'reset' && !production ? <>
       <h2 id="bp-dialog-title">同じ設定でやり直す？</h2><p>チケット4枚・パン2個と、確定済みの装備・開始体力に戻します。本番データは変更しません。</p><div className="bp-dialog-buttons"><button className="bp-secondary-button" onClick={dismissModal}>やめる</button><button className="bp-large-button" onClick={() => reset()}>リセットする</button></div>
     </> : null}
-  </dialog>{recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}</main>;
+  </dialog>{recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}
+  {!animation && <BattleSkillActivity skills={run.skills} unlocked={run.unlockedSkills ?? ['repel']} onAction={act} sound={sound} reduced={reduced} liveToken={liveSkill} />}</main>;
 }

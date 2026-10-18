@@ -14,8 +14,8 @@ describe('child-readable battle playback', () => {
     expect(frames.map(f => f.stage)).toEqual(['ticket', 'strike', 'impact', 'counter', 'hurt']);
     expect(frames[0].shown.handsLeft).toBe(4);
     expect(frames[1].shown.handsLeft).toBe(3);
-    expect(frames[1].shown.enemies[0].hp).toBe(28);
-    expect(frames[2].shown.enemies[0].hp).toBe(24);
+    expect(frames[1].shown.enemies[0].hp).toBe(24);
+    expect(frames[2].shown.enemies[0].hp).toBe(20);
     expect(frames[2].shown.hp).toBe(20);
     expect(frames[3].shown.hp).toBe(20);
     expect(frames[4].shown.hp).toBe(result.state.hp);
@@ -86,9 +86,9 @@ describe('child-readable battle playback', () => {
     const playback = buildBlazePlayback(before, result.state, action, result.events);
     expect(playback.frames.map(frame => frame.stage)).toEqual(['focus', 'strike', 'impact', 'counter', 'hurt']);
     expect(playback.frames.every(frame => frame.shown.handsLeft === 2 && frame.shown.tickets === before.tickets)).toBe(true);
-    expect(playback.frames[0].shown.enemies[0].hp).toBe(28);
-    expect(playback.frames[1].shown.enemies[0].hp).toBe(28);
-    expect(playback.frames[2].shown.enemies[0].hp).toBe(20);
+    expect(playback.frames[0].shown.enemies[0].hp).toBe(24);
+    expect(playback.frames[1].shown.enemies[0].hp).toBe(24);
+    expect(playback.frames[2].shown.enemies[0].hp).toBe(16);
     expect(playback.frames.map(frame => frame.at)).toEqual([0, 560, 900, 1410, 1810]);
   });
 });

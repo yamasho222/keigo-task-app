@@ -29,6 +29,12 @@ describe('child-facing battle surface', () => {
     expect(html.match(/bp-icon-bread/g)).toHaveLength(2);
     expect(html).toContain('体力 ハート10 / 10');
   });
+  it('shows the initially unlocked water skill on the command and in the picture lesson', () => {
+    expect(mainMarkup()).toContain('dm-glyph-repel');
+    const demo = renderToStaticMarkup(createElement(BattleDemo, { lesson: 4 }));
+    expect(demo).toContain('de-repel'); expect(demo).toContain('続く2回');
+    expect(demo).not.toContain('bp-limit-cut'); expect(demo).not.toContain('反撃も止める');
+  });
   it('keeps unaffordable commands locked while retaining the three visible charge lights', () => {
     const html = mainMarkup();
     expect(html).toMatch(/bp-command bp-ultimate[^>]*disabled/);
@@ -38,7 +44,7 @@ describe('child-facing battle surface', () => {
   });
   it('keeps enemy current/max HP but removes weapon power numbers from the choices', () => {
     const html = mainMarkup();
-    expect(html).toContain('class="bp-enemy-hp-number">28<small> / 28</small>');
+    expect(html).toContain('class="bp-enemy-hp-number">24<small> / 24</small>');
     expect(html).not.toContain('bp-command-power');
     expect(html).not.toContain('威力');
   });

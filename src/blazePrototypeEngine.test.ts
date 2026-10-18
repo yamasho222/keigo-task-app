@@ -100,11 +100,11 @@ describe('armor and sword calculation', () => {
 });
 
 describe('setup and action costs', () => {
-  it('starts one 28-HP charging enemy with diamond sword and iron armor', () => {
+  it('starts one 24-HP charging enemy with diamond sword and iron armor', () => {
     expect(createBlazeRun()).toMatchObject({
       hp: 20, maxHp: 20, tickets: 4, handsLeft: 0, bread: 2, gauge: 0, turn: 0,
       phase: 'battle', pendingRods: 0, securedRods: 0, loadout: loadout(),
-      enemies: [{ id: 0, hp: 28, maxHp: 28, intent: 'charge', step: 0 }],
+      enemies: [{ id: 0, hp: 24, maxHp: 24, intent: 'charge', step: 0 }],
     });
     expect(createBlazeRun().enemies).toHaveLength(1);
     expect(createBlazeRun({ startHp: 'half' }).hp).toBe(10);
@@ -120,7 +120,7 @@ describe('setup and action costs', () => {
     first.enemies[0].hp = 1;
     first.log.push('changed');
     expect(second.loadout.armor.boots).toBe('diamond');
-    expect(second.enemies[0].hp).toBe(28);
+    expect(second.enemies[0].hp).toBe(24);
     expect(second.log).toHaveLength(1);
   });
 
@@ -187,7 +187,7 @@ describe('guard and displayed enemy intents', () => {
       state.enemies[0].intent = intent;
       const result = actOnBlaze(state, body());
       expect(result.state.hp).toBe(20 - damage);
-      expect(result.state.enemies[0]).toMatchObject({ hp: 24, intent: next, step: 1 });
+      expect(result.state.enemies[0]).toMatchObject({ hp: 20, intent: next, step: 1 });
       expect(result.events.filter((event) => event.kind === 'counter')).toEqual(
         damage ? [{ kind: 'counter', enemyId: 0, amount: damage }] : [],
       );
@@ -203,7 +203,7 @@ describe('guard and displayed enemy intents', () => {
       const result = actOnBlaze(state, guard);
       const received = blazeIncomingDamage(state.loadout, intent, true);
       expect(result.state).toMatchObject({ hp: 20 - received, gauge: 2, tickets: 3, handsLeft: 3, turn: 1 });
-      expect(result.state.enemies[0]).toMatchObject({ hp: 28, intent: next, step: 1 });
+      expect(result.state.enemies[0]).toMatchObject({ hp: 24, intent: next, step: 1 });
       expect(result.events).toEqual([{ kind: 'guard', enemyId: 0, amount: blazeIncomingDamage(state.loadout, intent) - received }, ...(received ? [{ kind: 'counter', enemyId: 0, amount: received }] : [])]);
     },
   );
@@ -216,7 +216,7 @@ describe('guard and displayed enemy intents', () => {
       state = actOnBlaze(state, guard).state;
       expect(state).toMatchObject({ gauge: 0, turn, bread: 2 });
       expect(state.hp).toBeLessThanOrEqual(hpBefore);
-      expect(state.enemies[0].hp).toBe(28);
+      expect(state.enemies[0].hp).toBe(24);
     }
     expect(state).toMatchObject({ hp: 0, handsLeft: 0, phase: 'lost' });
     expectRejected(state, guard);
@@ -276,7 +276,7 @@ describe('bread and ultimate', () => {
     const damage = sword === 'diamond' ? 8 : 12;
     const result = actOnBlaze(state, ultimate);
     expect(result.state).toMatchObject({ hp: 20, gauge: 0, tickets: 0, handsLeft: 0, turn: 1 });
-    expect(result.state.enemies[0]).toMatchObject({ hp: 28 - damage, intent: 'ember', step: 1 });
+    expect(result.state.enemies[0]).toMatchObject({ hp: 24 - damage, intent: 'ember', step: 1 });
     expect(result.events).toEqual([{ kind: 'ultimate', enemyId: 0, amount: damage }]);
   });
 
@@ -285,7 +285,7 @@ describe('bread and ultimate', () => {
     state.gauge = 3;
     state.enemies[0].hp = 2;
     const result = actOnBlaze(state, ultimate);
-    expect(result.state).toMatchObject({ tickets: 3, handsLeft: 0, phase: 'won', securedRods: 1 });
+    expect(result.state).toMatchObject({ tickets: 3, handsLeft: 3, phase: 'won', securedRods: 1 });
     expect(result.events).toEqual([{ kind: 'ultimate', enemyId: 0, amount: 2 }, { kind: 'kill', enemyId: 0, amount: 1 }]);
   });
 });
@@ -316,13 +316,13 @@ describe('end, loot and invariants', () => {
     expect(result.events).toContainEqual({ kind: 'counter', enemyId: 0, amount: 14 });
   });
 
-  it('a normal kill grants one rod once, clears hands and prevents final counter', () => {
+  it('a normal kill grants one rod once, keeps unused hands and prevents final counter', () => {
     const state = createBlazeRun();
     state.hp = 1;
     state.enemies[0].hp = 4;
     state.enemies[0].intent = 'burst';
     const result = actOnBlaze(state, body());
-    expect(result.state).toMatchObject({ phase: 'won', hp: 1, securedRods: 1, pendingRods: 0, handsLeft: 0 });
+    expect(result.state).toMatchObject({ phase: 'won', hp: 1, securedRods: 1, pendingRods: 0, handsLeft: 3 });
     expect(result.events).toEqual([{ kind: 'slash', enemyId: 0, amount: 4 }, { kind: 'kill', enemyId: 0, amount: 1 }]);
     expectRejected(result.state, body());
     expectRejected(result.state, retreat);
@@ -367,7 +367,7 @@ describe('end, loot and invariants', () => {
         expect(state.bread).toBeLessThanOrEqual(before.bread);
         expect(state.pendingRods + state.securedRods).toBeLessThanOrEqual(state.enemies[0].hp === 0 ? 1 : 0);
         expect(state.securedRods).toBeGreaterThanOrEqual(before.securedRods);
-        if (state.phase !== 'battle') expect(state.handsLeft).toBe(0);
+        if (state.phase === 'lost' || state.phase === 'returned') expect(state.handsLeft).toBe(0);
       }
     }
   });
