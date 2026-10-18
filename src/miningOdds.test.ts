@@ -20,6 +20,7 @@ function woodWithAxe(): MiningState {
       chest: null,
       leggings: null,
       boots: null,
+      held: null,
     },
   };
 }

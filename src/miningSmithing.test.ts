@@ -109,6 +109,37 @@ describe("smithing recipes", () => {
   });
 });
 
+describe("combat area unlocks", () => {
+  it("unlocks the fortress after obtaining ancient debris and keeps it unlocked", () => {
+    const found = refreshUnlocks({
+      ...emptyMiningState(),
+      materials: { ancient_debris: 1 },
+    });
+    expect(found.unlockedGachas).toContain("fortress");
+    expect(found.unlockedGachas).not.toContain("warped_forest");
+
+    const spent = refreshUnlocks({
+      ...found,
+      materials: { ancient_debris: 0 },
+    });
+    expect(spent.unlockedGachas).toContain("fortress");
+  });
+
+  it("unlocks the warped forest after obtaining four blaze rods", () => {
+    const three = refreshUnlocks({
+      ...emptyMiningState(),
+      materials: { blaze_rod: 3 },
+    });
+    expect(three.unlockedGachas).not.toContain("warped_forest");
+
+    const four = refreshUnlocks({
+      ...emptyMiningState(),
+      materials: { blaze_rod: 4 },
+    });
+    expect(four.unlockedGachas).toContain("warped_forest");
+  });
+});
+
 describe("named rare rates", () => {
   it("lets pickaxe raise debris from 12 digs to 8 digs per drop", () => {
     expect(DEBRIS_BASE_RATE).toBeCloseTo(1 / 12);

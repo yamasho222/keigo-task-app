@@ -2,8 +2,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import "./index.css";
-import App from "./App.tsx";
-import { CloudAppShell } from "./CloudAppShell.tsx";
 
 // iOS ホーム画面PWAは、起動時の SW 初回制御でも controllerchange が飛ぶ。
 // そこで無条件リロードすると、閉じて開き直すたびに真っ白のまま回り続ける。
@@ -43,10 +41,28 @@ const updateSW = registerSW({
   },
 });
 
-createRoot(document.getElementById("root")!).render(
+const root = createRoot(document.getElementById("root")!);
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("adventure-release") === "1") {
+  void import("./AdventureReleaseLab").then(({ default: AdventureReleaseLab }) => root.render(<StrictMode><AdventureReleaseLab /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("dragon-campaign") === "1") {
+  // Isolated long campaign: exclusive DEV storage, never load real profiles/cloud.
+  void import("./DragonCampaignLab").then(({ default: DragonCampaignLab }) => root.render(<StrictMode><DragonCampaignLab /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("end-journey") === "1") {
+  // Memory-only progression checks. Never mount real profiles/cloud/save handlers.
+  void import("./EndJourneyLab").then(({ default: EndJourneyLab }) => root.render(<StrictMode><EndJourneyLab /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("enderman-prototype") === "1") {
+  // Disposable battle: no real profiles, inventory, cloud, or save handlers.
+  void import("./EndermanPrototype").then(({ default: EndermanPrototype }) => root.render(<StrictMode><EndermanPrototype /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("blaze-prototype") === "1") {
+  // Standalone prototype: never import the real app, cloud, or save handlers.
+  void import("./BlazePrototype").then(({ default: BlazePrototype }) => root.render(<StrictMode><BlazePrototype /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("combat-v2") === "1") {
+  // Do not mount CloudAppShell/App: lab data must never sync to a real child profile.
+  void import("./CombatV2Lab").then(({ default: CombatV2Lab }) => root.render(<StrictMode><CombatV2Lab /></StrictMode>));
+} else void Promise.all([import("./App.tsx"), import("./CloudAppShell.tsx")]).then(([{ default: App }, { CloudAppShell }]) => root.render(
   <StrictMode>
     <CloudAppShell>
       {(cloud) => <App cloud={cloud} />}
     </CloudAppShell>
   </StrictMode>,
-);
+));

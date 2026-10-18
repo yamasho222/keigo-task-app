@@ -346,6 +346,14 @@ export function recommendedCraftRecipeIds(mining: MiningState): RecipeId[] {
   const push = (id: RecipeId) => {
     if (!ids.includes(id)) ids.push(id);
   };
+  // End materials must not be hidden behind optional enchanting/netherite goals.
+  if (hasWorkbench(mining) && (mining.unlockedGachas.includes("fortress") || mining.unlockedGachas.includes("warped_forest"))) {
+    if (getMaterialCount(mining, "ender_pearl") >= 1 && getMaterialCount(mining, "blaze_powder") >= 1
+      && mining.unlockedGachas.includes("warped_forest")) push("ender_eye_craft");
+    if (getMaterialCount(mining, "blaze_rod") >= 1) push("blaze_powder_batch");
+    if (ids.length) return ids;
+    if ((mining.bedCount ?? 1) >= 3) push("bed");
+  }
   const planks = getMaterialCount(mining, "plank");
   const sticks = getMaterialCount(mining, "stick");
   const logs = getMaterialCount(mining, "log");
@@ -506,11 +514,14 @@ function parseArmorKind(id: CraftedGearId): ArmorKind | null {
 
 /** クラフトカードに出す効果・役割の一言 */
 export function recipeEffectLine(recipe: MiningRecipe): string | null {
+  if (recipe.id === "shield_craft") return "持ち物にそうびして、まもるを強くする";
   if (recipe.id === "plank_batch") return "作業台やどうぐの材料";
   if (recipe.id === "stick_batch") return "どうぐの取っ手（作業台にはいらない）";
   if (recipe.id === "workbench") return "どうぐ・ベッド・かまどがつくれる";
   if (recipe.id === "furnace") return "てつ・きんの原石をインゴットにできる";
   if (recipe.id === "bed" || recipe.grantsBed) return "なかまが1人ふえる";
+  if (recipe.id === "blaze_powder_batch") return "エンダーアイの材料（棒1で粉2）";
+  if (recipe.id === "ender_eye_craft") return "ふしぎな気配がする…";
   if (recipe.id === "smelt_iron") return "鉄のどうぐ・よろいの材料";
   if (recipe.id === "smelt_gold") return "金のどうぐ・よろいの材料";
   if (recipe.id === "smelt_debris") return "ネザライトの材料";
@@ -740,6 +751,16 @@ export function detectProgressNudge(
     };
   }
 
+  if (getMaterialCount(before, "ender_eye") < 1 && getMaterialCount(after, "ender_eye") >= 1) {
+    return {
+      id: "first-ender-eye",
+      title: "エンダーアイ できた！",
+      body: "できあがったアイが、かすかに光っている…",
+      actionLabel: "ほりばへ",
+      action: "mine",
+    };
+  }
+
   return null;
 }
 
@@ -848,6 +869,13 @@ export function gachaForMaterial(id: MaterialId): GachaId | null {
     case "book":
     case "obsidian":
       return null;
+    case "ender_pearl":
+    case "ender_eye":
+    case "warped_wart":
+      return "warped_forest";
+    case "blaze_rod":
+    case "blaze_powder":
+      return "fortress";
     default:
       return null;
   }
@@ -868,6 +896,10 @@ export const GACHA_SURFACE: Record<GachaId, string> = {
   lapis_cave: "#E8EAF6",
   nether: "#FBE9E7",
   bastion: "#EFEBE9",
+  warped_forest: "#E0F2F1",
+  fortress: "#FFEBEE",
+  end_portal: "#EDE7F6",
+  the_end: "#D1C4E9",
 };
 
 /** 子ども向け補正の強さ */
@@ -957,6 +989,15 @@ export function detectChapterMoments(before: MiningState, after: MiningState): C
     && getMaterialCount(after, "netherite_ingot") >= 1
   ) {
     push({ id: "netherite_ingot", title: "ネザライトインゴット！", sub: "どうぐを強くしよう" });
+  }
+  if (!before.endQuest?.foundPortal && after.endQuest?.foundPortal) {
+    push({ id: "end_portal_found", title: "エンドポータル みつけた！", sub: "アイを12こはめよう" });
+  }
+  if (!before.endQuest?.theEndUnlocked && after.endQuest?.theEndUnlocked) {
+    push({ id: "the_end", title: "ジ・エンド ひらいた！", sub: "ほりばのジ・エンドからエンドラへ" });
+  }
+  if (!before.crafted.elytra && after.crafted.elytra) {
+    push({ id: "elytra", title: "エンドラ たおした！", sub: "エリトラを手に入れたよ" });
   }
 
   return moments;

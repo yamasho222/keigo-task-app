@@ -1,6 +1,11 @@
 /** マイクラ風採掘・クラフト — 型と定数 */
+import type { CombatV2Store } from "./combatV2Types";
+import { readCombatV2 } from "./combatV2Migration";
+import { readEndJourney, type EndJourneyProgress } from "./endJourneyProgress";
+import { readAdventure, type AdventureState } from './adventureState';
 
 export type MaterialId =
+  | "wheat" | "bread"
   | "log"
   | "plank"
   | "stick"
@@ -26,7 +31,14 @@ export type MaterialId =
   | "lapis"
   | "book"
   | "netherrack"
-  | "netherite_upgrade";
+  | "netherite_upgrade"
+  | "ender_pearl"
+  | "blaze_rod"
+  | "blaze_powder"
+  | "warped_wart"
+  | "ender_eye"
+  | "shield"
+  | "spare_bed";
 
 /** パーティ枠＝ベッド数（1〜3） */
 export const MAX_BEDS = 3;
@@ -52,7 +64,11 @@ export type GachaId =
   | "diamond"
   | "lapis_cave"
   | "nether"
-  | "bastion";
+  | "bastion"
+  | "warped_forest"
+  | "fortress"
+  | "end_portal"
+  | "the_end";
 
 export type GearSlot = "tool" | "helmet" | "chest" | "leggings" | "boots";
 
@@ -87,7 +103,8 @@ export type CraftedGearId =
   | "furnace"
   | "bucket_iron"
   | "enchanting_table"
-  | "smithing_table";
+  | "smithing_table"
+  | "elytra";
 
 export type MiningSpecialty =
   | "wood"
@@ -99,6 +116,9 @@ export type MiningSpecialty =
   | "netherite";
 
 export interface MiningState {
+  adventure?: AdventureState;
+  /** Isolated combat-v2 test saves only; production activation is separate. */
+  combatV2?: CombatV2Store;
   tickets: number;
   miningPoints: number;
   materials: Partial<Record<MaterialId, number>>;
@@ -116,7 +136,15 @@ export interface MiningState {
     chest: CraftedGearId | null;
     leggings: CraftedGearId | null;
     boots: CraftedGearId | null;
+    /** 水バケツ・エンダーアイなど */
+    held: MaterialId | null;
   };
+  /** 歪んだ森／要塞の残りHP（倒すまで引き継ぐ） */
+  combatEncounters?: Partial<Record<"warped_forest" | "fortress", { mobs: { hp: number }[]; wave?: number }>>;
+  /** 戦闘を閉じても同じ場所で続けられるようにする保存情報 */
+  combatProgress?: Partial<Record<CombatLocation, CombatProgress>>;
+  /** 倒された後、復活するまでは戻る必要がある戦闘場所 */
+  pendingReviveLocation?: CombatLocation | null;
   /** チケット付与済みフェーズ（sessionTreatKey） */
   ticketStampedSessions: Record<string, boolean>;
   /** 全日クリアでチケット付与済みの日付 */
@@ -141,12 +169,78 @@ export interface MiningState {
   miningVersionNoticeSeen?: boolean;
   /** テーブル後の分岐カード（はやく／つよく）を見たか */
   miningRouteBranchSeen?: boolean;
+  /** エンダーアイ探索〜ジ・エンド解放 */
+  endQuest?: EndQuestState;
+  /** Cumulative unlock evidence; independent of consumable inventory. */
+  endJourney?: EndJourneyProgress;
+  /** エンドラ戦（倒すまでHPを残す） */
+  dragonFight?: DragonFightState;
+  /** プレイヤーHP。1ハート=2。最大20 */
+  playerHp?: number;
+  /** ハートを満タンにした日付（翌日リセット用） */
+  playerHpDate?: string;
+  /** エンドラ反撃回数。4の倍数が強攻撃 */
+  dragonRageSeq?: number;
+  /** 必殺ゲージ 0–5。倒されると0 */
+  specialGauge?: number;
+  /** 必殺の説明を一度出したか */
+  specialHintSeen?: boolean;
+}
+
+export type CombatLocation = "warped_forest" | "fortress" | "the_end";
+export type CombatCardTier = "normal" | "hit" | "jackpot";
+
+export interface CombatProgress {
+  dateKey: string;
+  /** この場所で戦い始めた時のHP。復活時の基準 */
+  startHp: number;
+  /** 0=チケットを使う1回目、1=同じチケットで行う2回目 */
+  attackStep: 0 | 1;
+  /** 復活に使ったチケットが付与した最初の無料攻撃 */
+  freeFirstAttack: boolean;
+  /** 選び直しで攻撃札が変わらないよう保存 */
+  cardLayout: [CombatCardTier, CombatCardTier, CombatCardTier];
+  dragonTarget: number | "dragon";
+  pendingSpecial?: {
+    startedAtMs: number;
+    taps: number;
+    target: number | "dragon";
+  };
+}
+
+export interface EndQuestState {
+  routeVersion?: number;
+  /** Idempotency key for a genuine visit; opening a sheet is not a visit. */
+  hintVisitKey?: string;
+  hintVisitAt?: number;
+  mark: GachaId | null;
+  visited: GachaId[];
+  fifth: GachaId | null;
+  fifthStreak: number;
+  /** エンダーアイ未装備のままほりばを訪れた回数（段階ヒント用） */
+  enderEyeHintVisits: number;
+  foundPortal: boolean;
+  /** はめた数 0–12 */
+  eyes: number;
+  /** Filled frame indices, clockwise from the top. Older saves use the first eyes frames. */
+  eyeSlots?: number[];
+  lastEyeSlot?: number;
+  linked: boolean;
+  theEndUnlocked: boolean;
+}
+
+export interface DragonFightState {
+  crystals: number[];
+  hp: number;
+  defeated: boolean;
 }
 
 export const MATERIAL_META: Record<
   MaterialId,
   { label: string; emoji: string; image?: string }
 > = {
+  wheat: { label: 'こむぎ', emoji: '🌾' },
+  bread: { label: 'パン', emoji: '🍞' },
   log: { label: "原木", emoji: "🪵", image: "/mining/Oak_Genboku.png" },
   plank: { label: "板材", emoji: "🟫", image: "/mining/Oak_Planks.webp" },
   stick: { label: "棒", emoji: "🥢", image: "/mining/Stick.png" },
@@ -177,6 +271,13 @@ export const MATERIAL_META: Record<
     emoji: "📜",
     image: "/mining/Netherite_Upgrade.png",
   },
+  ender_pearl: { label: "エンダーパール", emoji: "🟢", image: "/mining/Ender_Pearl.png" },
+  blaze_rod: { label: "ブレイズロッド", emoji: "🔶", image: "/mining/Blaze_Rod.webp" },
+  blaze_powder: { label: "ブレイズパウダー", emoji: "✨", image: "/mining/Blaze_Powder.webp" },
+  warped_wart: { label: "歪んだウォートブロック", emoji: "🟦", image: "/mining/Warped_Wart.png" },
+  ender_eye: { label: "エンダーアイ", emoji: "👁", image: "/mining/Eye_of_Ender.png" },
+  shield: { label: "盾", emoji: "🛡️", image: "/mining/Shield.webp" },
+  spare_bed: { label: "ベッド", emoji: "🛏️", image: "/mining/White_Bed.png" },
 };
 
 /** 装備・設備の画像（あれば表示） */
@@ -220,6 +321,7 @@ export const GEAR_IMAGE: Partial<Record<CraftedGearId, string>> = {
   chest_netherite: "/mining/netherite_chestplate.png",
   leggings_netherite: "/mining/netherite_leggings.png",
   boots_netherite: "/mining/Netherite_Boots.webp",
+  elytra: "/mining/Elytra.png",
 };
 
 /** エンチャント済み装備の画像（あれば通常画像から差し替え） */
@@ -268,10 +370,21 @@ export const GACHA_ORDER: GachaId[] = [
   "lapis_cave",
   "nether",
   "bastion",
+  "warped_forest",
+  "fortress",
+  "end_portal",
+  "the_end",
 ];
 
 /** こううん日の抽選から外す（バケツ専用など） */
-export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set(["lava_cave", "river"]);
+export const LUCKY_GACHA_EXCLUDE: ReadonlySet<GachaId> = new Set([
+  "lava_cave",
+  "river",
+  "warped_forest",
+  "fortress",
+  "end_portal",
+  "the_end",
+]);
 
 export function isBucketGacha(gacha: GachaId): gacha is "river" | "lava_cave" {
   return gacha === "river" || gacha === "lava_cave";
@@ -290,7 +403,7 @@ export const GACHA_META: Record<
   { label: string; emoji: string; specialty: MiningSpecialty; badge?: string }
 > = {
   wood: { label: "もり", emoji: "🌲", specialty: "wood" },
-  farm: { label: "農場", emoji: "🌾", specialty: "wood", badge: "さとうきび" },
+  farm: { label: "農場", emoji: "🌾", specialty: "wood", badge: "こむぎ・さとうきび" },
   ranch: { label: "牧場", emoji: "🐄", specialty: "wood", badge: "羊毛・皮" },
   stone: { label: "いしのどうくつ", emoji: "⛰️", specialty: "cobble" },
   river: { label: "うみ", emoji: "🌊", specialty: "cobble", badge: "水・バケツ" },
@@ -302,6 +415,10 @@ export const GACHA_META: Record<
   lapis_cave: { label: "ラピスどうくつ", emoji: "🔵", specialty: "diamond", badge: "ラピスだけ" },
   nether: { label: "ネザー", emoji: "🔥", specialty: "netherite" },
   bastion: { label: "砦の遺跡", emoji: "🏰", specialty: "netherite", badge: "鍛冶型" },
+  warped_forest: { label: "歪んだ森", emoji: "🟣", specialty: "netherite", badge: "エンダーマン" },
+  fortress: { label: "ネザー要塞", emoji: "🔥", specialty: "netherite", badge: "ブレイズ" },
+  end_portal: { label: "エンドポータル", emoji: "🟣", specialty: "netherite", badge: "アイをはめる" },
+  the_end: { label: "ジ・エンド", emoji: "🐉", specialty: "netherite", badge: "エンドラ" },
 };
 
 /**
@@ -322,6 +439,10 @@ export const DIG_BLOCK_IMAGE: Record<GachaId, string> = {
   lapis_cave: "/mining/Lapis_Lazuli_Ore.webp",
   nether: "/mining/Netherrack.webp",
   bastion: "/mining/Bastion.webp",
+  warped_forest: "/mining/Warped_Forest.webp",
+  fortress: "/mining/Nether_Fortress.jpg",
+  end_portal: "/mining/End_Portal_Empty.jpg",
+  the_end: "/mining/The_End.webp",
 };
 
 export const ENCHANT_META: Record<
@@ -425,6 +546,9 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
     if (isAxeGacha(gacha)) return "こうざんのときだけ効く";
     if (gacha === "nether") return "いま効く：残骸が出やすい";
     if (gacha === "bastion") return "いま効く：チェストをあけやすい";
+    if (gacha === "warped_forest" || gacha === "fortress") return "たたかうときは剣";
+    if (gacha === "end_portal") return "アイをはめる（チケットなし）";
+    if (gacha === "the_end") return "たたかうときは剣";
     if (gacha === "coal") return "いま効く：石炭+1";
     if (gacha === "lapis_cave") return "いま効く：ラピス";
     return "いま効く：たくさんほれる";
@@ -433,6 +557,10 @@ export function toolEffectForGacha(kind: ToolKind, gacha: GachaId): string {
   if (gacha === "diamond") return "たまに+3／ダイヤ直";
   if (gacha === "nether") return "たまに+3（残骸はツルハシ向き）";
   if (gacha === "bastion") return "たまに+3（鍛冶型は運）";
+  if (gacha === "warped_forest") return "剣でエンダーマンをたたく";
+  if (gacha === "fortress") return "剣でブレイズをたたく";
+  if (gacha === "end_portal") return "エンダーアイをはめる";
+  if (gacha === "the_end") return "剣でエンドラをたたく";
   return "たまに素材+3";
 }
 
@@ -474,8 +602,8 @@ export const SPECIALTY_META: Record<
   iron: { label: "鉄", emoji: "⛏️", gachaHint: "てつのこうざん" },
   coal: { label: "石炭", emoji: "⬛", gachaHint: "せきたんのやま" },
   gold: { label: "金", emoji: "🌟", gachaHint: "きんのこうざん" },
-  diamond: { label: "ダイヤ", emoji: "💎", gachaHint: "ダイヤのしんそう" },
-  netherite: { label: "ネザー", emoji: "🔥", gachaHint: "ネザー" },
+  diamond: { label: "ダイヤ", emoji: "💎", gachaHint: "ダイヤのしんそう・ラピスどうくつ" },
+  netherite: { label: "ネザー", emoji: "🔥", gachaHint: "ネザー・砦の遺跡など" },
 };
 
 export function specialtyOfCategory(category: string): MiningSpecialty {
@@ -487,6 +615,84 @@ export function specialtyBlurb(category: string): string {
   const meta = SPECIALTY_META[spec];
   return `${meta.emoji}${meta.label}（${meta.gachaHint}）`;
 }
+function isMaterialId(id: unknown): id is MaterialId {
+  return typeof id === "string" && id in MATERIAL_META;
+}
+
+function normalizeCombatEncounters(
+  raw: unknown,
+): MiningState["combatEncounters"] {
+  if (!raw || typeof raw !== "object") return {};
+  const out: NonNullable<MiningState["combatEncounters"]> = {};
+  for (const key of ["warped_forest", "fortress"] as const) {
+    const rec = (raw as Record<string, unknown>)[key];
+    if (!rec || typeof rec !== "object") continue;
+    const mobsRaw = (rec as { mobs?: unknown }).mobs;
+    if (!Array.isArray(mobsRaw)) continue;
+    const mobs = mobsRaw
+      .map((m) => {
+        const hp = Math.floor(Number((m as { hp?: unknown })?.hp));
+        return Number.isFinite(hp) ? { hp: Math.max(0, hp) } : null;
+      })
+      .filter((m): m is { hp: number } => !!m);
+    const waveRaw = Number((rec as { wave?: unknown }).wave);
+    const wave = Number.isFinite(waveRaw) ? Math.max(0, Math.floor(waveRaw)) : 0;
+    if (mobs.length) out[key] = { mobs, wave };
+  }
+  return out;
+}
+
+function isCombatCardTier(value: unknown): value is CombatCardTier {
+  return value === "normal" || value === "hit" || value === "jackpot";
+}
+
+function normalizeCombatProgress(raw: unknown): MiningState["combatProgress"] {
+  if (!raw || typeof raw !== "object") return {};
+  const out: NonNullable<MiningState["combatProgress"]> = {};
+  for (const location of ["warped_forest", "fortress", "the_end"] as const) {
+    const value = (raw as Record<string, unknown>)[location];
+    if (!value || typeof value !== "object") continue;
+    const record = value as Record<string, unknown>;
+    const layout = Array.isArray(record.cardLayout) && record.cardLayout.length === 3
+      && record.cardLayout.every(isCombatCardTier)
+      ? record.cardLayout as CombatProgress["cardLayout"]
+      : ["normal", "normal", "normal"] as CombatProgress["cardLayout"];
+    const target = record.dragonTarget === "dragon"
+      ? "dragon"
+      : Number.isFinite(Number(record.dragonTarget))
+        ? Math.max(0, Math.min(7, Math.floor(Number(record.dragonTarget))))
+        : "dragon";
+    const pendingRaw = record.pendingSpecial;
+    const pending = pendingRaw && typeof pendingRaw === "object"
+      ? pendingRaw as Record<string, unknown>
+      : null;
+    const specialTarget = pending?.target === "dragon"
+      ? "dragon"
+      : Number.isFinite(Number(pending?.target))
+        ? Math.max(0, Math.min(7, Math.floor(Number(pending?.target))))
+        : target;
+    const startedAtMs = Number(pending?.startedAtMs);
+    out[location] = {
+      dateKey: typeof record.dateKey === "string" ? record.dateKey : "",
+      startHp: Math.max(0, Math.min(20, Math.floor(Number(record.startHp) || 0))),
+      attackStep: Number(record.attackStep) === 1 ? 1 : 0,
+      freeFirstAttack: !!record.freeFirstAttack,
+      cardLayout: layout,
+      dragonTarget: target,
+      ...(pending && Number.isFinite(startedAtMs) && startedAtMs > 0
+        ? {
+          pendingSpecial: {
+            startedAtMs,
+            taps: Math.max(0, Math.floor(Number(pending.taps) || 0)),
+            target: specialTarget,
+          },
+        }
+        : {}),
+    };
+  }
+  return out;
+}
+
 export function emptyMiningState(): MiningState {
   return {
     tickets: 0,
@@ -502,7 +708,11 @@ export function emptyMiningState(): MiningState {
       chest: null,
       leggings: null,
       boots: null,
+      held: null,
     },
+    combatEncounters: {},
+    combatProgress: {},
+    pendingReviveLocation: null,
     ticketStampedSessions: {},
     fullDayTicketClaimed: {},
     streakTicketClaimed: {},
@@ -515,6 +725,28 @@ export function emptyMiningState(): MiningState {
     firstEnchantClaimed: false,
     miningVersionNoticeSeen: false,
     miningRouteBranchSeen: false,
+    endQuest: {
+      routeVersion: 3,
+      mark: null,
+      visited: [],
+      fifth: null,
+      fifthStreak: 0,
+      enderEyeHintVisits: 0,
+      foundPortal: false,
+      eyes: 0,
+      linked: false,
+      theEndUnlocked: false,
+    },
+    dragonFight: {
+      crystals: [16, 16, 16, 16, 16, 16, 16, 16],
+      hp: 2000,
+      defeated: false,
+    },
+    playerHp: 20,
+    playerHpDate: "",
+    dragonRageSeq: 0,
+    specialGauge: 0,
+    specialHintSeen: false,
   };
 }
 
@@ -532,6 +764,10 @@ const ALL_GACHA_IDS: GachaId[] = [
   "lapis_cave",
   "nether",
   "bastion",
+  "warped_forest",
+  "fortress",
+  "end_portal",
+  "the_end",
 ];
 
 function isGachaId(id: unknown): id is GachaId {
@@ -640,7 +876,18 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
       chest: eq.chest ?? null,
       leggings: eq.leggings ?? null,
       boots: eq.boots ?? null,
+      held: isMaterialId(eq.held) ? eq.held : null,
     },
+    combatEncounters: normalizeCombatEncounters(raw.combatEncounters),
+    combatProgress: normalizeCombatProgress(raw.combatProgress),
+    ...(raw.combatV2 === undefined ? {} : { combatV2: readCombatV2(raw.combatV2) }),
+    ...(raw.adventure === undefined ? {} : { adventure: readAdventure(raw.adventure) }),
+    pendingReviveLocation:
+      raw.pendingReviveLocation === "warped_forest"
+        || raw.pendingReviveLocation === "fortress"
+        || raw.pendingReviveLocation === "the_end"
+        ? raw.pendingReviveLocation
+        : null,
     ticketStampedSessions: normalizeBoolRecord(raw.ticketStampedSessions),
     fullDayTicketClaimed: normalizeBoolRecord(raw.fullDayTicketClaimed),
     streakTicketClaimed:
@@ -657,7 +904,71 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
     firstEnchantClaimed: !!raw.firstEnchantClaimed,
     miningVersionNoticeSeen: !!raw.miningVersionNoticeSeen,
     miningRouteBranchSeen: !!raw.miningRouteBranchSeen,
+    endQuest: normalizeEndQuest(raw.endQuest),
+    endJourney: readEndJourney(raw.endJourney),
+    dragonFight: normalizeDragonFight(raw.dragonFight),
+    playerHp: normalizePlayerHp(raw.playerHp),
+    playerHpDate: typeof raw.playerHpDate === "string" ? raw.playerHpDate : "",
+    dragonRageSeq: Math.max(0, Math.floor(Number(raw.dragonRageSeq) || 0)),
+    specialGauge: normalizeSpecialGauge(raw.specialGauge),
+    specialHintSeen: !!raw.specialHintSeen,
   };
+}
+
+function normalizePlayerHp(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return 20;
+  return Math.max(0, Math.min(20, n));
+}
+
+function normalizeSpecialGauge(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(5, n));
+}
+
+function normalizeEndQuest(raw: unknown): EndQuestState {
+  const base = emptyMiningState().endQuest!;
+  if (!raw || typeof raw !== "object") return base;
+  const rec = raw as Record<string, unknown>;
+  const mark = isGachaId(rec.mark) ? rec.mark : null;
+  const fifth = isGachaId(rec.fifth) ? rec.fifth : null;
+  const visited = Array.isArray(rec.visited)
+    ? rec.visited.filter((id): id is GachaId => isGachaId(id))
+    : [];
+  const eyes = Math.max(0, Math.min(12, Math.floor(Number(rec.eyes) || 0)));
+  const fifthStreak = Math.max(0, Math.floor(Number(rec.fifthStreak) || 0));
+  const enderEyeHintVisits = Math.max(0, Math.min(7, Math.floor(Number(rec.enderEyeHintVisits) || 0)));
+  return {
+    routeVersion: typeof rec.routeVersion === "number" && Number.isSafeInteger(rec.routeVersion) && rec.routeVersion >= 2 ? rec.routeVersion : undefined,
+    hintVisitKey: typeof rec.hintVisitKey === "string" ? rec.hintVisitKey : undefined,
+    hintVisitAt: typeof rec.hintVisitAt === "number" && Number.isFinite(rec.hintVisitAt) ? rec.hintVisitAt : undefined,
+    mark,
+    visited,
+    fifth,
+    fifthStreak,
+    enderEyeHintVisits,
+    foundPortal: !!rec.foundPortal,
+    eyes,
+    eyeSlots: Array.isArray(rec.eyeSlots) ? [...new Set(rec.eyeSlots.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n < 12))].slice(0, eyes) : undefined,
+    lastEyeSlot: typeof rec.lastEyeSlot === "number" && Number.isInteger(rec.lastEyeSlot) && rec.lastEyeSlot >= 0 && rec.lastEyeSlot < 12 ? rec.lastEyeSlot : undefined,
+    linked: !!rec.linked || eyes >= 12,
+    theEndUnlocked: !!rec.theEndUnlocked,
+  };
+}
+
+function normalizeDragonFight(raw: unknown): DragonFightState {
+  const base = emptyMiningState().dragonFight!;
+  if (!raw || typeof raw !== "object") return base;
+  const rec = raw as Record<string, unknown>;
+  const crystalsRaw = Array.isArray(rec.crystals) ? rec.crystals : [];
+  const crystals = Array.from({ length: 8 }, (_, i) => {
+    const n = Math.floor(Number(crystalsRaw[i]));
+    return Number.isFinite(n) ? Math.max(0, Math.min(16, n)) : 16;
+  });
+  const hpRaw = Math.floor(Number(rec.hp));
+  const hp = Number.isFinite(hpRaw) ? Math.max(0, Math.min(2000, hpRaw)) : 2000;
+  return { crystals, hp, defeated: !!rec.defeated || hp <= 0 };
 }
 
 function normalizeEnchants(raw: unknown): Partial<Record<EnchantTarget, GearEnchant>> {
@@ -708,6 +1019,7 @@ export function gearLabel(id: CraftedGearId): string {
   if (id === "bucket_iron") return "鉄のバケツ";
   if (id === "enchanting_table") return "エンチャントテーブル";
   if (id === "smithing_table") return "鍛冶台";
+  if (id === "elytra") return "エリトラ";
   const [kind, tier] = id.split("_") as [string, GearTier];
   if (kind === "sword" || kind === "axe" || kind === "pickaxe") {
     return `${GEAR_TIER_LABEL[tier]}の${TOOL_KIND_LABEL[kind]}`;
