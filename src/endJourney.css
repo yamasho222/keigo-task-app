@@ -1,0 +1,50 @@
+.end-journey-guide { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; border: 1px solid #599d8c80; border-radius: 16px; padding: 14px; color: #e8fff2; background: linear-gradient(120deg, #183b35, #212d42); text-align: left; font: inherit; font-weight: 800; }
+button.end-journey-guide { cursor: pointer; min-height: 68px; }
+.end-journey-copy { flex: 1; min-width: 0; line-height: 1.5; }
+.end-journey-marks { display: flex; gap: 12px; color: #4b6866; font-size: 22px; }
+.end-journey-marks .is-done { color: #9affc7; text-shadow: 0 0 12px #71ffc1; }
+.mining-portal-frames.is-four-sides { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mining-portal-side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 5px; border-radius: 8px; border: 2px solid #465048; transition: border-color .3s, background .3s; }
+.mining-portal-side.is-complete { border-color: #7eeaaf; background: #63f4ae1c; }
+.mining-portal-side.is-celebrate { animation: journey-side-glow .9s ease-out; }
+.is-eye-hint, .is-end-recipe-ready { box-shadow: 0 0 0 2px #85e7bd80, 0 0 18px #65d9be30; }
+.end-journey-craft-link { min-height: 48px; padding: 10px 14px; border: 1px solid #8fe3be80; border-radius: 12px; background: #203f36; color: #e3fff1; font: inherit; font-weight: 800; cursor: pointer; }
+.end-arrival { position: fixed; inset: 0; z-index: 1000; background: #070719f0; display: grid; place-items: center; padding: 20px; overflow-y: auto; }
+.end-arrival-card { width: min(100%, 420px); padding: 20px; border-radius: 24px; box-sizing: border-box; background: linear-gradient(#28203f, #141723); border: 1px solid #a796d0; text-align: center; color: #f4efff; animation: journey-arrival .65s ease-out; }
+.end-arrival-card h2 { font-size: clamp(20px, 6vw, 28px); margin: 16px 0 8px; }
+.end-arrival-card p { color: #c9c2db; }
+.end-arrival-land { height: min(30vh, 200px); border-radius: 16px; position: relative; overflow: hidden; background: radial-gradient(ellipse at 50% 95%, #d9d6a9 0 12%, #8d8c69 13% 19%, transparent 20%), radial-gradient(ellipse at center, #76638e, #151128); }
+.end-arrival-land img { width: 95%; height: 95%; object-fit: contain; mix-blend-mode: screen; mask-image: radial-gradient(ellipse, #000 45%, transparent 75%); filter: drop-shadow(0 0 18px #b67ae180); }
+.end-arrival-card button { display: block; width: 100%; min-height: 54px; margin-top: 12px; border: 0; border-radius: 12px; font: inherit; font-size: 18px; font-weight: 900; background: #a6eec4; color: #123b2b; cursor: pointer; }
+.end-arrival-card button.is-back { background: transparent; color: #d8cceb; border: 1px solid #73628a; font-size: 15px; }
+@keyframes journey-side-glow { 35% { box-shadow: 0 0 24px #80ffc7; transform: scale(1.04); } }
+@keyframes journey-arrival { from { opacity: 0; transform: translateY(16px) scale(.96); } to { opacity: 1; transform: none; } }
+.end-journey-guide.is-mystery > img { animation: journey-mystery 3.5s ease-in-out infinite; }
+.is-eye-hint { animation: journey-hint 3.5s ease-in-out infinite; }
+@keyframes journey-mystery { 50% { transform: translateY(-3px); filter: drop-shadow(0 0 8px #adffdd); } }
+@keyframes journey-hint { 50% { box-shadow: 0 0 0 2px #85e7bd, 0 0 18px #65d9be65; } }
+@media (prefers-reduced-motion: reduce) { .end-arrival-card, .mining-portal-side.is-celebrate, .end-journey-guide.is-mystery > img, .is-eye-hint { animation: none; } }
+.end-journey-lab { height: 100dvh; display: flex; flex-direction: column; background: #f5f5f5; color: #1a1a1a; }
+.end-journey-lab-controls { flex-shrink: 0; max-height: 38dvh; overflow: auto; padding: 10px 14px; border-bottom: 1px solid #4a625c; background: #192d29; color: #f1f7f6; font-size: 12px; }
+.end-journey-lab-controls summary { cursor: pointer; min-height: 24px; font-weight: 800; }
+.end-journey-lab-controls button, .end-journey-reenter { min-height: 44px; padding: 8px 12px; margin: 4px; border: 1px solid #608f81; border-radius: 8px; background: #26483c; color: white; cursor: pointer; font: inherit; }
+.end-journey-lab-controls output { display: block; padding: 6px; }
+.end-journey-lab-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.end-portal-map { display: grid; grid-template-columns: repeat(5, minmax(44px, 1fr)); grid-template-rows: repeat(5, minmax(44px, 1fr)); gap: 4px; width: min(100%, 340px); aspect-ratio: 1; margin: 12px auto; position: relative; }
+.end-portal-center { grid-area: 2 / 2 / 5 / 5; display: grid; place-items: center; border-radius: 10px; color: #71607d; font-size: 54px; background: radial-gradient(ellipse, #322b3c, #10141b); border: 1px solid #494557; }
+.is-linked .end-portal-center { color: #ccbbff; background: radial-gradient(ellipse, #6d4786, #0c091e 70%); box-shadow: inset 0 0 22px #a88adf90, 0 0 24px #8866b080; }
+.end-portal-slot { position: relative; padding: 2px; min-width: 44px; min-height: 44px; border: 1px solid #648474; border-radius: 8px; background: #233b36; cursor: pointer; }
+.end-portal-slot > img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.end-portal-slot.is-ready { border: 2px solid #c0ffd5; animation: portal-ready 2s ease-in-out infinite; }
+.end-portal-slot.is-filled { opacity: 1; background: #2b5144; border-color: #76d5a6; }
+.end-portal-slot:disabled { cursor: default; }
+.end-portal-slot:focus-visible { outline: 3px solid #fff3ad; outline-offset: 3px; z-index: 1; }
+.end-portal-tap-cue { position: absolute; right: 0; top: -5px; border-radius: 50%; background: #d9ffe6; color: #185642; font-size: 18px; font-weight: 900; line-height: 22px; width: 22px; }
+.end-portal-slot > .end-portal-flying-eye { position: absolute; inset: 10%; width: 80%; height: 80%; animation: portal-eye-in .42s ease-out both; z-index: 3; }
+.end-portal-slot.is-pop { animation: journey-side-glow .6s ease-out; }
+.end-portal-instruction { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 10px 0; font-weight: 900; }
+.end-portal-instruction > img { width: 38px; height: 38px; object-fit: contain; }
+.end-portal-instruction small { display: block; margin-top: 4px; font-size: 11px; font-weight: 500; opacity: .75; }
+@keyframes portal-ready { 50% { box-shadow: 0 0 12px #91ffbd80; background: #345a48; } }
+@keyframes portal-eye-in { from { opacity: 1; transform: translateY(35px) scale(1.6); } to { opacity: 0; transform: translateY(-6px) scale(.35); } }
+@media (prefers-reduced-motion: reduce) { .end-portal-slot.is-ready, .end-portal-slot.is-pop { animation: none; } .end-portal-slot > .end-portal-flying-eye { display: none; } }

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
+import "./endJourney.css";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { StickerFrameWithBadge, StickerImg } from "./Rewards";
 import { BuddyFrame } from "./BuddyFrame";
@@ -13,6 +14,7 @@ import {
   bestOwnedTool,
   canAffordRecipe,
   equipArmor,
+  equipHeld,
   equipTool,
   exchangeCost,
   exchangePointsForMaterial,
@@ -48,6 +50,50 @@ import {
   type MiningRecipe,
   type OddsSegment,
 } from "./miningProgress";
+import {
+  WARPED_WART_TO_POINTS,
+  exchangeWarpedWartForPoints,
+  isCombatGacha,
+  isEndChapterDevEnabled,
+  resolveCombat,
+  applyCombatSpecialFinish,
+  resolveCombatHelmetHint,
+  livingMobs,
+  settleCombatEncounter,
+  shuffleCombatTiers,
+  type CombatGachaId,
+  type CombatResult,
+  type CombatTier,
+} from "./miningCombat";
+import { MiningCombatPanel } from "./MiningCombatPanel";
+const AdventureBattlePanel = lazy(() => import("./AdventureBattlePanel").then(module => ({ default: module.AdventureBattlePanel })));
+import { AdventureStrengthPanel } from "./AdventureStrengthPanel";
+import type { AdventureLocation } from "./adventureState";
+import { CombatV2Panel } from "./CombatV2Panel";
+import { beginSpecialAttack, canPlayerFight, playerHpOf, revivePlayer, specialGaugeReady, syncPlayerHpForDate } from "./playerCombat";
+import { EndPortalPanel } from "./EndPortalPanel";
+import { EndJourneyGuide, EndArrival } from "./EndJourneyGuidePanel";
+import { endJourneyGuide, type JourneyAction } from "./endJourneyGuide";
+import { EndDragonPanel, type DragonFx } from "./EndDragonPanel";
+import { EndCinematicOverlay, type EndCinematicKind, type IncomingKind, type SlashEmphasis } from "./endFx";
+import { FleeConfirmOverlay, SpecialFinale, SpecialTapRush, YouDiedOverlay } from "./CombatOverlays";
+import {
+  applyEndQuestOnVisit,
+  describeEndQuestChange,
+  ensureDragonFight,
+  insertPortalEye,
+  isEndPortalGacha,
+  isTheEndGacha,
+  listsMiningDestination,
+  noteEndQuestVisit,
+  nextLivingCrystal,
+  showsEndHuntHint,
+  showsEnderEyeHoldHint,
+  resolveDragonAttack,
+  applyDragonSpecialFinish,
+  unlockTheEnd,
+  type DragonTarget,
+} from "./endChapter";
 import {
   patchFromResult,
   rebaseMiningWrite,
@@ -119,6 +165,8 @@ import {
   parseToolId,
   partySlotCount,
   type CraftedGearId,
+  type CombatLocation,
+  type CombatProgress,
   type EnchantId,
   type GachaId,
   type MaterialId,
@@ -133,7 +181,20 @@ interface Props {
   dateKey: string;
   onChange: (patch: MiningPatch) => void;
   onBack: () => void;
+  /** 開発メニューから特定画面へ飛ばす */
+  devJump?: MiningDevJump | null;
+  onDevJumpConsumed?: () => void;
+  /** Isolated local test host only; never enabled by production App. */
+  combatV2Test?: boolean;
 }
+
+export type MiningDevJump = {
+  nonce: number;
+  tab: "mine" | "craft" | "bag";
+  destStep?: "place" | "rock";
+  craftTab?: CraftRecipeTab;
+  highlightRecipeId?: string;
+};
 
 type TabId = "mine" | "craft" | "bag";
 type OverlayId = "party" | "equip" | "enchant" | "digDestination" | null;
@@ -141,6 +202,53 @@ type DigFxPhase = "idle" | "crack" | "break" | "reveal";
 type DigDestStep = "place" | "rock";
 type ArmorSlot = "helmet" | "chest" | "leggings" | "boots";
 type ToastKind = "normal" | "progress";
+
+const HOLDABLE_MATERIALS: MaterialId[] = ["water", "lava", "ender_eye", "shield", "spare_bed"];
+const ENDER_EYE_IMAGE = MATERIAL_META.ender_eye.image ?? "/mining/Eye_of_Ender.png";
+
+function combatLocationForGacha(gacha: GachaId): CombatLocation | null {
+  if (gacha === "warped_forest" || gacha === "fortress" || gacha === "the_end") return gacha;
+  return null;
+}
+
+function combatLayoutTuple(layout: CombatTier[]): CombatProgress["cardLayout"] {
+  return [layout[0] ?? "normal", layout[1] ?? "normal", layout[2] ?? "normal"];
+}
+
+function withCombatProgress(
+  state: MiningState,
+  location: CombatLocation,
+  progress: CombatProgress | null,
+): MiningState {
+  const combatProgress = { ...(state.combatProgress ?? {}) };
+  if (progress) combatProgress[location] = progress;
+  else delete combatProgress[location];
+  return { ...state, combatProgress };
+}
+
+function withPendingReviveLocation(
+  state: MiningState,
+  location: CombatLocation,
+  died: boolean,
+): MiningState {
+  return died ? { ...state, pendingReviveLocation: location } : state;
+}
+
+function combatProgressFor(
+  state: MiningState,
+  location: CombatLocation,
+  dateKey: string,
+  layout: CombatTier[],
+): CombatProgress {
+  return state.combatProgress?.[location] ?? {
+    dateKey,
+    startHp: playerHpOf(state) || 20,
+    attackStep: 0,
+    freeFirstAttack: false,
+    cardLayout: combatLayoutTuple(layout),
+    dragonTarget: "dragon",
+  };
+}
 
 const card: CSSProperties = {
   padding: 14,
@@ -671,6 +779,10 @@ const BLOCK_TONE: Record<GachaId, { top: string; front: string; side: string; ed
   lapis_cave: { top: "#4a6ad4", front: "#2a48a8", side: "#1a3070", edge: "#0a1840" },
   nether: { top: "#8b3a32", front: "#6b241e", side: "#4a1512", edge: "#220a08" },
   bastion: { top: "#6a5344", front: "#4a372c", side: "#2e221c", edge: "#140e0c" },
+  warped_forest: { top: "#2a6a6a", front: "#1a4a4a", side: "#0e3333", edge: "#061818" },
+  fortress: { top: "#6b241e", front: "#4a1512", side: "#2a0c0a", edge: "#140606" },
+  end_portal: { top: "#3a2a5a", front: "#2a1a40", side: "#1a1028", edge: "#0c0814" },
+  the_end: { top: "#2a1a40", front: "#1a1028", side: "#120818", edge: "#080410" },
 };
 
 /**
@@ -1036,9 +1148,14 @@ export function MiningScreen({
   dateKey,
   onChange,
   onBack,
+  devJump = null,
+  onDevJumpConsumed,
+  combatV2Test = false,
 }: Props) {
+  const combatV2Enabled = import.meta.env.DEV && combatV2Test;
   const [tab, setTab] = useState<TabId>("mine");
   const [overlay, setOverlay] = useState<OverlayId>(null);
+  const [adventureLocation, setAdventureLocation] = useState<AdventureLocation | null>(null);
   const [selectedGacha, setSelectedGacha] = useState<GachaId>(() => {
     const last = mining.lastSelectedGacha;
     if (last && mining.unlockedGachas.includes(last)) return last;
@@ -1079,6 +1196,39 @@ export function MiningScreen({
   const [highlightGacha, setHighlightGacha] = useState<GachaId | null>(null);
   const [highlightRocks, setHighlightRocks] = useState(false);
   const [rockLuckyIndex, setRockLuckyIndex] = useState(() => Math.floor(Math.random() * 3));
+  const [combatLayout, setCombatLayout] = useState<CombatTier[]>(() => shuffleCombatTiers());
+  const [combatBusy, setCombatBusy] = useState(false);
+  const [combatFallen, setCombatFallen] = useState<number[]>([]);
+  const [combatFlash, setCombatFlash] = useState<number[]>([]);
+  const [combatGone, setCombatGone] = useState<number[]>([]);
+  const [portalShake, setPortalShake] = useState(false);
+  const [insertPulse, setInsertPulse] = useState(0);
+  const [endArrival, setEndArrival] = useState(false);
+  const portalInsertLock = useRef(false);
+  const [heldPickerOpen, setHeldPickerOpen] = useState(false);
+  const [dragonTarget, setDragonTarget] = useState<DragonTarget>("dragon");
+  const [dragonFx, setDragonFx] = useState<DragonFx | null>(null);
+  const [combatAttackStep, setCombatAttackStep] = useState<0 | 1>(0);
+  const [combatSwings, setCombatSwings] = useState(1);
+  const [combatHitDamage, setCombatHitDamage] = useState(0);
+  const [combatEmphasis, setCombatEmphasis] = useState<SlashEmphasis>("normal");
+  const [combatSlashSeed, setCombatSlashSeed] = useState(1);
+  const [endCinematic, setEndCinematic] = useState<EndCinematicKind | null>(null);
+  const [playerHitHearts, setPlayerHitHearts] = useState<number | null>(null);
+  const [playerDiedFx, setPlayerDiedFx] = useState(false);
+  const [dragonHeavyHit, setDragonHeavyHit] = useState(false);
+  const [incomingFx, setIncomingFx] = useState<{ kind: IncomingKind; hearts: number } | null>(null);
+  const [striking, setStriking] = useState<number[]>([]);
+  const [tapRush, setTapRush] = useState(false);
+  const [specialFinale, setSpecialFinale] = useState<{ taps: number; damage: number } | null>(null);
+  const [fleeConfirmOpen, setFleeConfirmOpen] = useState(false);
+  const pendingDiscoverRef = useRef(false);
+  const [pendingDiscover, setPendingDiscover] = useState(false);
+  const combatFxSeq = useRef(0);
+  const combatActionLockRef = useRef(false);
+  const lastCombatDateRef = useRef(dateKey);
+  const combatStartHpRef = useRef<number | null>(null);
+  const freeCombatAttackRef = useRef(false);
   const [digDestStep, setDigDestStep] = useState<DigDestStep>("place");
   const [mineMoreOpen, setMineMoreOpen] = useState(false);
   const [bagNoticeOpen, setBagNoticeOpen] = useState(false);
@@ -1096,6 +1246,43 @@ export function MiningScreen({
   const pendingDigChaptersRef = useRef<ChapterMoment[]>([]);
   const miningRef = useRef(mining);
   miningRef.current = mining;
+
+  const [journeyVisit] = useState(() => ({ key: crypto.randomUUID(), at: Date.now() }));
+  const journeyVisitRef = useRef({ active: false, entry: 0, at: journeyVisit.at });
+  useEffect(() => {
+    const visit = journeyVisitRef.current;
+    if (tab !== "mine") { visit.active = false; return; }
+    if (!visit.active) { visit.active = true; visit.entry += 1; visit.at = Date.now(); }
+    const key = `${journeyVisit.key}:${visit.entry}`;
+    const at = visit.at;
+    onChange((prev) => noteEndQuestVisit(prev, key, at));
+  }, [onChange, journeyVisit, tab]);
+
+  useEffect(() => {
+    onChange((prev) => syncPlayerHpForDate(prev, dateKey));
+    if (lastCombatDateRef.current === dateKey) return;
+    lastCombatDateRef.current = dateKey;
+    combatFxSeq.current += 1;
+    setCombatFlash([]);
+    setCombatFallen([]);
+    setCombatGone([]);
+    setDragonFx(null);
+    setPlayerHitHearts(null);
+    setPlayerDiedFx(false);
+    setDragonHeavyHit(false);
+    setIncomingFx(null);
+    setStriking([]);
+    setSpecialFinale(null);
+    setFleeConfirmOpen(false);
+    const location = combatLocationForGacha(selectedGacha);
+    const progress = location ? miningRef.current.combatProgress?.[location] : undefined;
+    setTapRush(!!progress?.pendingSpecial);
+    setCombatBusy(!!progress?.pendingSpecial);
+    combatActionLockRef.current = !!progress?.pendingSpecial;
+    setCombatAttackStep(progress?.attackStep ?? 0);
+    combatStartHpRef.current = progress?.startHp ?? null;
+    freeCombatAttackRef.current = progress?.freeFirstAttack ?? false;
+  }, [dateKey, onChange, selectedGacha]);
 
   useEffect(() => {
     craftLockRef.current = false;
@@ -1266,6 +1453,32 @@ export function MiningScreen({
     );
   };
 
+  const noteHuntChange = (before: MiningState, after: MiningState) => {
+    if (!before.endQuest?.foundPortal && after.endQuest?.foundPortal) {
+      pendingDiscoverRef.current = true;
+      setPendingDiscover(true);
+      return;
+    }
+    const hunt = describeEndQuestChange(before, after);
+    if (hunt) showToast(hunt);
+  };
+
+  const flushDiscoverCinematic = () => {
+    if (!pendingDiscoverRef.current) return;
+    pendingDiscoverRef.current = false;
+    setPendingDiscover(false);
+    setEndCinematic("discover");
+  };
+
+  useEffect(() => {
+    if (digFx !== "reveal" || !pendingDiscover) return;
+    const t = window.setTimeout(() => {
+      flushDiscoverCinematic();
+    }, 1200);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [digFx, pendingDiscover]);
+
   const have = useCallback((id: MaterialId) => getMaterialCount(mining, id), [mining]);
   const ownedToolKinds = (["pickaxe", "sword", "axe"] as ToolKind[])
     .filter((kind) => !!bestOwnedTool(mining, kind));
@@ -1328,6 +1541,8 @@ export function MiningScreen({
     const best = bestOwnedTool(stateForDig, kind);
     if (best) stateForDig = equipTool(stateForDig, best);
 
+    if (isCombatGacha(gacha) || isEndPortalGacha(gacha) || isTheEndGacha(gacha)) return;
+
     if (isBucketGacha(gacha)) {
       if (!hasBucket(stateForDig)) {
         onChange((prev) => rebaseMiningWrite(prev, base, stateForDig));
@@ -1341,6 +1556,7 @@ export function MiningScreen({
         return;
       }
       onChange((prev) => rebaseMiningWrite(prev, base, result.state));
+      noteHuntChange(base, result.state);
       beginDigFx(base, result);
       return;
     }
@@ -1359,28 +1575,106 @@ export function MiningScreen({
       return;
     }
     onChange((prev) => rebaseMiningWrite(prev, base, result.state));
+    noteHuntChange(base, result.state);
     beginDigFx(base, result);
   };
 
-  const rollLuckySpots = () => {
+  const rollLuckySpots = (gacha: GachaId = selectedGacha): CombatTier[] | null => {
+    if (isEndPortalGacha(gacha)) return null;
+    if (isCombatGacha(gacha) || isTheEndGacha(gacha)) {
+      const location = combatLocationForGacha(gacha);
+      const savedLayout = location
+        ? miningRef.current.combatProgress?.[location]?.cardLayout
+        : undefined;
+      const layout = savedLayout ? [...savedLayout] : shuffleCombatTiers();
+      setCombatLayout(layout);
+      setRockHint(isTheEndGacha(gacha) ? { kind: "none" } : resolveCombatHelmetHint(mining, layout));
+      setCombatFallen([]);
+      setCombatFlash([]);
+      setCombatGone([]);
+      return layout;
+    }
     const luckyIdx = Math.floor(Math.random() * 3);
     setRockLuckyIndex(luckyIdx);
     setRockHint(resolveHelmetRockHint(mining, luckyIdx));
+    return null;
   };
 
   /** 行き先を確定 → シート内で岩ステップへ（ようがんはくみ3択） */
-  const selectDigPlace = (gacha: GachaId) => {
-    if (digBusy) return;
+  const selectDigPlace = (gacha: GachaId): boolean => {
+    if (digBusy) return false;
     if (!mining.unlockedGachas.includes(gacha)) {
       showToast(gachaLockHint(gacha, mining), "normal", 4000);
-      return;
+      return false;
     }
+    const requestedLocation = combatLocationForGacha(gacha);
+    if (combatV2Enabled && isCombatGacha(gacha)) {
+      setSelectedGacha(gacha);
+      setDigDestStep("rock");
+      onChange((prev) => ({ ...prev, lastSelectedGacha: gacha }));
+      return true;
+    }
+    if (requestedLocation) {
+      setSelectedGacha(gacha);
+      setOverlay(null);
+      setAdventureLocation(requestedLocation);
+      onChange(prev => ({ ...prev, lastSelectedGacha: gacha }));
+      return true;
+    }
+    const currentCombatState = syncPlayerHpForDate(miningRef.current, dateKey);
+    if (requestedLocation && currentCombatState.pendingReviveLocation
+      && currentCombatState.playerHp === 0
+      && requestedLocation !== currentCombatState.pendingReviveLocation) {
+      showToast("倒された場所にもどって起き上がろう");
+      return false;
+    }
+    const kind = lastSelectedToolKind(miningRef.current, gacha);
     setSelectedGacha(gacha);
-    rollLuckySpots();
+    setToolKind(kind);
+    const rolledCombatLayout = rollLuckySpots(gacha);
     setDigDestStep("rock");
+    const location = combatLocationForGacha(gacha);
+    if (location) {
+      const base = syncPlayerHpForDate(miningRef.current, dateKey);
+      const saved = base.combatProgress?.[location];
+      const progress: CombatProgress = saved ?? {
+        dateKey,
+        startHp: playerHpOf(base) || 20,
+        attackStep: 0,
+        freeFirstAttack: false,
+        cardLayout: combatLayoutTuple(rolledCombatLayout ?? shuffleCombatTiers()),
+        dragonTarget: "dragon",
+      };
+      setCombatAttackStep(progress.attackStep);
+      combatStartHpRef.current = progress.startHp;
+      freeCombatAttackRef.current = progress.freeFirstAttack;
+      setCombatLayout([...progress.cardLayout]);
+      setDragonTarget(progress.dragonTarget);
+      if (progress.pendingSpecial) {
+        setTapRush(true);
+        setCombatBusy(true);
+      }
+      combatActionLockRef.current = !!progress.pendingSpecial;
+      combatFxSeq.current += 1;
+      if (isTheEndGacha(gacha)) {
+        setDragonFx(null);
+      }
+      const sword = bestOwnedTool(base, "sword");
+      onChange((prev) => {
+        const dated = syncPlayerHpForDate(prev, dateKey);
+        const nextProgress = dated.combatProgress?.[location] ?? progress;
+        const ready = location === "the_end"
+          ? ensureDragonFight({ ...dated, lastSelectedGacha: gacha })
+          : settleCombatEncounter({ ...dated, lastSelectedGacha: gacha }, location);
+        const equipped = sword ? equipTool(ready, sword) : ready;
+        return withCombatProgress(equipped, location, nextProgress);
+      });
+      if (isCombatGacha(gacha) && !sword) showToast("剣を作ってからたたこう");
+    }
     if (isBucketGacha(gacha) && !hasBucket(mining)) {
       showToast("鉄のバケツを作ってからね");
     }
+    return true;
   };
 
   const openDigDestination = (step: DigDestStep = "place") => {
@@ -1392,6 +1686,32 @@ export function MiningScreen({
     setOverlay("digDestination");
   };
 
+  useEffect(() => {
+    if (!devJump) return;
+    setVersionNoticeOpen(false);
+    setRouteBranchOpen(false);
+    setTab(devJump.tab);
+    if (devJump.craftTab) setCraftTab(devJump.craftTab);
+    if (devJump.highlightRecipeId) {
+      setHighlightRecipeId(devJump.highlightRecipeId);
+      setCraftShowAll(true);
+    }
+    const last = miningRef.current.lastSelectedGacha;
+    const unlocked = last && miningRef.current.unlockedGachas.includes(last);
+    if (devJump.tab === "mine" && last && unlocked) {
+      if (devJump.destStep === "rock") {
+        selectDigPlace(last);
+        setOverlay("digDestination");
+      } else {
+        setSelectedGacha(last);
+        setToolKind(lastSelectedToolKind(miningRef.current, last));
+        setDigDestStep("place");
+        setOverlay("digDestination");
+      }
+    }
+    onDevJumpConsumed?.();
+  }, [devJump?.nonce]);
+
   const closeDigFx = () => {
     setDigFx("idle");
     setDigBusy(false);
@@ -1402,10 +1722,22 @@ export function MiningScreen({
       enqueueChapters(pendingDigChaptersRef.current);
       pendingDigChaptersRef.current = [];
     }
+    flushDiscoverCinematic();
+    if (isCombatGacha(selectedGacha)) {
+      scheduleReturnToPlace(
+        combatFxSeq.current,
+        !canPlayerFight(miningRef.current),
+        miningRef.current.tickets,
+      );
+    }
   };
 
   const digAgainFromFx = () => {
     if (digFx !== "reveal") return;
+    if (pendingDiscover) {
+      closeDigFx();
+      return;
+    }
     if (mining.tickets < 1) {
       showToast("チケットが足りないよ");
       closeDigFx();
@@ -1437,12 +1769,18 @@ export function MiningScreen({
       { id: "lapis_cave", label: "ラピスどうくつ ひらいた！" },
       { id: "nether", label: "ネザー ひらいた！" },
       { id: "bastion", label: "砦の遺跡 ひらいた！" },
+      { id: "warped_forest", label: "歪んだ森 ひらいた！" },
+      { id: "fortress", label: "ネザー要塞 ひらいた！" },
+      { id: "end_portal", label: "エンドポータル ひらいた！" },
+      { id: "the_end", label: "ジ・エンド ひらいた！" },
     ];
     let delay = 500;
     for (const msg of unlockMessages) {
       if (!before.has(msg.id) && next.unlockedGachas.includes(msg.id)) {
         if (msg.id === "nether") {
           window.setTimeout(() => setPortalFx(true), delay);
+        } else if (msg.id === "end_portal" || msg.id === "the_end") {
+          continue;
         } else {
           window.setTimeout(() => showToast(msg.label, "progress"), delay);
         }
@@ -1455,15 +1793,13 @@ export function MiningScreen({
     const current = miningRef.current;
     const next = refreshUnlocks(current);
     const before = new Set(current.unlockedGachas);
-    if (!next.unlockedGachas.some((id) => !before.has(id))) return;
+    if (next === current) return;
     onChange((prev) => {
       const resolved = refreshUnlocks(prev);
-      const prevSet = new Set(prev.unlockedGachas);
-      if (!resolved.unlockedGachas.some((id) => !prevSet.has(id))) return prev;
       return resolved;
     });
     announceUnlocks(before, next);
-  }, [mining.crafted, mining.unlockedGachas, onChange]);
+  }, [mining.crafted, mining.unlockedGachas, mining.endQuest, mining.endJourney, mining.materials, onChange]);
 
   const enqueueChapters = (moments: ChapterMoment[]) => {
     if (!moments.length) return;
@@ -1517,6 +1853,11 @@ export function MiningScreen({
       }
     } else if (recipe.grantsBed && partySlotCount(nextState) > beforeBeds) {
       showToast(`ベッドできた！なかま ${partySlotCount(nextState)}人まで`, "progress");
+    } else if (
+      recipe.grantsBed
+      && getMaterialCount(nextState, "spare_bed") > getMaterialCount(before, "spare_bed")
+    ) {
+      showToast("ベッドできた！", "progress");
     }
 
     announceUnlocks(beforeUnlocks, nextState);
@@ -1686,6 +2027,11 @@ export function MiningScreen({
     setRockLuckyIndex(luckyIdx);
     setRockHint(resolveHelmetRockHint(miningRef.current, luckyIdx));
     setHighlightRocks(false);
+    if (isCombatGacha(selectedGacha)) {
+      const layout = shuffleCombatTiers();
+      setCombatLayout(layout);
+      setRockHint(resolveCombatHelmetHint(miningRef.current, layout));
+    }
   }, [selectedGacha]);
 
   useEffect(() => {
@@ -1739,9 +2085,119 @@ export function MiningScreen({
     setTab("craft");
   };
 
+  const resetCombatFx = () => {
+    combatFxSeq.current += 1;
+    combatActionLockRef.current = false;
+    setCombatBusy(false);
+    setCombatFlash([]);
+    setCombatFallen([]);
+    setCombatGone([]);
+    setCombatHitDamage(0);
+    setPlayerHitHearts(null);
+    setPlayerDiedFx(false);
+    setDragonHeavyHit(false);
+    setIncomingFx(null);
+    setStriking([]);
+    setTapRush(false);
+    setSpecialFinale(null);
+    setFleeConfirmOpen(false);
+    setCombatAttackStep(0);
+    combatStartHpRef.current = null;
+    freeCombatAttackRef.current = false;
+  };
+
+  const showCombatLoot = (result: DigResult) => {
+    if (!result.drops.length) return;
+    const notable = result.drops.some((d) => d.material === "ender_pearl" || d.material === "blaze_rod");
+    if (!notable) return;
+    setLastDig(result);
+    setDigFx("reveal");
+    void playMiningSfx("drop");
+  };
+
+  const scheduleReturnToPlace = (seq: number, died: boolean, ticketsLeft: number) => {
+    if (died || ticketsLeft >= 1) return;
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      if (miningRef.current.tickets >= 1) return;
+      if (!canPlayerFight(miningRef.current)) return;
+      resetCombatFx();
+      setDigDestStep("place");
+    }, 3000);
+  };
+
+  const finishMobFightFx = (params: {
+    seq: number;
+    result: CombatResult;
+    gacha: CombatGachaId;
+    attackStep: 0 | 1;
+    nextLayout?: CombatTier[];
+    nextAttackStep?: 0 | 1;
+    twoStep?: boolean;
+  }) => {
+    combatActionLockRef.current = false;
+    const { seq, result, gacha, attackStep, nextLayout, nextAttackStep, twoStep = true } = params;
+    const wiped = livingMobs(result.state.combatEncounters?.[gacha]).length === 0;
+    if (wiped) {
+      onChange((prev) => settleCombatEncounter(prev, gacha));
+      setCombatGone([]);
+      setCombatFallen([]);
+    }
+    setLastDig(result);
+    setCombatBusy(false);
+    setCombatFlash([]);
+    setStriking([]);
+    setIncomingFx(null);
+    const layout = nextLayout ?? shuffleCombatTiers();
+    setCombatLayout(layout);
+    setRockHint(resolveCombatHelmetHint(result.state, layout));
+    setCombatAttackStep(nextAttackStep ?? (twoStep ? attackStep === 0 ? 1 : 0 : 0));
+    setPlayerHitHearts(result.countered ? result.takenHearts : null);
+    setPlayerDiedFx(result.playerDied);
+    if (result.playerDied) {
+      showToast("倒された！", "progress");
+      void playMiningSfx("break");
+      flushDiscoverCinematic();
+      return;
+    }
+    flushDiscoverCinematic();
+    const names = result.drops.map((d) => `${MATERIAL_META[d.material].label}${d.amount > 1 ? `×${d.amount}` : ""}`);
+    const showedLoot = (!twoStep || attackStep === 1) && result.drops.some((d) => d.material === "ender_pearl" || d.material === "blaze_rod");
+    if (showedLoot) {
+      showCombatLoot(result);
+      return;
+    }
+    if (names.length) {
+      showToast(names.join(" / "), result.killed.length ? "progress" : "normal");
+      void playMiningSfx("drop");
+    }
+    if (!twoStep || attackStep === 1) {
+      scheduleReturnToPlace(seq, false, result.state.tickets);
+    }
+  };
+
+  const requestFleeFromFight = () => {
+    if (combatBusy || combatActionLockRef.current) return;
+    setFleeConfirmOpen(true);
+  };
+
+  const fleeFromFight = () => {
+    setFleeConfirmOpen(false);
+    resetCombatFx();
+    setDigDestStep("place");
+  };
+
   const pickRockInSheet = (rockIndex: number) => {
     if (digBusy) return;
-    if (mining.tickets < 1) {
+    if (isCombatGacha(selectedGacha)) {
+      pickCombatInSheet(rockIndex);
+      return;
+    }
+    if (isTheEndGacha(selectedGacha)) {
+      pickDragonInSheet(rockIndex);
+      return;
+    }
+    if (miningRef.current.tickets < 1) {
       showToast("チケットが足りないよ");
       return;
     }
@@ -1750,7 +2206,625 @@ export function MiningScreen({
     performDig(selectedGacha, toolKind, rockIndex === rockLuckyIndex);
   };
 
-  /** party / equip / enchant は全画面置換。digDestination はボトムシートなので本体UIを残す */
+  const pickCombatInSheet = (cardIndex: number) => {
+    if (combatBusy || digBusy || combatActionLockRef.current) return;
+    if (!isCombatGacha(selectedGacha)) return;
+    const location = combatLocationForGacha(selectedGacha);
+    if (!location || location === "the_end") return;
+    const base = syncPlayerHpForDate(miningRef.current, dateKey);
+    const session = combatProgressFor(base, location, dateKey, combatLayout);
+    const freeAttackAfterRevive = session.freeFirstAttack;
+    const attackStep = session.attackStep;
+    if (base.tickets < 1 && attackStep === 0 && !freeAttackAfterRevive) {
+      showToast("チケットが足りないよ");
+      return;
+    }
+    combatActionLockRef.current = true;
+    const tier = session.cardLayout[cardIndex] ?? "normal";
+    const withSword = (() => {
+      const sword = bestOwnedTool(base, "sword");
+      return sword ? equipTool({ ...base, lastSelectedGacha: selectedGacha }, sword) : { ...base, lastSelectedGacha: selectedGacha };
+    })();
+    const result = resolveCombat({
+      state: withSword,
+      gacha: selectedGacha,
+      tier,
+      dateKey,
+      attackNumber: attackStep,
+      consumeTicket: attackStep === 0 && !freeAttackAfterRevive,
+      skipCounter: attackStep === 0,
+    });
+    if ("error" in result) {
+      combatActionLockRef.current = false;
+      showToast(result.error);
+      return;
+    }
+    freeCombatAttackRef.current = false;
+    const nextLayout = shuffleCombatTiers();
+    const nextAttackStep = attackStep === 0 ? 1 : 0;
+    const nextProgress: CombatProgress = {
+      ...session,
+      dateKey,
+      attackStep: nextAttackStep,
+      freeFirstAttack: false,
+      cardLayout: combatLayoutTuple(nextLayout),
+    };
+    const quested = attackStep === 0
+      ? applyEndQuestOnVisit(result.state, selectedGacha)
+      : { state: result.state, event: null };
+    const nextState = refreshUnlocks(withPendingReviveLocation(
+      withCombatProgress(quested.state, location, nextProgress),
+      location,
+      result.playerDied,
+    ));
+    navigator.vibrate?.(12);
+    void unlockAudio();
+    void playMiningSfx(
+      tier === "jackpot"
+        ? "slash_critical"
+        : selectedGacha === "fortress" ? "slash_blaze" : "slash_enderman",
+    );
+    const seq = ++combatFxSeq.current;
+    setCombatBusy(true);
+    setCombatSwings(result.swings);
+    setCombatHitDamage(result.swingDamage * result.swings);
+    setCombatEmphasis(tier === "jackpot" ? "jackpot" : tier === "hit" ? "hit" : "normal");
+    setCombatSlashSeed(seq);
+    setCombatGone([]);
+    setCombatFallen([]);
+    setCombatFlash(result.targets);
+    onChange((prev) => rebaseMiningWrite(prev, base, nextState));
+    noteHuntChange(base, nextState);
+    const fallAt = Math.max(480, result.swings * 200);
+    const fadeAt = result.killed.length ? fallAt + 720 : fallAt;
+    const counterAt = result.countered ? fallAt + 900 : -1;
+    const doneAt = result.countered
+      ? counterAt + 1000
+      : result.killed.length ? fadeAt + 850 : 900;
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      setCombatFallen(result.killed);
+      if (result.killed.length) void playMiningSfx("break");
+    }, fallAt);
+    if (result.countered) {
+      window.setTimeout(() => {
+        if (seq !== combatFxSeq.current) return;
+        setCombatFlash([]);
+        setStriking(result.counterFrom);
+        setIncomingFx({
+          kind: selectedGacha === "fortress" ? "blaze" : "enderman",
+          hearts: result.takenHearts,
+        });
+        setPlayerHitHearts(result.takenHearts);
+        navigator.vibrate?.(result.takenHearts > 0 ? 22 : 8);
+        void playMiningSfx(selectedGacha === "fortress" ? "smelt" : "break");
+      }, counterAt);
+    }
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      finishMobFightFx({
+        seq,
+        result,
+        gacha: selectedGacha,
+        attackStep,
+        nextLayout,
+        nextAttackStep,
+      });
+    }, doneAt);
+  };
+
+  const pickDragonInSheet = (cardIndex: number) => {
+    if (combatBusy || digBusy || combatActionLockRef.current) return;
+    if (!isTheEndGacha(selectedGacha)) return;
+    const base = syncPlayerHpForDate(miningRef.current, dateKey);
+    const session = combatProgressFor(base, "the_end", dateKey, combatLayout);
+    const freeAttackAfterRevive = session.freeFirstAttack;
+    const attackStep = session.attackStep;
+    if (base.tickets < 1 && attackStep === 0 && !freeAttackAfterRevive) {
+      showToast("チケットが足りないよ");
+      return;
+    }
+    combatActionLockRef.current = true;
+    const tier = session.cardLayout[cardIndex] ?? "normal";
+    const selectedTarget = session.dragonTarget;
+    const withSword = (() => {
+      const sword = bestOwnedTool(base, "sword");
+      const ready = ensureDragonFight({ ...base, lastSelectedGacha: selectedGacha });
+      return sword ? equipTool(ready, sword) : ready;
+    })();
+    const result = resolveDragonAttack({
+      state: withSword,
+      target: selectedTarget,
+      tier,
+      buddyProgress,
+      dateKey,
+      attackNumber: attackStep,
+      consumeTicket: attackStep === 0 && !freeAttackAfterRevive,
+      skipCounter: attackStep === 0,
+    });
+    if ("error" in result) {
+      combatActionLockRef.current = false;
+      showToast(result.error);
+      return;
+    }
+    freeCombatAttackRef.current = false;
+    const nextLayout = shuffleCombatTiers();
+    const nextAttackStep = attackStep === 0 ? 1 : 0;
+    const nextTarget = result.crystalDestroyed && typeof result.target === "number"
+      ? nextLivingCrystal(result.state.dragonFight?.crystals ?? [], result.target)
+      : selectedTarget;
+    const nextProgress: CombatProgress = {
+      ...session,
+      dateKey,
+      attackStep: nextAttackStep,
+      freeFirstAttack: false,
+      cardLayout: combatLayoutTuple(nextLayout),
+      dragonTarget: nextTarget,
+    };
+    const nextState = withPendingReviveLocation(
+      withCombatProgress(result.state, "the_end", result.defeated ? null : nextProgress),
+      "the_end",
+      result.playerDied,
+    );
+    if (result.defeated) setCombatAttackStep(0);
+    navigator.vibrate?.(12);
+    void unlockAudio();
+    void playMiningSfx(result.usedBed || result.crystalDestroyed ? "break" : "slash");
+    const seq = ++combatFxSeq.current;
+    setCombatBusy(true);
+    setDragonFx({
+      seq,
+      target: dragonTarget,
+      damage: result.damage,
+      heal: result.heal,
+      swings: result.swings || 1,
+      usedBed: result.usedBed,
+      crystalDestroyed: result.crystalDestroyed,
+      emphasis: tier === "jackpot" ? "jackpot" : tier === "hit" ? "hit" : "normal",
+      heavy: result.heavy,
+    });
+    if (result.defeated) setCombatAttackStep(0);
+    onChange((prev) => rebaseMiningWrite(prev, base, nextState));
+    if (result.countered) {
+      navigator.vibrate?.(result.heavy ? 28 : 18);
+      window.setTimeout(() => {
+        if (seq !== combatFxSeq.current) return;
+        void playMiningSfx(result.heavy ? "dragon_breath" : "slash");
+        setIncomingFx({
+          kind: result.heavy ? "breath" : "dragon",
+          hearts: result.takenHearts,
+        });
+        setPlayerHitHearts(result.takenHearts);
+        setDragonHeavyHit(result.heavy);
+      }, result.heavy ? 1200 : 1100);
+    }
+    const fxMs = result.countered
+      ? (result.heavy ? 2300 : 2100)
+      : result.usedBed ? 1400 : result.crystalDestroyed ? 1100 : 900;
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      combatActionLockRef.current = false;
+      setCombatBusy(false);
+      setCombatLayout(nextLayout);
+      setDragonTarget(nextTarget);
+      setIncomingFx(null);
+      setPlayerHitHearts(result.countered ? result.takenHearts : null);
+      setPlayerDiedFx(result.playerDied);
+      setDragonHeavyHit(result.heavy);
+      if (result.playerDied) {
+        showToast("倒された！", "progress");
+        void playMiningSfx("break");
+      }
+       if (!result.defeated) setCombatAttackStep(nextAttackStep);
+       if (result.defeated) setEndCinematic("dragon_win");
+    }, fxMs);
+  };
+
+  const explodeDragonBed = () => {
+    const base = syncPlayerHpForDate(miningRef.current, dateKey);
+    const session = combatProgressFor(base, "the_end", dateKey, combatLayout);
+    if (combatBusy || digBusy || combatActionLockRef.current || session.attackStep !== 0) return;
+    if (base.tickets < 1) {
+      showToast("ベッドの爆発にはチケットがいるよ");
+      return;
+    }
+    combatActionLockRef.current = true;
+    const result = resolveDragonAttack({
+      state: ensureDragonFight({ ...base, lastSelectedGacha: "the_end" }),
+      target: "dragon",
+      useBed: true,
+      buddyProgress,
+      dateKey,
+    });
+    if ("error" in result) {
+      combatActionLockRef.current = false;
+      showToast(result.error);
+      return;
+    }
+    const nextState = withPendingReviveLocation(
+      withCombatProgress(result.state, "the_end", result.defeated ? null : session),
+      "the_end",
+      result.playerDied,
+    );
+    navigator.vibrate?.(20);
+    void unlockAudio();
+    void playMiningSfx(result.defeated ? "chapter" : "break");
+    const seq = ++combatFxSeq.current;
+    setCombatBusy(true);
+    setDragonFx({
+      seq,
+      target: "dragon",
+      damage: result.damage,
+      heal: 0,
+      swings: 1,
+      usedBed: true,
+      crystalDestroyed: false,
+      emphasis: "jackpot",
+      heavy: result.heavy,
+    });
+    onChange((prev) => rebaseMiningWrite(prev, base, nextState));
+    if (result.countered) {
+      window.setTimeout(() => {
+        if (seq !== combatFxSeq.current) return;
+        void playMiningSfx(result.heavy ? "dragon_breath" : "slash");
+        setIncomingFx({
+          kind: result.heavy ? "breath" : "dragon",
+          hearts: result.takenHearts,
+        });
+        setPlayerHitHearts(result.takenHearts);
+        setDragonHeavyHit(result.heavy);
+      }, result.heavy ? 1600 : 1500);
+    }
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      combatActionLockRef.current = false;
+      setCombatBusy(false);
+      setIncomingFx(null);
+      setPlayerHitHearts(result.countered ? result.takenHearts : null);
+      setPlayerDiedFx(result.playerDied);
+      setDragonHeavyHit(result.heavy);
+      if (result.playerDied) {
+        showToast("倒された！", "progress");
+        void playMiningSfx("break");
+      }
+      if (result.defeated) setEndCinematic("dragon_win");
+    }, result.countered ? 2800 : 2400);
+  };
+
+  const startSpecialInSheet = () => {
+    if (combatBusy || digBusy || tapRush || combatActionLockRef.current || combatAttackStep !== 0) return;
+    if (!specialGaugeReady(mining)) {
+      showToast("必殺がまだたまってないよ");
+      return;
+    }
+    if (mining.tickets < 1) {
+      showToast("チケットが足りないよ");
+      return;
+    }
+    if (!canPlayerFight(mining)) {
+      showToast("倒れているよ。チケットで起き上がろう");
+      return;
+    }
+    combatActionLockRef.current = true;
+    combatFxSeq.current += 1;
+    setCombatBusy(true);
+    setTapRush(true);
+  };
+
+  const onSpecialFirstTap = (startedAtMs: number): boolean => {
+    const base = syncPlayerHpForDate(miningRef.current, dateKey);
+    const begun = beginSpecialAttack(base, dateKey);
+    if (begun.error) {
+      combatActionLockRef.current = false;
+      showToast(begun.error);
+      setTapRush(false);
+      setCombatBusy(false);
+      return false;
+    }
+    const location = combatLocationForGacha(selectedGacha);
+    const session = location
+      ? combatProgressFor(begun.state, location, dateKey, combatLayout)
+      : null;
+    const next = location && session
+      ? withCombatProgress(begun.state, location, {
+        ...session,
+        pendingSpecial: {
+          startedAtMs,
+          taps: 0,
+          target: dragonTarget,
+        },
+      })
+      : begun.state;
+    onChange((prev) => rebaseMiningWrite(prev, base, next));
+    return true;
+  };
+
+  const onSpecialProgress = (taps: number, startedAtMs: number) => {
+    const location = combatLocationForGacha(selectedGacha);
+    if (!location) return;
+    onChange((prev) => {
+      const session = prev.combatProgress?.[location];
+      if (!session?.pendingSpecial) return prev;
+      return withCombatProgress(prev, location, {
+        ...session,
+        pendingSpecial: {
+          ...session.pendingSpecial,
+          startedAtMs,
+          taps,
+        },
+      });
+    });
+  };
+
+  const finishSpecialTaps = (taps: number) => {
+    setTapRush(false);
+    const seq = combatFxSeq.current;
+    const base = syncPlayerHpForDate(miningRef.current, dateKey);
+    if (isTheEndGacha(selectedGacha)) {
+      const session = combatProgressFor(base, "the_end", dateKey, combatLayout);
+      const selectedTarget = session.pendingSpecial?.target ?? session.dragonTarget;
+      const fin = applyDragonSpecialFinish({
+        state: base,
+        target: selectedTarget,
+        taps,
+        buddyProgress,
+        dateKey,
+      });
+      if ("error" in fin) {
+        combatActionLockRef.current = false;
+        setCombatBusy(false);
+        showToast(fin.error);
+        return;
+      }
+      const nextLayout = shuffleCombatTiers();
+      const nextTarget = fin.crystalDestroyed && typeof fin.target === "number"
+        ? nextLivingCrystal(fin.state.dragonFight?.crystals ?? [], fin.target)
+        : session.dragonTarget;
+      const nextProgress: CombatProgress = {
+        ...session,
+        dateKey,
+        cardLayout: combatLayoutTuple(nextLayout),
+        dragonTarget: nextTarget,
+      };
+      delete nextProgress.pendingSpecial;
+      const nextState = withPendingReviveLocation(
+        withCombatProgress(fin.state, "the_end", fin.defeated ? null : nextProgress),
+        "the_end",
+        fin.playerDied,
+      );
+      setSpecialFinale({ taps, damage: fin.damage });
+      setDragonFx({
+        seq,
+        target: fin.target,
+        damage: fin.damage,
+        heal: fin.heal,
+        swings: 3,
+        usedBed: false,
+        crystalDestroyed: fin.crystalDestroyed,
+        emphasis: "jackpot",
+        heavy: fin.heavy,
+      });
+       void playMiningSfx("special_dragon");
+      navigator.vibrate?.(24);
+      onChange((prev) => rebaseMiningWrite(prev, base, nextState));
+      const finaleAt = 2200;
+      if (fin.countered) {
+        window.setTimeout(() => {
+          if (seq !== combatFxSeq.current) return;
+          setSpecialFinale(null);
+          void playMiningSfx(fin.heavy ? "dragon_breath" : "slash");
+          setIncomingFx({
+            kind: fin.heavy ? "breath" : "dragon",
+            hearts: fin.takenHearts,
+          });
+          setPlayerHitHearts(fin.takenHearts);
+          setDragonHeavyHit(fin.heavy);
+        }, finaleAt);
+      }
+      window.setTimeout(() => {
+        if (seq !== combatFxSeq.current) return;
+        setSpecialFinale(null);
+        combatActionLockRef.current = false;
+        setCombatBusy(false);
+        setIncomingFx(null);
+        setCombatLayout(nextLayout);
+        setPlayerHitHearts(fin.countered ? fin.takenHearts : null);
+        setPlayerDiedFx(fin.playerDied);
+        setDragonHeavyHit(fin.heavy);
+        if (fin.playerDied) {
+          showToast("倒された！", "progress");
+          void playMiningSfx("break");
+        }
+        setDragonTarget(nextTarget);
+        if (fin.defeated) setEndCinematic("dragon_win");
+      }, fin.countered ? finaleAt + 1100 : finaleAt + 200);
+      return;
+    }
+    if (!isCombatGacha(selectedGacha)) {
+      combatActionLockRef.current = false;
+      setCombatBusy(false);
+      return;
+    }
+    const location = combatLocationForGacha(selectedGacha);
+    const session = location
+      ? combatProgressFor(base, location, dateKey, combatLayout)
+      : null;
+    const fin = applyCombatSpecialFinish({
+      state: base,
+      gacha: selectedGacha,
+      taps,
+      dateKey,
+    });
+    if ("error" in fin) {
+      combatActionLockRef.current = false;
+      setCombatBusy(false);
+      showToast(fin.error);
+      return;
+    }
+    const nextLayout = shuffleCombatTiers();
+    const nextProgress = location && session
+      ? { ...session, dateKey, cardLayout: combatLayoutTuple(nextLayout) }
+      : null;
+    if (nextProgress) delete nextProgress.pendingSpecial;
+    const nextState = location && nextProgress
+      ? withPendingReviveLocation(
+        withCombatProgress(fin.state, location, nextProgress),
+        location,
+        fin.playerDied,
+      )
+      : fin.state;
+    setSpecialFinale({ taps, damage: fin.swingDamage });
+    setCombatFlash(fin.targets);
+    setCombatSwings(fin.swings);
+    setCombatHitDamage(fin.swingDamage);
+    setCombatEmphasis("jackpot");
+    setCombatSlashSeed(seq + 11);
+    void playMiningSfx(selectedGacha === "fortress" ? "special_blaze" : "special_enderman");
+    navigator.vibrate?.(24);
+    onChange((prev) => rebaseMiningWrite(prev, base, nextState));
+    const finaleAt = 2200;
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      setCombatFallen(fin.killed);
+      if (fin.killed.length) void playMiningSfx("break");
+    }, 500);
+    if (fin.countered) {
+      window.setTimeout(() => {
+        if (seq !== combatFxSeq.current) return;
+        setSpecialFinale(null);
+        setCombatFlash([]);
+        setStriking(fin.counterFrom);
+        setIncomingFx({
+          kind: selectedGacha === "fortress" ? "blaze" : "enderman",
+          hearts: fin.takenHearts,
+        });
+        setPlayerHitHearts(fin.takenHearts);
+        navigator.vibrate?.(fin.takenHearts > 0 ? 22 : 8);
+        void playMiningSfx(selectedGacha === "fortress" ? "smelt" : "break");
+      }, finaleAt);
+    }
+    window.setTimeout(() => {
+      if (seq !== combatFxSeq.current) return;
+      setSpecialFinale(null);
+      finishMobFightFx({
+        seq,
+        result: fin,
+        gacha: selectedGacha,
+        attackStep: session?.attackStep ?? 0,
+        nextLayout,
+        nextAttackStep: session?.attackStep ?? 0,
+        twoStep: false,
+      });
+    }, fin.countered ? finaleAt + 1100 : finaleAt + 200);
+  };
+
+  const reviveInFight = () => {
+    const base = syncPlayerHpForDate(miningRef.current, dateKey);
+    const location = combatLocationForGacha(selectedGacha);
+    const session = location
+      ? combatProgressFor(base, location, dateKey, combatLayout)
+      : null;
+    const startHp = session?.startHp ?? combatStartHpRef.current ?? playerHpOf(base);
+    const result = revivePlayer(base, startHp - 3);
+    if (result.error) {
+      showToast(result.error);
+      return;
+    }
+    const revivedState = location && session
+      ? withCombatProgress({ ...result.state, pendingReviveLocation: null }, location, {
+        ...session,
+        dateKey,
+        attackStep: 0,
+        freeFirstAttack: true,
+      })
+      : { ...result.state, pendingReviveLocation: null };
+    onChange((prev) => rebaseMiningWrite(prev, base, revivedState));
+    setPlayerDiedFx(false);
+    setPlayerHitHearts(null);
+    setDragonHeavyHit(false);
+    setIncomingFx(null);
+    setStriking([]);
+    setTapRush(false);
+    setSpecialFinale(null);
+    setCombatAttackStep(0);
+    freeCombatAttackRef.current = true;
+    combatStartHpRef.current = startHp;
+    showToast("起き上がった！そのままたたけるよ");
+  };
+
+  const selectDragonTarget = (target: DragonTarget) => {
+    setDragonTarget(target);
+    onChange((prev) => {
+      const session = combatProgressFor(prev, "the_end", dateKey, combatLayout);
+      if (session.dragonTarget === target) return prev;
+      return withCombatProgress(prev, "the_end", { ...session, dragonTarget: target });
+    });
+  };
+
+  const insertEyeAtPortal = (slot?: number) => {
+    if (portalInsertLock.current) return;
+    const base = miningRef.current;
+    const result = insertPortalEye(base, slot);
+    if (result.error) {
+      showToast(result.error);
+      return;
+    }
+    if (!result.inserted) return;
+    portalInsertLock.current = true;
+    navigator.vibrate?.(12);
+    void unlockAudio();
+    if (!result.completed) void playMiningSfx("eye_insert");
+    setPortalShake(true);
+    setInsertPulse((n) => n + 1);
+    window.setTimeout(() => { setPortalShake(false); portalInsertLock.current = false; }, 420);
+    onChange((prev) => rebaseMiningWrite(prev, base, refreshUnlocks(result.state)));
+    if (result.completed) {
+      setEndCinematic("unlock");
+      return;
+    }
+    if ((result.state.endQuest?.eyes ?? 0) % 3 === 0) {
+      void playMiningSfx("chapter");
+      showToast("ポータルの光が強くなった！", "progress");
+    }
+  };
+
+  const openTheEndFromPortal = () => {
+    const base = mining;
+    const result = unlockTheEnd(base);
+    if (result.error) {
+      showToast(result.error);
+      return;
+    }
+    const next = refreshUnlocks({ ...result.state, lastSelectedGacha: "the_end" });
+    onChange((prev) => rebaseMiningWrite(prev, base, next));
+    setSelectedGacha("the_end");
+    setToolKind("sword");
+    setOverlay(null);
+    setEndArrival(true);
+    void playMiningSfx("chapter");
+  };
+
+  const journey = endJourneyGuide(mining);
+  const runJourneyAction = (action: JourneyAction) => {
+    if (digBusy || combatBusy) return;
+    if ("place" in action) {
+      setTab("mine");
+      if (!selectDigPlace(action.place)) return;
+      if (combatV2Enabled || !combatLocationForGacha(action.place)) setOverlay("digDestination");
+    } else if ("recipe" in action) {
+      setOverlay(null);
+      setTab("craft");
+      setCraftTab(craftTabForRecipeId(action.recipe));
+      setCraftShowAll(true);
+      setHighlightRecipeId(action.recipe);
+    } else setOverlay("equip");
+  };
+
+  /** party / equip / enchant は本体コンテンツを置き換え、共通ナビゲーションは残す */
+  const activeCombatLocation = combatLocationForGacha(selectedGacha);
+  const pendingSpecial = activeCombatLocation
+    ? mining.combatProgress?.[activeCombatLocation]?.pendingSpecial
+    : undefined;
   const blockingOverlay = overlay === "party" || overlay === "equip" || overlay === "enchant";
   const blockingTitle =
     overlay === "party" ? "なかま"
@@ -1758,11 +2832,10 @@ export function MiningScreen({
     : overlay === "enchant" ? "エンチャント"
     : "";
   const selectedMeta = GACHA_META[selectedGacha];
-  const contentPadBottom = blockingOverlay ? 96 : 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", paddingBottom: contentPadBottom, width: "100%", minWidth: 0 }}>
-      {/* 固定ヘッダ: 本体タブ or そうび/なかま/エンチャント */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: "80vh", width: "100%", minWidth: 0 }}>
+      {/* 固定ヘッダ: 戻る・画面名と本体タブ */}
       <div style={{ height: chromeSpacerHeight, flexShrink: 0 }} aria-hidden />
       <div
         ref={setChromeEl}
@@ -1781,37 +2854,40 @@ export function MiningScreen({
           backgroundColor: theme.bg.editor,
         }}
       >
-        {blockingOverlay ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ScrollSafeBackButton onBack={() => setOverlay(null)} />
-            <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, display: "inline-flex", alignItems: "center", gap: 8 }}>
-              {overlay === "enchant" && (
-                <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={28} alt="" />
-              )}
-              {blockingTitle}
-            </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <ScrollSafeBackButton onBack={overlay === "digDestination" && digDestStep === "rock"
+            && (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha))
+            ? requestFleeFromFight
+            : blockingOverlay ? () => setOverlay(null) : onBack} />
+          <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary, display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {blockingOverlay ? (
+              <>
+                {overlay === "enchant" && <MiningItemIcon src={ENCHANTING_TABLE_IMAGE} size={28} alt="" />}
+                {blockingTitle}
+              </>
+            ) : "こうざん／クラフト"}
           </div>
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <ScrollSafeBackButton onBack={onBack} />
-              <div style={{ fontSize: 18, fontWeight: 800, color: theme.text.primary }}>こうざん／クラフト</div>
-            </div>
-            <div className="mining-main-tabs">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTab(t.id)}
-                  className={`mining-main-tab${tab === t.id ? " is-active" : ""}`}
-                >
-                  <MiningItemIcon src={t.icon} size={22} alt="" />
-                  <span className="mining-main-tab-label">{t.label}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        </div>
+        <div className="mining-main-tabs">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setOverlay(null);
+                setTab(t.id);
+                if (t.id === "craft" || t.id === "bag") {
+                  const scroll = document.querySelector("[data-app-scroll]");
+                  if (scroll instanceof HTMLElement) scroll.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
+              className={`mining-main-tab${!blockingOverlay && tab === t.id ? " is-active" : ""}`}
+            >
+              <MiningItemIcon src={t.icon} size={22} alt="" />
+              <span className="mining-main-tab-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {!blockingOverlay && tab !== "mine" && (
@@ -1830,7 +2906,7 @@ export function MiningScreen({
           </div>
         </div>
 
-        <div className="mining-next-hero">
+        {!journey && <div className="mining-next-hero">
           <div className="mining-next-hero-label">つぎやること</div>
           <div className="mining-next-hero-title">{nextHero.title}</div>
           {nextHero.subtitle && (
@@ -1874,7 +2950,7 @@ export function MiningScreen({
               ))}
             </div>
           )}
-        </div>
+        </div>}
         {netheriteFullComplete(mining) && (
           <div style={{ marginTop: 4, fontSize: 11, fontWeight: 800, color: theme.category.green }}>
             ネザライトそろい！
@@ -1884,7 +2960,9 @@ export function MiningScreen({
       </>
       )}
 
-      {!blockingOverlay && progressNudge && (
+      {!blockingOverlay && overlay !== "digDestination" && journey && <EndJourneyGuide guide={journey} onAction={runJourneyAction} />}
+
+      {!blockingOverlay && !journey && progressNudge && (
         <div style={{
           ...card,
           padding: 12,
@@ -2039,6 +3117,88 @@ export function MiningScreen({
                 );
               })}
             </div>
+          </div>
+
+          <div style={card}>
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>持ち物</div>
+            {(() => {
+              const heldId = mining.equipped.held && have(mining.equipped.held) >= 1
+                ? mining.equipped.held
+                : null;
+              const enderEyeNeedsHolding = showsEnderEyeHoldHint(mining) && (mining.endQuest?.enderEyeHintVisits ?? 0) >= 7;
+              const holdables = HOLDABLE_MATERIALS.filter((id) => have(id) >= 1);
+              return (
+                <>
+                  <button
+                    type="button"
+                    className={`mining-held-slot${heldId ? " is-filled" : ""}${heldPickerOpen ? " is-open" : ""}${enderEyeNeedsHolding ? " is-hint-target" : ""}`}
+                    aria-label={heldId ? `${MATERIAL_META[heldId].label}（持ち物）` : "持ち物をえらぶ"}
+                    onClick={() => setHeldPickerOpen((open) => !open)}
+                  >
+                    {heldId ? (
+                      <MiningItemIcon material={heldId} size={40} alt="" />
+                    ) : (
+                      <span className="mining-held-slot-plus" aria-hidden>＋</span>
+                    )}
+                  </button>
+                  {heldId && (
+                    <div className="mining-held-slot-name">{MATERIAL_META[heldId].label}</div>
+                  )}
+                  {heldPickerOpen && (
+                    <div className="mining-held-picker">
+                      {holdables.length === 0 && (
+                        <div className="mining-held-picker-empty">入れるものがないよ</div>
+                      )}
+                      <div className="mining-held-picker-grid">
+                        {holdables.map((id) => (
+                          <button
+                            key={id}
+                            type="button"
+                            className={`mining-held-pick${heldId === id ? " is-current" : ""}`}
+                            onClick={() => {
+                              onChange((prev) => equipHeld(prev, id));
+                              setHeldPickerOpen(false);
+                              showToast(
+                                id === "ender_eye"
+                                  ? "エンダーアイが、遠くのほうで光った！"
+                                  : `${MATERIAL_META[id].label}を持ち物にした！`,
+                              );
+                            }}
+                          >
+                            <MiningItemIcon material={id} size={36} alt="" />
+                            <span className="mining-held-pick-name">{MATERIAL_META[id].label}</span>
+                            <span>×{have(id)}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {heldId && (
+                        <button
+                          type="button"
+                          className="mining-held-unequip"
+                          onClick={() => {
+                            onChange((prev) => equipHeld(prev, null));
+                            setHeldPickerOpen(false);
+                            showToast("持ち物をはずした");
+                          }}
+                        >
+                          はずす
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+            {mining.crafted.elytra && (
+              <div className="mining-equip-tool-row" style={{ marginTop: 8 }}>
+                <span className="mining-equip-tool-icon" aria-hidden>
+                  <MiningItemIcon gear="elytra" mining={mining} size={32} alt="" />
+                </span>
+                <span className="mining-equip-tool-body">
+                  <span className="mining-equip-tool-effect">エリトラ（効果はこれから）</span>
+                </span>
+              </div>
+            )}
           </div>
 
           <div style={card}>
@@ -2217,8 +3377,8 @@ export function MiningScreen({
             const annotated = recipes.map((recipe) => {
               const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
               const hasUpgradeBase = !upgradeFrom || !!mining.crafted[upgradeFrom];
-              const bedFull = !!(recipe.grantsBed && slots >= MAX_BEDS);
-              const owned = !!(recipe.craftFlag && mining.crafted[recipe.craftFlag]) || bedFull;
+              const bedFull = false;
+              const owned = !!(recipe.craftFlag && mining.crafted[recipe.craftFlag]);
               const ok =
                 canAffordRecipe(recipe.costs, have, recipe.fuelOptions)
                 && hasUpgradeBase
@@ -2267,7 +3427,7 @@ export function MiningScreen({
               return (
                 <div
                   key={recipe.id}
-                  className={`mining-recipe-card${highlightRecipeId === recipe.id ? " is-next-target" : ""}`}
+                  className={`mining-recipe-card${highlightRecipeId === recipe.id ? " is-next-target" : ""}${ok && (recipe.id === "ender_eye_craft" || recipe.id === "blaze_powder_batch") ? " is-end-recipe-ready" : ""}`}
                   style={card}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
@@ -2311,7 +3471,7 @@ export function MiningScreen({
                         }}>
                           強化もと:{" "}
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle" }}>
-                          <MiningItemIcon gear={upgradeFrom} mining={mining} size={16} alt="" />
+                            <MiningItemIcon gear={upgradeFrom} mining={mining} size={16} alt="" />
                             {gearLabel(upgradeFrom)}
                           </span>{" "}
                           {hasUpgradeBase ? "OK" : "が必要"}
@@ -2686,9 +3846,17 @@ export function MiningScreen({
                       }}
                     >
                       <span>{cat.label}</span>
-                      <span className="mining-party-cat-meta">
-                        {meta.emoji} {meta.label}
-                        <span className="mining-party-cat-count">{count}人</span>
+                      <span
+                        className="mining-party-cat-meta"
+                        style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", textAlign: "right", lineHeight: 1.25 }}
+                      >
+                        <span>
+                          {meta.emoji} {meta.label}
+                          <span className="mining-party-cat-count">{count}人</span>
+                        </span>
+                        <span style={{ color: theme.text.secondary, fontSize: 10, fontWeight: 700 }}>
+                          {meta.gachaHint}
+                        </span>
                       </span>
                     </button>
                   );
@@ -2821,6 +3989,22 @@ export function MiningScreen({
                     }
                   }}
                 />
+                {isEndChapterDevEnabled() && (
+                  <ExchangeShopRow
+                    give={{ material: "warped_wart", label: "ウォート", amount: 1 }}
+                    get={{ src: EMERALD_IMAGE, label: "エメラルド", amount: WARPED_WART_TO_POINTS }}
+                    owned={`所持 ウォート ${have("warped_wart")}`}
+                    disabled={have("warped_wart") < 1}
+                    onClick={() => {
+                      const r = exchangeWarpedWartForPoints(mining);
+                      if (r.error) showToast(r.error);
+                      else {
+                        onChange(patchFromResult((prev) => exchangeWarpedWartForPoints(prev)));
+                        showToast(`ウォートをエメラルド${WARPED_WART_TO_POINTS}にかえした！`);
+                      }
+                    }}
+                  />
+                )}
               </div>
               <div>
                 <div className="mining-exchange-group-label">エメラルドで買う</div>
@@ -2908,20 +4092,17 @@ export function MiningScreen({
         </div>
       )}
 
-      {!blockingOverlay && (
-        <div
-          aria-hidden
-          style={{ height: bottomChromeHeight + 12, flexShrink: 0 }}
-        />
-      )}
+      <div
+        aria-hidden
+        style={{ height: bottomChromeHeight + 12, flexShrink: 0 }}
+      />
 
-      {!blockingOverlay && (
-        <div
-          ref={setBottomChromeEl}
-          className="mining-bottom-chrome"
-          aria-label="ほる・そうび・なかま・エンチャント"
-        >
-          {tab === "mine" && overlay !== "digDestination" && (
+      <div
+        ref={setBottomChromeEl}
+        className="mining-bottom-chrome"
+        aria-label="ほる・そうび・なかま・エンチャント"
+      >
+          {tab === "mine" && !blockingOverlay && overlay !== "digDestination" && (
             <button
               type="button"
               className={`mining-dig-cta${mining.tickets >= 1 && !digBusy ? " is-ready" : ""}`}
@@ -2936,7 +4117,7 @@ export function MiningScreen({
           <div className="mining-main-tabs mining-bottom-tabs" aria-label="そうび・なかま・エンチャント">
             <button
               type="button"
-              className="mining-main-tab"
+              className={`mining-main-tab${overlay === "equip" ? " is-active" : ""}${showsEnderEyeHoldHint(mining) && (mining.endQuest?.enderEyeHintVisits ?? 0) >= 5 ? " is-eye-hint" : ""}`}
               onClick={() => setOverlay("equip")}
             >
               <MiningItemIcon src="/mining/Iron_Chestplate.webp" size={22} alt="" />
@@ -2944,7 +4125,7 @@ export function MiningScreen({
             </button>
             <button
               type="button"
-              className="mining-main-tab"
+              className={`mining-main-tab${overlay === "party" ? " is-active" : ""}`}
               onClick={() => {
                 setOverlay("party");
                 setPartyStep("slots");
@@ -2957,7 +4138,7 @@ export function MiningScreen({
             </button>
             <button
               type="button"
-              className={`mining-main-tab${!tableReady ? " is-locked" : ""}`}
+              className={`mining-main-tab${overlay === "enchant" ? " is-active" : ""}${!tableReady ? " is-locked" : ""}`}
               aria-disabled={!tableReady}
               onClick={() => {
                 if (!tableReady) {
@@ -2971,20 +4152,46 @@ export function MiningScreen({
               <span className="mining-main-tab-label">エンチャント</span>
             </button>
           </div>
-        </div>
-      )}
+      </div>
 
-      {overlay === "digDestination" && (
+      {overlay === "digDestination" && combatV2Enabled && digDestStep === "rock" && isCombatGacha(selectedGacha) && (
+        <CombatV2Panel mining={mining} location={selectedGacha} dateKey={dateKey} onChange={onChange}
+          onClose={() => { setOverlay(null); setDigDestStep("place"); }} />
+      )}
+      {overlay === "digDestination" && !(combatV2Enabled && digDestStep === "rock" && isCombatGacha(selectedGacha)) && (
         <div
           className="mining-dig-dest-backdrop"
-          onClick={() => setOverlay(null)}
+          onClick={() => {
+            if (fleeConfirmOpen) return;
+            if (digDestStep === "rock" && (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha))) {
+              requestFleeFromFight();
+              return;
+            }
+            if (combatBusy || combatAttackStep === 1) return;
+            resetCombatFx();
+            setOverlay(null);
+            setDigDestStep("place");
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setOverlay(null);
+            if (e.key === "Escape") {
+              if (fleeConfirmOpen) {
+                setFleeConfirmOpen(false);
+                return;
+              }
+              if (digDestStep === "rock" && (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha))) {
+                requestFleeFromFight();
+                return;
+              }
+              if (combatBusy || combatAttackStep === 1) return;
+              resetCombatFx();
+              setOverlay(null);
+              setDigDestStep("place");
+            }
           }}
           role="presentation"
         >
           <div
-            className="mining-dig-dest-sheet"
+            className={`mining-dig-dest-sheet${digDestStep === "rock" && isTheEndGacha(selectedGacha) ? " is-end-fight" : ""}${incomingFx ? " is-shake" : ""}${digDestStep === "rock" && (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha)) && !canPlayerFight(mining) && !combatBusy && !tapRush ? " is-you-died" : ""}${combatBusy && dragonFx?.usedBed ? " is-bed-boom" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label={
@@ -2997,6 +4204,44 @@ export function MiningScreen({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mining-dig-dest-handle" aria-hidden />
+            {tapRush && (
+              <SpecialTapRush
+                showHint={!mining.specialHintSeen}
+                onFirstTap={onSpecialFirstTap}
+                onProgress={onSpecialProgress}
+                onFinish={finishSpecialTaps}
+                initialTaps={pendingSpecial?.taps ?? 0}
+                timerStartedAtMs={pendingSpecial?.startedAtMs}
+              />
+            )}
+            <SpecialFinale
+              active={!!specialFinale}
+              taps={specialFinale?.taps ?? 0}
+              damage={specialFinale?.damage ?? 0}
+            />
+            {fleeConfirmOpen && !combatBusy && (
+              <FleeConfirmOverlay
+                onConfirm={fleeFromFight}
+                onCancel={() => setFleeConfirmOpen(false)}
+                preserveRemainingAttacks={(() => {
+                  const location = combatLocationForGacha(selectedGacha);
+                  const progress = location ? mining.combatProgress?.[location] : undefined;
+                  return !!progress && (progress.attackStep === 1 || progress.freeFirstAttack);
+                })()}
+              />
+            )}
+            {digDestStep === "rock"
+              && (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha))
+              && !canPlayerFight(mining)
+              && !combatBusy
+              && !tapRush && (
+              <YouDiedOverlay
+                tickets={mining.tickets}
+                busy={combatBusy}
+                onRevive={reviveInFight}
+                onFlee={requestFleeFromFight}
+              />
+            )}
             <div className="mining-dig-dest-head">
               <div className="mining-dig-dest-title">
                 {digDestStep === "place" ? "どこをほる？" : ""}
@@ -3004,7 +4249,17 @@ export function MiningScreen({
               <button
                 type="button"
                 className="mining-dig-dest-close"
-                onClick={() => setOverlay(null)}
+                disabled={combatBusy}
+                onClick={() => {
+                  if (combatBusy) return;
+                  if (digDestStep === "rock" && (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha))) {
+                    requestFleeFromFight();
+                    return;
+                  }
+                  resetCombatFx();
+                  setOverlay(null);
+                  setDigDestStep("place");
+                }}
                 aria-label="とじる"
               >
                 ×
@@ -3019,8 +4274,9 @@ export function MiningScreen({
                 {ironRoute && (
                   <div className="mining-dig-dest-hint">おすすめ: せきたん → かまど → てつ</div>
                 )}
+                {journey && <EndJourneyGuide guide={journey} onAction={runJourneyAction} />}
                 <div className="mining-biome-grid">
-                  {GACHA_ORDER.map((gid) => {
+                  {GACHA_ORDER.filter((gid) => listsMiningDestination(mining, gid)).map((gid) => {
                     const unlocked = mining.unlockedGachas.includes(gid);
                     const meta = GACHA_META[gid];
                     const isLucky = unlocked && lucky === gid;
@@ -3053,6 +4309,14 @@ export function MiningScreen({
                       >
                         <img className="mining-biome-card-img" src={DIG_BLOCK_IMAGE[gid]} alt="" draggable={false} />
                         <div className="mining-biome-card-shade" />
+                        {showsEndHuntHint(mining) && mining.endQuest?.mark === gid && (
+                          <img
+                            className="mining-biome-card-eye"
+                            src={ENDER_EYE_IMAGE}
+                            alt=""
+                            draggable={false}
+                          />
+                        )}
                         <div className="mining-biome-card-body">
                           <div className="mining-biome-card-title">{meta.emoji} {meta.label}</div>
                           {meta.badge && <div className="mining-biome-card-badge">{meta.badge}</div>}
@@ -3081,6 +4345,7 @@ export function MiningScreen({
 
             {digDestStep === "rock" && (
               <div className="mining-dig-dest-rock">
+                {!isTheEndGacha(selectedGacha) && (
                 <div className="mining-rock-scene" aria-hidden={false}>
                   <img
                     className="mining-rock-scene-img"
@@ -3098,20 +4363,92 @@ export function MiningScreen({
                           ? "ようがんでくむ"
                           : isChestGacha(selectedGacha)
                             ? `${selectedMeta.label}のチェスト`
-                            : `${selectedMeta.label}でほる`}
+                            : isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha)
+                              ? `${selectedMeta.label}でたたかう`
+                              : isEndPortalGacha(selectedGacha)
+                                ? "エンダーアイをはめる"
+                                : `${selectedMeta.label}でほる`}
                     </span>
                   </div>
                 </div>
+                )}
 
                 <button
                   type="button"
                   className="mining-dig-dest-back"
-                  onClick={() => setDigDestStep("place")}
+                  disabled={combatBusy}
+                  onClick={() => {
+                    if (combatBusy) return;
+                    if (isCombatGacha(selectedGacha) || isTheEndGacha(selectedGacha)) {
+                      requestFleeFromFight();
+                      return;
+                    }
+                    resetCombatFx();
+                    setDigDestStep("place");
+                  }}
                 >
                   ← 場所を選びなおす
                 </button>
 
-                {isBucketGacha(selectedGacha) && !hasBucket(mining) ? (
+                {isEndPortalGacha(selectedGacha) ? (
+                  <EndPortalPanel
+                    mining={mining}
+                    shaking={portalShake}
+                    insertPulse={insertPulse}
+                    onInsert={insertEyeAtPortal}
+                    onUnlockTheEnd={openTheEndFromPortal}
+                    onCraft={() => {
+                      const next = endJourneyGuide({ ...mining, materials: { ...mining.materials, ender_eye: 0 } });
+                      if (next?.action) runJourneyAction(next.action);
+                    }}
+                  />
+                ) : isTheEndGacha(selectedGacha) ? (
+                  <EndDragonPanel
+                    mining={mining}
+                    buddyProgress={buddyProgress}
+                    busy={combatBusy}
+                    tickets={mining.tickets}
+                    attackStep={combatAttackStep}
+                    freeAttackAfterRevive={freeCombatAttackRef.current}
+                    selected={dragonTarget}
+                    fx={dragonFx}
+                    takenHearts={playerHitHearts}
+                    playerDied={playerDiedFx}
+                    heavyHit={dragonHeavyHit}
+                    incoming={incomingFx}
+                    onSelect={selectDragonTarget}
+                    onPick={pickDragonInSheet}
+                    onBed={explodeDragonBed}
+                    onRevive={reviveInFight}
+                    onFlee={requestFleeFromFight}
+                    onFireSpecial={startSpecialInSheet}
+                  />
+                ) : isCombatGacha(selectedGacha) ? (
+                  <MiningCombatPanel
+                    mining={mining}
+                    gacha={selectedGacha}
+                    hint={rockHint}
+                    busy={combatBusy}
+                    fallen={combatFallen}
+                    flash={specialFinale ? [] : combatFlash}
+                    gone={combatGone}
+                    swings={combatSwings}
+                    hitDamage={specialFinale ? 0 : combatHitDamage}
+                    emphasis={combatEmphasis}
+                    slashSeed={combatSlashSeed}
+                    tickets={mining.tickets}
+                    takenHearts={playerHitHearts}
+                    playerDied={playerDiedFx}
+                    incoming={incomingFx}
+                    striking={striking}
+                    attackStep={combatAttackStep}
+                    freeAttackAfterRevive={freeCombatAttackRef.current}
+                    onFireSpecial={startSpecialInSheet}
+                    onPick={pickRockInSheet}
+                    onRevive={reviveInFight}
+                    onFlee={requestFleeFromFight}
+                  />
+                ) : isBucketGacha(selectedGacha) && !hasBucket(mining) ? (
                   <div style={{ marginTop: 12, fontSize: 14, fontWeight: 800, color: theme.category.orange }}>
                     鉄のバケツを作ってから入ろう
                     <button
@@ -3230,6 +4567,7 @@ export function MiningScreen({
 
       {overlay === "enchant" && hasEnchantingTable(mining) && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 24 }}>
+          <AdventureStrengthPanel mining={mining} dateKey={dateKey} onChange={onChange} />
           <MiningEnchantPanel
             mining={mining}
             onChange={onChange}
@@ -3353,13 +4691,31 @@ export function MiningScreen({
         ownedCount={have}
         canDigAgain={
           digFx === "reveal"
+          && !pendingDiscover
           && mining.tickets >= 1
           && mining.unlockedGachas.includes(selectedGacha)
+          && !isCombatGacha(selectedGacha)
+          && !isTheEndGacha(selectedGacha)
         }
         onCrackTap={onCrackTap}
         onDigAgain={digAgainFromFx}
         onClose={closeDigFx}
       />
+
+      {endArrival && <EndArrival onFight={() => {
+        if (!selectDigPlace("the_end")) return;
+        setEndArrival(false);
+        if (combatV2Enabled) setOverlay("digDestination");
+      }} onBack={() => { setEndArrival(false); setDigDestStep("place"); setOverlay("digDestination"); }} />}
+
+      {adventureLocation && <Suspense fallback={<div role="status">たたかいの じゅんびちゅう…</div>}><AdventureBattlePanel mining={mining} location={adventureLocation} dateKey={dateKey} buddyProgress={buddyProgress} onChange={onChange} onClose={() => setAdventureLocation(null)} onPrepare={() => { setAdventureLocation(null); setOverlay("equip"); }} /></Suspense>}
+
+      {endCinematic && (
+        <EndCinematicOverlay
+          kind={endCinematic}
+          onClose={() => setEndCinematic(null)}
+        />
+      )}
 
       {portalFx && (
         <NetherPortalOverlay onClose={() => setPortalFx(false)} />

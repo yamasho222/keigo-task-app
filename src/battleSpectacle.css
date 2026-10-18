@@ -1,0 +1,143 @@
+/* Arena-only, original shapes. Phases are supplied by engine-result playback.
+   Local trails never alternate the brightness of the whole screen. */
+.bs-scene,.bs-scene *,.bs-scene *::before,.bs-scene *::after { box-sizing:border-box; pointer-events:none; }
+.bs-scene { --bs-light:#fff0bd; --bs-accent:#ffc46b; --bs-deep:#c96430; position:absolute; inset:0; z-index:5; overflow:hidden; border-radius:inherit; color:var(--bs-light); contain:layout style; }
+.bs-enderman { --bs-light:#f3dcff; --bs-accent:#c599ff; --bs-deep:#6542a1; }
+.bs-dragon { --bs-light:#efffdc; --bs-accent:#c5a0ff; --bs-deep:#734694; }
+.bs-scene svg { display:block; overflow:visible; }
+.bs-backdrop { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 55%,#10142648,#090c19c2 82%); animation:bs-darken 320ms ease-out both; }
+.bs-phase-recover .bs-backdrop { animation:bs-clear 480ms ease-out both; }
+.bs-blade-edge { fill:var(--bs-accent); stroke:var(--bs-light); stroke-width:4; }
+.bs-blade-seam { stroke:var(--bs-light); stroke-width:3; }
+.bs-blade-hilt { fill:var(--bs-deep); stroke:var(--bs-light); stroke-width:3; }
+.bs-blade { width:70px; height:112px; filter:drop-shadow(0 0 8px var(--bs-deep)); }
+.bs-gather { position:absolute; width:160px; height:160px; left:50%; top:60%; translate:-50% -50%; display:grid; place-items:center; }
+.bs-gather>.bs-blade { rotate:22deg; animation:bs-ready 560ms ease-out both; }
+.bs-orbit { position:absolute; inset:-9%; border:2px solid var(--bs-accent); border-radius:50%; box-shadow:0 0 18px #d5a6ff38; }
+.bs-orbit-a { transform:rotate(-28deg) scaleY(.55); animation:bs-orbit-in 560ms ease-out both; }
+.bs-orbit-b { transform:rotate(28deg) scaleY(.55); animation:bs-orbit-in 560ms ease-out both; }
+.bs-particles { position:absolute; left:50%; top:50%; width:0; height:0; }
+.bs-particle { position:absolute; width:5px; height:15px; margin:-7px -2px; border-radius:1px; background:var(--bs-accent); box-shadow:0 0 5px var(--bs-deep); transform:rotate(var(--bs-angle)) translateY(calc(-1 * var(--bs-distance))); animation:bs-particle 480ms ease-out both; animation-delay:var(--bs-delay); }
+.bs-gather .bs-particle { animation-name:bs-collect; animation-duration:560ms; }
+.bs-combo { position:absolute; inset:0; }
+.bs-combo-hit { position:absolute; left:15%; top:23%; width:70%; height:64%; transform-origin:50% 50%; animation:bs-combo-pass 165ms ease-out both; }
+.bs-combo-trail { position:absolute; inset:0; width:100%; height:100%; }
+.bs-combo-trail path { fill:var(--bs-accent); stroke:var(--bs-light); stroke-width:2; }
+.bs-combo-hit>.bs-blade { position:absolute; left:48%; top:12%; width:52px; height:84px; rotate:65deg; }
+.bs-combo-hit-0 { rotate:-22deg; }
+.bs-combo-hit-1 { rotate:155deg; animation-delay:85ms; }
+.bs-combo-hit-2 { rotate:12deg; animation-delay:170ms; }
+.bs-finisher,.bs-release { position:absolute; inset:0; }
+.bs-falling-blade { position:absolute; top:19%; left:50%; translate:-50% 0; rotate:180deg; animation:bs-final-fall 180ms cubic-bezier(.3,0,.8,1) both; }
+.bs-falling-blade>.bs-blade { width:85px; height:136px; }
+.bs-impact-star { position:absolute; left:50%; top:55%; width:140px; height:100px; translate:-50% -50%; background:var(--bs-light); clip-path:polygon(50% 0,57% 36%,92% 15%,66% 48%,100% 55%,63% 63%,75% 100%,51% 73%,22% 98%,35% 61%,0 50%,39% 42%); animation:bs-contact 450ms ease-out both; }
+.bs-rings { position:absolute; left:50%; top:57%; width:62%; height:32%; translate:-50% -50%; }
+.bs-ring { position:absolute; inset:0; border:3px solid var(--bs-accent); border-radius:50%; box-shadow:0 0 14px #d9bcff35; animation:bs-wave 480ms ease-out both; }
+.bs-ring-outer { border-width:1px; animation-delay:90ms; }
+.bs-finisher>.bs-particles,.bs-release>.bs-particles { top:55%; }
+.bs-ground-cracks { position:absolute; left:25%; top:68%; width:50%; height:18%; background:var(--bs-accent); opacity:.7; clip-path:polygon(50% 0,54% 38%,83% 23%,58% 51%,100% 85%,56% 61%,54% 100%,49% 62%,17% 96%,43% 54%,0 23%,47% 39%); animation:bs-contact 510ms ease-out both; }
+.bs-cut { position:absolute; inset:20% 12% 6%; }
+.bs-cut-trail { position:absolute; inset:0; width:100%; height:100%; animation:bs-sweep 290ms ease-out both; }
+.bs-cut-trail path { fill:var(--bs-light); stroke:var(--bs-accent); stroke-width:2; }
+.bs-cut>.bs-blade { position:absolute; left:30%; top:35%; rotate:45deg; animation:bs-hand-swing 300ms ease-out both; }
+.bs-contact-notch { position:absolute; left:50%; top:50%; width:75px; height:70px; translate:-50% -50%; background:var(--bs-light); clip-path:polygon(50% 0,59% 37%,100% 28%,65% 56%,89% 100%,49% 69%,11% 93%,30% 56%,0 24%,40% 37%); animation:bs-contact 350ms ease-out both; }
+.bs-incoming { position:absolute; inset:0; color:var(--bs-accent); }
+.bs-threat { position:absolute; top:28%; left:50%; width:120px; height:80px; translate:-50% 0; display:flex; justify-content:center; }
+.bs-threat-chevron { display:block; width:30px; height:30px; border-right:6px solid var(--bs-accent); border-bottom:6px solid var(--bs-accent); rotate:45deg; }
+.bs-threat-crown { position:absolute; inset:-30px -10px 0; border:3px solid var(--bs-light); clip-path:polygon(0 0,25% 25%,50% 0,75% 25%,100% 0,90% 100%,10% 100%); }
+.bs-projectiles { position:absolute; inset:0; }
+.bs-bolt { position:absolute; top:38%; left:calc(50% - 27px); width:54px; height:72px; animation:bs-bolt-flight 400ms ease-in both; }
+.bs-flame,.bs-claw { width:100%; height:100%; fill:var(--bs-accent); stroke:var(--bs-light); stroke-width:2; filter:drop-shadow(0 0 9px var(--bs-deep)); }
+.bs-flame-core { fill:var(--bs-light); stroke:none; }
+.bs-claw { fill:var(--bs-deep); stroke-width:3; }
+.bs-enemyUltimate .bs-bolt { width:80px; height:100px; left:calc(50% - 40px); }
+.bs-enemyUltimate .bs-bolt-0 { margin-left:-22%; rotate:18deg; }
+.bs-enemyUltimate .bs-bolt-1 { top:28%; }
+.bs-enemyUltimate .bs-bolt-2 { margin-left:22%; rotate:-18deg; }
+.bs-enemy-contact { position:absolute; left:15%; right:15%; top:62%; bottom:0; }
+.bs-enemyUltimate .bs-enemy-contact>.bs-contact-notch { width:135px; height:85px; }
+.bs-shielded .bs-bolt { animation-name:bs-bolt-stop; }
+.bs-defense { position:absolute; left:50%; bottom:1%; width:150px; height:175px; translate:-50% 0; color:#c4f3ff; --bs-accent:#8dd9f0; --bs-light:#edfcff; }
+.bs-shield { position:absolute; width:100%; height:100%; }
+.bs-shield-face { fill:#2a6e865c; stroke:#b8f1ff; stroke-width:4; }
+.bs-shield-rib { stroke:#ecfcff; stroke-width:3; opacity:.7; }
+.bs-phase-impact .bs-shield { animation:bs-brace 310ms ease-out both; }
+.bs-block-contact { position:absolute; inset:-12% -20% 10%; }
+.bs-block-contact>.bs-rings { top:35%; width:110%; height:55%; }
+.bs-deflected { position:absolute; top:-10%; left:-45%; width:190%; height:70%; stroke:#bceeff; stroke-width:4; animation:bs-contact 460ms ease-out both; }
+.bs-restoration { position:absolute; left:50%; bottom:3%; width:220px; height:185px; translate:-50% 0; --bs-accent:#91ebc1; --bs-deep:#3a977e; }
+.bs-loaf { position:absolute; width:86px; height:70px; left:67px; bottom:10px; fill:#d99d51; stroke:#ffe4ab; stroke-width:4; animation:bs-eat 450ms ease-in both; }
+.bs-loaf-score { fill:none; stroke:#805228; stroke-linecap:round; }
+.bs-healing-pool { position:absolute; left:0; right:0; bottom:8px; height:35px; border:2px solid #b9ffe0; border-radius:50%; background:#87e7b530; animation:bs-wave 600ms ease-out both; }
+.bs-rising-heart { position:absolute; left:85px; bottom:5px; width:50px; height:50px; fill:#ff99ae; stroke:#ffe4d6; stroke-width:2; animation:bs-heart-rise 650ms ease-out both; }
+.bs-heart-0 { margin-left:-65px; animation-delay:0ms; }
+.bs-heart-1 { bottom:35px; animation-delay:60ms; }
+.bs-heart-2 { margin-left:65px; animation-delay:120ms; }
+.bs-shatter { position:absolute; left:50%; top:48%; width:120px; height:120px; translate:-50% -50%; }
+.bs-broken-half { position:absolute; inset:0; background:var(--bs-accent); border-radius:50%; border:3px solid var(--bs-light); clip-path:polygon(0 0,61% 0,43% 36%,61% 61%,43% 100%,0 100%); animation:bs-break-left 480ms ease-out both; }
+.bs-half-right { clip-path:polygon(61% 0,100% 0,100% 100%,43% 100%,61% 61%,43% 36%); animation-name:bs-break-right; }
+.bs-bed-burst { position:absolute; inset:12% 6% 0; --bs-accent:#f7cd95; --bs-deep:#93587c; }
+.bs-bed-picture { position:absolute; left:30%; bottom:10%; width:40%; height:40%; animation:bs-ready 420ms ease-out both; }
+.bs-bed-frame { fill:#a87d55; stroke:#f1cb9c; stroke-width:3; }
+.bs-bed-cover { fill:#be738a; stroke:#ffe0d7; stroke-width:3; }
+.bs-bed-pillow { fill:#fff0df; }
+.bs-dust { position:absolute; left:25%; top:35%; width:50%; height:50%; border-radius:42% 58% 35% 65%; background:radial-gradient(ellipse,#e2c9be9c,#967a9c55 58%,transparent 72%); animation:bs-dust-bloom 650ms ease-out both; }
+.bs-dust-b { left:5%; top:40%; rotate:-25deg; animation-delay:60ms; }
+.bs-dust-c { left:45%; top:40%; rotate:25deg; animation-delay:60ms; }
+.bs-celebration { position:absolute; left:50%; top:48%; width:250px; height:210px; translate:-50% -50%; --bs-accent:#ffe193; --bs-deep:#ca9650; }
+.bs-victory-star { position:absolute; left:75px; top:25px; width:100px; height:100px; fill:#ffe193; stroke:#fff4d6; stroke-width:3; filter:drop-shadow(0 0 18px #ffcf6e66); animation:bs-award 700ms ease-out both; }
+.bs-laurel { position:absolute; left:24px; top:50px; width:60px; height:130px; border-left:5px solid #e6c679; border-radius:50%; rotate:-30deg; }
+.bs-laurel::after { content:''; position:absolute; left:-9px; top:10px; width:35px; height:100px; background:repeating-linear-gradient(35deg,transparent 0 12px,#ffe3a4 13px 21px,transparent 22px 30px); clip-path:ellipse(50% 50%); }
+.bs-laurel-right { left:auto; right:24px; transform:scaleX(-1); rotate:30deg; }
+.bs-confetti .bs-particle { height:10px; width:7px; animation:bs-confetti-fall 1500ms ease-out both; animation-delay:var(--bs-delay); }
+.bs-confetti .bs-particle:nth-child(3n) { background:#b7e8da; }
+.bs-confetti .bs-particle:nth-child(3n + 1) { background:#d4bbf7; }
+.bs-buddies { position:absolute; left:8%; right:8%; bottom:4%; display:flex; justify-content:space-between; gap:8px; }
+.bs-buddy { position:relative; width:clamp(34px,10vw,64px); height:clamp(34px,10vw,64px); border-radius:50%; border:2px solid var(--bs-accent); background:#22263dbd; box-shadow:0 0 18px #cca4f455; animation:bs-ready 450ms ease-out both; }
+.bs-buddy-image { width:100%; height:100%; padding:5px; object-fit:contain; image-rendering:pixelated; }
+.bs-buddy-stars { position:absolute; left:0; right:0; bottom:-4px; display:flex; justify-content:center; gap:3px; }
+.bs-buddy-star { width:9px; height:9px; background:#ffe8ac; clip-path:polygon(50% 0,65% 33%,100% 40%,73% 65%,80% 100%,50% 80%,20% 100%,27% 65%,0 40%,35% 33%); }
+.bs-amount { position:absolute; left:24%; top:37%; font:bold clamp(28px,6vw,52px)/1.2 system-ui,sans-serif; color:var(--bs-light); text-shadow:0 3px 1px #221b35,2px 0 1px #221b35,-2px 0 1px #221b35; animation:bs-number 480ms ease-out both; }
+.bs-heal>.bs-amount { top:auto; bottom:12%; color:#bbffe0; }
+@keyframes bs-darken { from { opacity:0; } to { opacity:1; } }
+@keyframes bs-clear { from { opacity:1; } to { opacity:0; } }
+@keyframes bs-ready { from { opacity:.4; scale:.7; } to { opacity:1; scale:1; } }
+@keyframes bs-orbit-in { from { opacity:.2; scale:1.5; } to { opacity:.9; scale:1; } }
+@keyframes bs-collect { from { opacity:.2; transform:rotate(var(--bs-angle)) translateY(calc(-1 * var(--bs-distance))); } to { opacity:1; transform:rotate(var(--bs-angle)) translateY(-28px); } }
+@keyframes bs-combo-pass { from { opacity:0; translate:-10% 5%; scale:.8; } 35% { opacity:.9; } to { opacity:0; translate:10% -5%; scale:1.1; } }
+@keyframes bs-final-fall { from { translate:-50% -90px; opacity:.4; } to { translate:-50% 30px; opacity:1; } }
+@keyframes bs-contact { from { scale:.55; opacity:.85; } to { scale:1.15; opacity:0; } }
+@keyframes bs-wave { from { scale:.35; opacity:.9; } to { scale:1.35; opacity:0; } }
+@keyframes bs-particle { from { opacity:1; transform:rotate(var(--bs-angle)) translateY(-10px); } to { opacity:0; transform:rotate(var(--bs-angle)) translateY(calc(-1 * var(--bs-distance))) scale(.4); } }
+@keyframes bs-sweep { from { clip-path:inset(0 100% 0 0); opacity:.8; } 65% { opacity:.9; } to { clip-path:inset(0); opacity:0; } }
+@keyframes bs-hand-swing { from { translate:-55px 35px; rotate:-20deg; opacity:.8; } to { translate:65px -25px; rotate:95deg; opacity:0; } }
+@keyframes bs-bolt-flight { from { translate:0 -12px; scale:.6; } to { translate:0 110px; scale:1.5; } }
+@keyframes bs-bolt-stop { from { translate:0 -12px; scale:.6; opacity:1; } to { translate:0 65px; scale:.9; opacity:.2; } }
+@keyframes bs-brace { from { translate:0 8px; scale:.94; } to { translate:0 0; scale:1; } }
+@keyframes bs-eat { from { scale:1; opacity:1; } to { scale:.6; opacity:.3; } }
+@keyframes bs-heart-rise { from { translate:0 0; opacity:.9; scale:.7; } to { translate:0 -95px; opacity:0; scale:1.1; } }
+@keyframes bs-break-left { from { translate:0 0; opacity:1; } to { translate:-55px 35px; rotate:-30deg; opacity:0; } }
+@keyframes bs-break-right { from { translate:0 0; opacity:1; } to { translate:55px 35px; rotate:30deg; opacity:0; } }
+@keyframes bs-dust-bloom { from { scale:.3; opacity:.8; } to { scale:1.4; opacity:0; } }
+@keyframes bs-award { from { translate:0 18px; scale:.6; opacity:.4; } to { translate:0 0; scale:1; opacity:1; } }
+@keyframes bs-confetti-fall { from { transform:rotate(var(--bs-angle)) translateY(-95px); opacity:1; } to { transform:rotate(var(--bs-angle)) translateY(140px) rotate(100deg); opacity:0; } }
+@keyframes bs-number { from { translate:0 8px; opacity:.4; } to { translate:0 -10px; opacity:1; } }
+/* Static, readable poses. Never use 0.01ms animations: that loses end-state art. */
+.bs-reduced *,.bs-reduced *::before,.bs-reduced *::after { animation:none !important; transition:none !important; }
+.bs-reduced .bs-backdrop { opacity:.7; }
+.bs-reduced .bs-particles,.bs-reduced .bs-combo-hit-0,.bs-reduced .bs-combo-hit-1,.bs-reduced .bs-dust-b,.bs-reduced .bs-dust-c { display:none; }
+.bs-reduced .bs-ring { opacity:.55; scale:1; }
+.bs-reduced .bs-ring-outer { scale:1.2; }
+.bs-reduced .bs-impact-star,.bs-reduced .bs-contact-notch { opacity:.7; }
+.bs-reduced .bs-heart-0,.bs-reduced .bs-heart-2 { bottom:35px; }
+.bs-reduced .bs-heart-1 { bottom:65px; }
+@media (prefers-reduced-motion:reduce) {
+  .bs-scene *,.bs-scene *::before,.bs-scene *::after { animation:none !important; transition:none !important; }
+  .bs-scene .bs-backdrop { opacity:.7; }
+  .bs-scene .bs-particles,.bs-scene .bs-combo-hit-0,.bs-scene .bs-combo-hit-1,.bs-scene .bs-dust-b,.bs-scene .bs-dust-c { display:none; }
+  .bs-scene .bs-ring { opacity:.55; scale:1; }
+  .bs-scene .bs-ring-outer { scale:1.2; }
+  .bs-scene .bs-impact-star,.bs-scene .bs-contact-notch { opacity:.7; }
+  .bs-scene .bs-heart-0,.bs-scene .bs-heart-2 { bottom:35px; }
+  .bs-scene .bs-heart-1 { bottom:65px; }
+}

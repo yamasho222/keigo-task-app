@@ -1,6 +1,7 @@
 /** ドロップ解決・パーティ／道具補正・解放判定 */
 
 import { getBuddyEntry, type BuddyProgressMap } from "./buddyProgress";
+import { TOOL_BONUS } from './campaignEquipment';
 import { REWARD_LOOKUP } from "./stickerRewards";
 import {
   canAffordRecipe,
@@ -46,6 +47,9 @@ import {
   type MiningState,
   type ToolKind,
 } from "./miningTypes";
+import { isEndChapterDevEnabled } from "./miningCombat";
+import { applyEndQuestOnVisit, prepareEndSearch } from "./endChapter";
+import { syncEndJourney } from "./endJourneyProgress";
 
 const TIER_PLUS1: Record<GearTier, number> = {
   wood: 0.1,
@@ -105,6 +109,10 @@ export const GACHA_PRIMARY: Record<GachaId, MaterialId | null> = {
   lapis_cave: "lapis",
   nether: "nether_quartz",
   bastion: "netherrack",
+  warped_forest: "ender_pearl",
+  fortress: "blaze_rod",
+  end_portal: null,
+  the_end: null,
 };
 
 export function specialtyForGacha(gacha: GachaId): MiningSpecialty {
@@ -124,6 +132,7 @@ export function bestOwnedTool(
 }
 
 export function recommendToolKind(gacha: GachaId): ToolKind {
+  if (gacha === "warped_forest" || gacha === "fortress" || gacha === "the_end") return "sword";
   if (isAxeGacha(gacha)) return "axe";
   return "pickaxe";
 }
@@ -229,6 +238,7 @@ export function netheriteFullComplete(state: MiningState): boolean {
 }
 
 export function refreshUnlocks(state: MiningState): MiningState {
+  state = syncEndJourney(prepareEndSearch(state));
   const unlocked = new Set(state.unlockedGachas);
   unlocked.add("wood");
   if (woodToolsComplete(state)) {
@@ -251,7 +261,30 @@ export function refreshUnlocks(state: MiningState): MiningState {
     unlocked.add("nether");
     unlocked.add("bastion");
   }
-  return { ...state, unlockedGachas: [...unlocked] };
+  if (isEndChapterDevEnabled()) {
+    for (const gacha of ["fortress", "warped_forest"] as const) {
+      const requirement = MATERIAL_UNLOCK_REQ[gacha];
+      const alreadyUnlocked = state.unlockedGachas.includes(gacha);
+      const met = gacha === "fortress" ? state.endJourney!.debrisFound : state.endJourney!.rodsAcquired >= requirement.amount;
+      if (alreadyUnlocked || met) {
+        unlocked.add(gacha);
+      } else {
+        unlocked.delete(gacha);
+      }
+    }
+    if (state.endQuest?.foundPortal) unlocked.add("end_portal");
+    else unlocked.delete("end_portal");
+    if (state.endQuest?.theEndUnlocked) unlocked.add("the_end");
+    else unlocked.delete("the_end");
+  } else {
+    unlocked.delete("warped_forest");
+    unlocked.delete("fortress");
+    unlocked.delete("end_portal");
+    unlocked.delete("the_end");
+  }
+  const ids = [...unlocked];
+  return ids.length === state.unlockedGachas.length && ids.every((id, i) => id === state.unlockedGachas[i])
+    ? state : { ...state, unlockedGachas: ids };
 }
 
 const WOOD_UNLOCK_REQ: CraftedGearId[] = ["sword_wood", "axe_wood", "pickaxe_wood"];
@@ -263,7 +296,12 @@ const NETHER_UNLOCK_REQ: CraftedGearId[] = [
   "pickaxe_diamond",
 ];
 
-/** refreshUnlocks と同じ条件。ロック中の表示用 */
+const MATERIAL_UNLOCK_REQ = {
+  fortress: { material: "ancient_debris", amount: 1 },
+  warped_forest: { material: "blaze_rod", amount: 4 },
+} as const;
+
+/** クラフト条件。素材条件は gachaLockBadge / gachaLockHint で扱う */
 export function gachaUnlockRequirementIds(gacha: GachaId): CraftedGearId[] {
   switch (gacha) {
     case "stone":
@@ -282,6 +320,12 @@ export function gachaUnlockRequirementIds(gacha: GachaId): CraftedGearId[] {
     case "nether":
     case "bastion":
       return NETHER_UNLOCK_REQ;
+    case "warped_forest":
+    case "fortress":
+      return [];
+    case "end_portal":
+    case "the_end":
+      return [];
     default:
       return [];
   }
@@ -295,14 +339,25 @@ function isGachaUnlockReqMet(state: MiningState, id: CraftedGearId): boolean {
 }
 
 export function gachaLockBadge(gacha: GachaId): string {
+  if (gacha === "fortress") return "古代の残骸×1";
+  if (gacha === "warped_forest") return "ロッド あつめた数 4";
   const ids = gachaUnlockRequirementIds(gacha);
   if (!ids.length) return "まだひらいてない";
   return ids.map(gearLabel).join("・");
 }
 
 export function gachaLockHint(gacha: GachaId, state: MiningState): string {
-  const ids = gachaUnlockRequirementIds(gacha);
   const place = GACHA_META[gacha].label;
+  if (gacha === "end_portal") return "ふしぎな気配をたどると…？";
+  if (gacha === "the_end") return "エンドポータルにアイを12こはめよう";
+  if (gacha === "fortress" || gacha === "warped_forest") {
+    const requirement = MATERIAL_UNLOCK_REQ[gacha];
+    const progress = syncEndJourney(state).endJourney!;
+    const current = gacha === "warped_forest" ? progress.rodsAcquired : progress.debrisFound ? 1 : 0;
+    const label = MATERIAL_META[requirement.material].label;
+    return `${place}をひらくには\n${label} あつめた数（${current}/${requirement.amount}こ）`;
+  }
+  const ids = gachaUnlockRequirementIds(gacha);
   if (!ids.length) return `${place}はまだひらいてない`;
   const lines = ids.map((id) => {
     const done = isGachaUnlockReqMet(state, id);
@@ -435,7 +490,8 @@ export function rollLeggingsByproduct(
 export type HelmetRockHint =
   | { kind: "none" }
   | { kind: "miss"; index: number }
-  | { kind: "hit"; index: number };
+  | { kind: "hit"; index: number }
+  | { kind: "special"; index: number; tier?: "hit" | "jackpot" };
 
 /** ヘルメット材質に応じた岩ヒント（鉄=なし／金=たまにはずれ1／ダイヤ=はずれ1／ネザ=あたり） */
 export function resolveHelmetRockHint(
@@ -538,6 +594,7 @@ export function strippedMiningStateForOdds(state: MiningState): MiningState {
       chest: null,
       leggings: null,
       boots: null,
+      held: null,
     },
     enchants: {},
   };
@@ -804,6 +861,11 @@ export function equipTool(state: MiningState, toolId: CraftedGearId | null): Min
   return { ...state, equipped: { ...state.equipped, tool: toolId } };
 }
 
+export function equipHeld(state: MiningState, material: MaterialId | null): MiningState {
+  if (material && getMaterialCount(state, material) < 1) return state;
+  return prepareEndSearch({ ...state, equipped: { ...state.equipped, held: material } });
+}
+
 export function equipArmor(
   state: MiningState,
   slot: "helmet" | "chest" | "leggings" | "boots",
@@ -842,6 +904,8 @@ const GREAT_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
   "iron_ingot",
   "gold_ingot",
   "netherite_upgrade",
+  "ender_pearl",
+  "blaze_rod",
 ]);
 
 const GOOD_DROP_MATERIALS: ReadonlySet<MaterialId> = new Set([
@@ -1041,6 +1105,13 @@ export function resolveDig(params: {
   }
 
   const hasLeggings = !!equippedArmorTier(state, "leggings");
+  if (params.gacha === 'farm') {
+    const tier = usedTool ? parseToolId(usedTool)?.tier : undefined;
+    const extra = Number(rand() < Math.min(1, (tier ? TOOL_BONUS[tier] : 0) + party.bonusChance));
+    const grain = 3 + (baseCount >= 3 ? 2 : params.luckyRock || baseCount === 2 ? 1 : 0) + extra;
+    drops.push({ material: 'wheat', amount: grain });
+    breakdown.push(`こむぎ ${grain}（どうぐ・なかまのおまけは最大1）`);
+  }
   // レギンスなしのときだけ弱い場所おまけ。ありのときはレギンス副産物に寄せる
   if (!hasLeggings) {
     if (params.gacha === "wood" && rand() < 0.12) {
@@ -1108,7 +1179,8 @@ export function resolveDig(params: {
     state.equipped = { ...state.equipped, tool: usedTool };
   }
 
-  state = refreshUnlocks(state);
+  const quested = applyEndQuestOnVisit(state, params.gacha, rand);
+  state = refreshUnlocks(quested.state);
 
   return {
     state,
@@ -1148,7 +1220,8 @@ export function resolveBucketFill(params: {
   state.tickets -= 1;
   state.materials[material] = getMaterialCount(state, material) + amount;
   state.miningPoints += 1;
-  state = refreshUnlocks(state);
+  const quested = applyEndQuestOnVisit(state, params.gacha);
+  state = refreshUnlocks(quested.state);
 
   return {
     state,
@@ -1166,6 +1239,7 @@ export function tryCraft(
   recipe: MiningRecipe,
   opts?: { fuel?: RecipeCost; times?: number },
 ): { state: MiningState; error?: string } {
+  state = syncEndJourney(state);
   const times = recipe.craftFlag
     ? 1
     : Math.max(1, Math.floor(opts?.times ?? 1));
@@ -1184,8 +1258,11 @@ export function tryCraft(
   if (recipe.craftFlag && state.crafted[recipe.craftFlag]) {
     return { state, error: "もう持っているよ" };
   }
-  if (recipe.grantsBed && partySlotCount(state) >= MAX_BEDS) {
-    return { state, error: "ベッドはもう3つあるよ（なかまいっぱい）" };
+  const strongerOwned = recipe.craftFlag
+    ? strongerOwnedGear(state, recipe.craftFlag)
+    : null;
+  if (strongerOwned) {
+    return { state, error: `${gearLabel(strongerOwned)}を持っているから、弱い装備は作れないよ` };
   }
   const upgradeFrom = recipe.craftFlag ? NETHERITE_UPGRADE_REQUIRES[recipe.craftFlag] : undefined;
   if (upgradeFrom && !state.crafted[upgradeFrom]) {
@@ -1214,7 +1291,6 @@ export function tryCraft(
 
   const maxTimes = maxCraftTimes(recipe, have, {
     fuel,
-    remainingBeds: recipe.grantsBed ? MAX_BEDS - partySlotCount(state) : undefined,
   });
   if (times > maxTimes) {
     return { state, error: recipe.fuelOptions?.length ? "材料か燃料が足りないよ" : "材料が足りないよ" };
@@ -1254,7 +1330,17 @@ export function tryCraft(
 
   let bedCount = partySlotCount(state);
   if (recipe.grantsBed) {
-    bedCount = Math.min(MAX_BEDS, bedCount + times);
+    const room = Math.max(0, MAX_BEDS - bedCount);
+    const toBeds = Math.min(room, times);
+    const toSpare = times - toBeds;
+    bedCount = bedCount + toBeds;
+    if (toSpare > 0) {
+      writeMaterialCount(
+        materials,
+        "spare_bed",
+        (materials.spare_bed ?? 0) + toSpare,
+      );
+    }
   }
 
   let next: MiningState = { ...state, materials, crafted, equipped, bedCount };
@@ -1262,7 +1348,39 @@ export function tryCraft(
   return { state: next };
 }
 
-/** 種類ごとに1つ：同種の下位・別ティアを消して装備を差し替え */
+const GEAR_TIER_STRENGTH: Partial<Record<GearTier, number>> = {
+  wood: 0,
+  stone: 1,
+  iron: 2,
+  diamond: 3,
+  netherite: 4,
+};
+
+function gearTierOf(id: CraftedGearId): GearTier | null {
+  const match = /_(wood|stone|iron|gold|diamond|netherite)$/.exec(id);
+  return match ? match[1] as GearTier : null;
+}
+
+function strongerOwnedGear(
+  state: MiningState,
+  newId: CraftedGearId,
+): CraftedGearId | null {
+  const target = enchantTargetOfGear(newId);
+  const newTier = gearTierOf(newId);
+  const newStrength = newTier ? GEAR_TIER_STRENGTH[newTier] : undefined;
+  if (!target || newStrength === undefined) return null;
+  for (const [id, isOwned] of Object.entries(state.crafted)) {
+    if (!isOwned) continue;
+    const gearId = id as CraftedGearId;
+    if (gearId === newId || enchantTargetOfGear(gearId) !== target) continue;
+    const tier = gearTierOf(gearId);
+    const strength = tier ? GEAR_TIER_STRENGTH[tier] : undefined;
+    if (strength !== undefined && strength > newStrength) return gearId;
+  }
+  return null;
+}
+
+/** 下位装備は上位の所持品を消さない。金装備は別枠で残す。 */
 function clearSameKindGear(
   crafted: Partial<Record<CraftedGearId, boolean>>,
   equipped: MiningState["equipped"],
@@ -1270,8 +1388,23 @@ function clearSameKindGear(
 ): { equipped: MiningState["equipped"] } {
   const target = enchantTargetOfGear(newId);
   if (!target) return { equipped };
+  const newTier = gearTierOf(newId);
   const tiers: GearTier[] = ["wood", "stone", "iron", "gold", "diamond", "netherite"];
+  const regularOwned = tiers.some((tier) => {
+    if (tier === "gold") return false;
+    const id = `${target}_${tier}` as CraftedGearId;
+    return id !== newId && !!crafted[id];
+  });
+  if (newTier === "gold") {
+    const nextEq = { ...equipped };
+    if (!regularOwned) {
+      if (target === "sword" || target === "axe" || target === "pickaxe") nextEq.tool = newId;
+      else nextEq[target] = newId;
+    }
+    return { equipped: nextEq };
+  }
   for (const tier of tiers) {
+    if (tier === "gold") continue;
     const id = `${target}_${tier}` as CraftedGearId;
     if (id !== newId && crafted[id]) crafted[id] = false;
   }
@@ -1385,11 +1518,11 @@ export function exchangePointsForMaterial(
   const materials = { ...state.materials };
   writeMaterialCount(materials, material, getMaterialCount(state, material) + 1);
   return {
-    state: {
+    state: refreshUnlocks({
       ...state,
       miningPoints: state.miningPoints - cost,
       materials,
-    },
+    }),
   };
 }
 
