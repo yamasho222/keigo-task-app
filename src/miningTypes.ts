@@ -3,6 +3,7 @@ import type { CombatV2Store } from "./combatV2Types";
 import { readCombatV2 } from "./combatV2Migration";
 import { readEndJourney, type EndJourneyProgress } from "./endJourneyProgress";
 import { readAdventure, type AdventureState } from './adventureState';
+import { readEndChapterNotices } from './endChapterNotices';
 
 export type MaterialId =
   | "wheat" | "bread"
@@ -167,6 +168,8 @@ export interface MiningState {
   firstEnchantClaimed?: boolean;
   /** 鉱山バージョンアップ告知を見たか */
   miningVersionNoticeSeen?: boolean;
+  /** End chapter release announcements, acknowledged separately for each child. */
+  endChapterNotices?: import('./endChapterNotices').EndChapterNotices;
   /** テーブル後の分岐カード（はやく／つよく）を見たか */
   miningRouteBranchSeen?: boolean;
   /** エンダーアイ探索〜ジ・エンド解放 */
@@ -724,6 +727,7 @@ export function emptyMiningState(): MiningState {
     pendingEnchantOffers: {},
     firstEnchantClaimed: false,
     miningVersionNoticeSeen: false,
+    endChapterNotices: {},
     miningRouteBranchSeen: false,
     endQuest: {
       routeVersion: 3,
@@ -903,6 +907,7 @@ export function normalizeMiningState(raw?: Partial<MiningState> | null): MiningS
     pendingEnchantOffers: normalizePendingEnchantOffers(raw.pendingEnchantOffers),
     firstEnchantClaimed: !!raw.firstEnchantClaimed,
     miningVersionNoticeSeen: !!raw.miningVersionNoticeSeen,
+    endChapterNotices: readEndChapterNotices(raw.endChapterNotices),
     miningRouteBranchSeen: !!raw.miningRouteBranchSeen,
     endQuest: normalizeEndQuest(raw.endQuest),
     endJourney: readEndJourney(raw.endJourney),

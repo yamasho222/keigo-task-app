@@ -68,6 +68,8 @@ import {
 import { MiningCombatPanel } from "./MiningCombatPanel";
 const AdventureBattlePanel = lazy(() => import("./AdventureBattlePanel").then(module => ({ default: module.AdventureBattlePanel })));
 import { AdventureStrengthPanel } from "./AdventureStrengthPanel";
+import { EndChapterNoticePanel } from './EndChapterNoticePanel';
+import { acknowledgeEndChapterNotice, pendingEndChapterNotice } from './endChapterNotices';
 import type { AdventureLocation } from "./adventureState";
 import { CombatV2Panel } from "./CombatV2Panel";
 import { beginSpecialAttack, canPlayerFight, playerHpOf, revivePlayer, specialGaugeReady, syncPlayerHpForDate } from "./playerCombat";
@@ -2826,6 +2828,9 @@ export function MiningScreen({
     ? mining.combatProgress?.[activeCombatLocation]?.pendingSpecial
     : undefined;
   const blockingOverlay = overlay === "party" || overlay === "equip" || overlay === "enchant";
+  const releaseNotice = pendingEndChapterNotice(mining, tab, !!overlay || versionNoticeOpen
+    || routeBranchOpen || !!demoDig || !!chapterQueue.length || portalFx || endArrival
+    || !!endCinematic || !!adventureLocation || digBusy || digFx !== 'idle' || !!craftPop);
   const blockingTitle =
     overlay === "party" ? "なかま"
     : overlay === "equip" ? "そうび"
@@ -4656,6 +4661,9 @@ export function MiningScreen({
           </div>
         </div>
       )}
+
+      {releaseNotice && <EndChapterNoticePanel key={releaseNotice} kind={releaseNotice}
+        onClose={() => onChange(prev => acknowledgeEndChapterNotice(prev, releaseNotice))} />}
 
       {versionNoticeOpen && (
         <div className="mining-rock-pick-backdrop" role="dialog" aria-label="鉱山アップデート">

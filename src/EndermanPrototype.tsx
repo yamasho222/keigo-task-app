@@ -1,4 +1,6 @@
 import type { EndermanPort } from './adventurePorts';
+import { BreadRecoveryHelp } from './EndChapterNoticePanel';
+import { recoveryAvailability } from './endChapterNotices';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BLAZE_ARMOR_COST, blazeArmorReductionRate, blazeFullArmor, type BlazeArmorSlot, type BlazeArmorTier } from './blazePrototypeEngine';
 import { createBlazeAudio, type BlazeAudioCue } from './blazePrototypeAudio';
@@ -30,6 +32,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
   const [animation, setAnimation] = useState<Animation | null>(null);
   const [busy, setBusy] = useState(false), busyRef = useRef(false);
   const [notice, setNotice] = useState(''), [sound, setSound] = useState(true);
+  const [recoveryHelp, setRecoveryHelp] = useState(false);
   const [reduced, setReduced] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const timers = useRef<number[]>([]), sequence = useRef(0);
   const audio = useRef<ReturnType<typeof createBlazeAudio> | null>(null);
@@ -53,7 +56,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
     audio.current.play(cue);
   }
   function act(action: EndermanAction) {
-    if (busyRef.current || modal) return;
+    if (busyRef.current || modal || recoveryHelp) return;
     const before = current.current, result = production ? production.act(action) : actOnEnderman(before, action);
     if (result.error) { setNotice(result.error); return; }
     setNotice('');
@@ -100,6 +103,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
   }
   const shown = animation?.frame.shown ?? run, stage = animation?.frame.stage, action = animation?.action;
   const wet = shown.item === 'water', playing = run.phase === 'battle', dead = shown.enemyHp === 0;
+  const recovery = recoveryAvailability(production?.breadStock ?? run.bread, production?.foodToday ?? 0, run.hp, run.maxHp);
   const canSpend = run.tickets > 0 || run.handsLeft > 0, disabled = busy || !playing || !canSpend;
   const special = action?.kind === 'ultimate', guarding = action?.kind === 'guard';
   const missed = animation?.events.some(event => event.kind === 'miss') ?? false;
@@ -164,7 +168,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       <button className="bp-command bp-attack" disabled={disabled} aria-label="こうげき" onClick={() => act({ kind: 'strike' })}><SwordArt tier={run.loadout.sword} /><strong>こうげき</strong><span className="bp-command-token" aria-hidden="true" /></button>
       <button className="bp-command bp-guard" disabled={disabled} aria-label="まもる" onClick={() => act({ kind: 'guard' })}><GuardArt shield={run.item === 'shield'} /><strong>まもる</strong><span className="bp-command-token" aria-hidden="true" /></button>
       <button className={`bp-command bp-ultimate ${shown.gauge >= 3 ? 'is-ready' : ''}`} disabled={disabled || run.gauge < 3} aria-label={`ひっさつ、光${shown.gauge}個、3個で使える`} onClick={() => act({ kind: 'ultimate' })}><SwordArt tier={run.loadout.sword} special /><strong>ひっさつ</strong><span className="bp-charge-lights" aria-hidden="true">{[0, 1, 2].map(i => <i key={i} className={i < shown.gauge ? 'is-filled' : ''} />)}</span><span className="bp-command-token" aria-hidden="true" /></button>
-      <button className="bp-command bp-eat" disabled={busy || !playing || (!production && !canSpend) || run.bread <= 0 || run.hp >= run.maxHp} aria-label={`かいふく、パン残り${shown.bread}個`} onClick={() => act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
+      <button className="bp-command bp-eat" disabled={busy || !playing || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : `かいふく、パン残り${shown.bread}個`} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
     </section>
     {notice && <p className="ep-notice" role="alert">{notice}</p>}<p className="bp-sr-only" role="status" aria-live="polite">{description}</p>
   </div>
@@ -184,5 +188,5 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       <div className="bp-setup-preview"><span>防具軽減 <b>{(blazeArmorReductionRate(draft.loadout) * 100).toFixed(2)}%</b></span><span>攻撃 <b>{endermanAttackDamage(draft)}</b></span><span>必殺 <b>{endermanAttackDamage(draft, true)}</b></span><span>通常反撃 <b>♥{endermanIncomingDamage({ ...draft, intent: 'approach' }) / 2}</b></span><span>飛びかかり <b>♥{endermanIncomingDamage({ ...draft, intent: 'ambush' }) / 2}</b></span></div>
       <details className="bp-parent-details"><summary>現在の戦闘データ・きろく</summary><p>HP {run.hp}/{run.maxHp}、敵HP {run.enemyHp}/{run.enemyMaxHp}、チケット {run.tickets}枚、支払い済み残り {run.handsLeft}回、パン {run.bread}個、光 {run.gauge}、空振り {run.misses}回。持ち物変更は1行動、反撃・予告変更なし。パンは手数・反撃なし。まもるは50%、盾なら80%軽減。防具の後に掛け、最後に切り上げます。盾は持つだけでは軽減しません。</p><ol>{run.log.map((entry, i) => <li key={i}>{entry}</li>)}</ol></details><div className="bp-dialog-buttons"><button className="bp-secondary-button" onClick={dismissModal}>キャンセル</button><button className="bp-large-button" onClick={() => reset(draft)}>この設定で最初から</button></div>
     </> : null}
-  </dialog></main>;
+  </dialog>{recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}</main>;
 }

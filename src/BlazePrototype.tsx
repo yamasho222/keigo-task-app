@@ -1,4 +1,6 @@
 import type { BlazePort } from './adventurePorts';
+import { BreadRecoveryHelp } from './EndChapterNoticePanel';
+import { recoveryAvailability } from './endChapterNotices';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { actOnBlaze, createBlazeRun, BLAZE_ACTIONS_PER_TICKET, BLAZE_ARMOR_COST, blazeFullArmor, blazeAttackDamage, blazeIncomingDamage, blazeArmorReductionRate, type BlazeAction, type BlazeLoadout, type BlazeArmorSlot, type BlazeArmorTier, type BlazeRun, type BlazeEvent } from './blazePrototypeEngine';
 import { createBlazeAudio, type BlazeAudioCue } from './blazePrototypeAudio';
@@ -39,6 +41,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
   const [lesson, setLesson] = useState(0);
   const resultHeading = useRef<HTMLHeadingElement>(null), titleHeading = useRef<HTMLHeadingElement>(null);
   const [notice, setNotice] = useState('');
+  const [recoveryHelp, setRecoveryHelp] = useState(false);
   useLayoutEffect(() => { current.current = run; }, [run]);
   useEffect(() => () => { timers.current.forEach(window.clearTimeout); audio.current?.dispose(); }, []);
   useEffect(() => {
@@ -55,7 +58,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     audio.current.play(cue);
   }
   function act(action: BlazeAction) {
-    if (busyRef.current || modal) return;
+    if (busyRef.current || modal || recoveryHelp) return;
     const before = current.current;
     const result = production ? production.act(action) : actOnBlaze(before, action);
     if (result.error) { setNotice(result.error); return; }
@@ -111,6 +114,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
   const action = animation?.action;
   const enemy = shown.enemies[0], dead = enemy.hp <= 0, playing = run.phase === 'battle';
   const canSpend = run.tickets > 0 || run.handsLeft > 0;
+  const recovery = recoveryAvailability(production?.breadStock ?? run.bread, production?.foodToday ?? 0, run.hp, run.maxHp);
   const disabled = busy || !playing || !canSpend;
   const guarding = action?.kind === 'guard';
   const ultimate = action?.kind === 'ultimate';
@@ -178,7 +182,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       <button className="bp-command bp-attack" disabled={disabled} aria-label="こうげき" onClick={() => act({ kind: 'strike', target: { enemyId: 0, part: 'body' } })}><SwordArt tier={run.loadout.sword} /><strong>こうげき</strong><span className="bp-command-token" aria-hidden="true" /></button>
       <button className="bp-command bp-guard" disabled={disabled} aria-label="まもる" onClick={() => act({ kind: 'guard' })}><GuardArt shield={run.item === 'shield'} /><strong>まもる</strong><span className="bp-command-token" aria-hidden="true" /></button>
       <button className={`bp-command bp-ultimate ${shown.gauge >= 3 ? 'is-ready' : ''}`} disabled={disabled || run.gauge < 3} aria-label={`ひっさつ、光${shown.gauge}個、3個で使える`} onClick={() => act({ kind: 'ultimate', enemyId: 0 })}><SwordArt tier={run.loadout.sword} special /><strong>ひっさつ</strong><span className="bp-charge-lights" aria-hidden="true">{[0, 1, 2].map(i => <i key={i} className={`${i < shown.gauge ? 'is-filled' : ''} ${stage === 'impact' && shown.gauge > animation!.before.gauge && i === shown.gauge - 1 ? 'just-charged' : ''}`} />)}</span><span className="bp-command-token" aria-hidden="true" /></button>
-      <button className="bp-command bp-eat" disabled={busy || !playing || (!production && !canSpend) || run.bread <= 0 || run.hp >= run.maxHp} aria-label={`かいふく、パン残り${shown.bread}個`} onClick={() => act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
+      <button className="bp-command bp-eat" disabled={busy || !playing || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : `かいふく、パン残り${shown.bread}個`} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
     </section>
     <p className="bp-sr-only" role="status" aria-live="polite">{notice || speaking}</p>
   </div>
@@ -216,5 +220,5 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
     </> : modal === 'reset' && !production ? <>
       <h2 id="bp-dialog-title">同じ設定でやり直す？</h2><p>チケット4枚・パン2個と、確定済みの装備・開始体力に戻します。本番データは変更しません。</p><div className="bp-dialog-buttons"><button className="bp-secondary-button" onClick={dismissModal}>やめる</button><button className="bp-large-button" onClick={() => reset()}>リセットする</button></div>
     </> : null}
-  </dialog></main>;
+  </dialog>{recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}</main>;
 }

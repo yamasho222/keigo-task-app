@@ -1,4 +1,6 @@
 import type { DragonPort } from './adventurePorts';
+import { BreadRecoveryHelp } from './EndChapterNoticePanel';
+import { recoveryAvailability } from './endChapterNotices';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BattleSpectacle } from './BattleSpectacle';
 import { DragonAllyFx, DragonAttackFx } from './DragonAttackFx';
@@ -77,6 +79,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
   const run = production?.run ?? localRun;
   const current = useRef(run), diskRevision = useRef<number | null>(boot.state?.revision ?? null);
   const [notice, setNotice] = useState(boot.error ?? '');
+  const [recoveryHelp, setRecoveryHelp] = useState(false);
   const [blocked, setBlocked] = useState(!!boot.error);
   const [animation, setAnimation] = useState<Animation | null>(null);
   const [busy, setBusy] = useState(false), busyRef = useRef(false), timers = useRef<number[]>([]), sequence = useRef(0);
@@ -158,6 +161,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
   }
   async function act(action: CampaignAction) {
     if (busyRef.current || blocked) return;
+    if (recoveryHelp) return;
     if (sound) { audio.current ??= createBlazeAudio(); audio.current.unlock(); if (action.kind === 'beginSkill') { skillAudio.current ??= createDragonSkillAudio(); skillAudio.current.unlock(); } }
     busyRef.current = true; setBusy(true);
     let animating = false;
@@ -255,6 +259,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
   const counterStrike = !!animation?.before.adventure?.counter && animation.action.kind === 'attack';
   const adventureCue = dragonAdventureCue(shown);
   const canPay = run.hands > 0 || run.tickets > 0, commandDisabled = busy || blocked || !canPay;
+  const recovery = recoveryAvailability(run.supplies.materials.bread ?? 0, run.foodToday, run.hp, maxHp(run.equipment));
   const lastMessage = stage === 'windup' && special ? castKind ? SKILL_TITLES[castKind] : 'ちからを あつめる！'
     : stage === 'assist' ? 'なかまが つづく！' : stage === 'assistImpact' ? `なかまの ついげき！ ${helperHit?.amount ?? 0} ダメージ！`
     : stage === 'enemyWindup' || stage === 'counter' ? guarding ? 'うけとめろ！' : enemyBig ? 'おおわざ！' : 'エンドラの こうげき！'
@@ -329,7 +334,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
           <button type="button" className={`dc-command dc-attack ${shown.adventure?.counter ? 'dc-riposte' : ''}`} disabled={commandDisabled} onClick={() => void act({ kind: 'attack' })}><SwordArt tier={run.equipment.sword} special={!!shown.adventure?.counter} /><b>{shown.adventure?.counter ? 'かえす' : 'こうげき'}</b></button>
           <button type="button" className="dc-command dc-guard" disabled={commandDisabled} onClick={() => void act({ kind: 'guard' })}><GuardArt shield={run.equipment.shield} /><b>まもる</b></button>
           <button type="button" className={`dc-command dc-ultimate ${shown.gauge >= 3 ? 'dc-ready' : ''}`} disabled={commandDisabled || run.gauge < 3} onClick={() => void act({ kind: 'beginSkill' })}><SwordArt tier={run.equipment.sword} special /><b>ひっさつ</b><span className="dc-gauge" aria-label={`必殺の光${shown.gauge}/3`}>{[0, 1, 2].map(i => <i key={i} className={i < shown.gauge ? 'is-full' : ''}>✦</i>)}</span></button>
-          <button type="button" className="dc-command dc-heal" disabled={busy || blocked || run.foodToday >= 2 || (run.supplies.materials.bread ?? 0) < 1 || run.hp >= maxHp(run.equipment)} onClick={() => void act({ kind: 'heal' })}><BattleIcon kind="bread" /><b>かいふく</b><span className="dc-food-pips">{[0, 1].map(i => <i key={i} className={i < 2 - shown.foodToday ? 'is-full' : ''}>♥</i>)}</span></button>
+          <button type="button" className="dc-command dc-heal" disabled={busy || blocked || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : 'かいふく'} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : void act({ kind: 'heal' })}><BattleIcon kind="bread" /><b>かいふく</b><span className="dc-food-pips">{[0, 1].map(i => <i key={i} className={i < 2 - shown.foodToday ? 'is-full' : ''}>♥</i>)}</span></button>
         </div>
         {shown.gauge >= 3 && <div className="dc-technique-name" aria-label={`次の必殺：${SKILL_TITLES[skillAt(shown.skills?.casts ?? 0)]}`}><SkillGlyph kind={skillAt(shown.skills?.casts ?? 0)} />{SKILL_TITLES[skillAt(shown.skills?.casts ?? 0)]}</div>}
         <div className="dc-bottom-row"><button type="button" className="dc-bed" disabled={commandDisabled || !campaignBedAvailable(run)} onClick={() => void act({ kind: 'bed' })}><img src="/mining/White_Bed.png" alt="" />ベッド<span>{3 - shown.bedsUsed}/3</span></button><small>パン {shown.supplies.materials.bread ?? 0}こ</small><button type="button" className="dc-quiet-button" disabled={busy} onClick={() => setLeaveOpen(true)}>かえる</button></div>
@@ -367,5 +372,6 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
     {practiceCast && <DragonSkillPreview kind={practiceCast.kind} score={practiceCast.score} reduced={calm} compact={phonePreview} sword={run.equipment.sword} onClose={() => { setPracticeCast(null); skillAudio.current?.stop(); }} onStrike={() => { if (sound) { skillAudio.current ??= createDragonSkillAudio(); skillAudio.current.release(practiceCast.kind); } }} />}
     {combatPreview && <DragonCombatPreview equipment={run.equipment} reduced={calm} compact={phonePreview} onClose={() => { setCombatPreview(false); audio.current?.stop(); }} onCue={cue} />}
     <dialog className="dc-leave-dialog" ref={leaveDialog} onCancel={() => setLeaveOpen(false)}><h2>いったん かえる？</h2><div className="dc-leave-picture"><BattleIcon kind="ticket" /><span>{run.hands} ●</span></div><p>ここまでの たたかいも<br />のこりの行動も とっておくよ</p><button type="button" onClick={() => { setLeaveOpen(false); void act({ kind: 'pause' }); }}>かえる</button><button type="button" onClick={() => setLeaveOpen(false)}>まだ たたかう</button></dialog>
+    {recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}
   </main>;
 }
