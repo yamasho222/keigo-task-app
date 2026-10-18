@@ -185,6 +185,11 @@ export function rebaseMiningWrite(
   return {
     ...written,
     adventure: changedAdventure ? written.adventure : latest.adventure,
+    // A stale inventory/task write must never un-acknowledge a release notice.
+    endChapterNotices: {
+      fortress: !!(latest.endChapterNotices?.fortress || written.endChapterNotices?.fortress),
+      crafting: !!(latest.endChapterNotices?.crafting || written.endChapterNotices?.crafting),
+    },
     endQuest,
     endJourney: {
       rodsAcquired: Math.min(4, Math.max(b.rodsAcquired, b.rodsAcquired + c.rodsAcquired - a.rodsAcquired)),

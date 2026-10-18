@@ -1,0 +1,16 @@
+.end-update-dialog { box-sizing:border-box; width:calc(100% - 32px); max-width:420px; max-height:calc(100dvh - 32px); margin:auto; padding:24px 20px; overflow-y:auto; border:2px solid #d8aa58; border-radius:24px; background:linear-gradient(155deg,#fffdf5,#eef5ff); color:#283449; text-align:center; box-shadow:0 20px 70px #0006; font-family:inherit; }
+.end-update-dialog::backdrop { background:#101728bb; }
+.end-update-dialog h2 { margin:0 0 18px; font-size:clamp(19px,5.5vw,24px); line-height:1.5; }
+.end-update-dialog h3 { margin:8px 0; font-size:20px; }
+.end-update-dialog p { margin:12px 0; font-size:16px; font-weight:700; line-height:1.6; }
+.end-update-dialog small { display:block; color:#58667b; font-size:13px; line-height:1.6; }
+.end-update-ok { width:100%; min-height:52px; margin-top:22px; padding:12px; border:0; border-radius:14px; background:#345fd4; color:white; font-family:inherit; font-size:18px; font-weight:800; line-height:1.5; cursor:pointer; }
+.end-update-ok:focus-visible { outline:3px solid #d18100; outline-offset:4px; }
+.end-update-fortress { display:block; width:100%; max-height:180px; object-fit:cover; border-radius:14px; }
+.end-update-recipe { display:flex; align-items:center; justify-content:center; gap:16px; margin:18px 0; font-size:24px; }
+.end-update-recipe > span { display:flex; align-items:center; }
+.end-update-recipe b { font-size:20px; }
+.end-update-hearts { color:#d33661; font-size:30px; white-space:nowrap; }
+.end-update-craftables { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.end-update-craftables section { padding:16px 6px; border:1px solid #d2ddeb; border-radius:16px; background:#ffffffc9; }
+.end-update-craftables p { font-size:14px; }

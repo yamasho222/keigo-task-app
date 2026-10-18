@@ -29,6 +29,7 @@ export function AdventureBattlePanel({ mining, location, dateKey, buddyProgress,
   };
   if (!view || error) return <section className="adventure-production" role="alert">{error || 'たたかいの きろくを よみこんでいます…'}<button type="button" onClick={onClose}>もどる</button></section>;
   const common = { onClose, retry: () => run('retry'), next: () => run('next'), onHelp: () => run('lesson'),
+    breadStock: mining.materials.bread ?? 0, foodToday: mining.adventure?.foodToday ?? 0,
     seenHelp: !!mining.adventure?.lessons[location], endermanDefeats: mining.adventure?.endermanDefeats ?? 0,
     heldItems: ['none', ...(mining.materials.shield ? ['shield'] : []), ...(mining.materials.water ? ['water'] : [])] };
   return <dialog ref={dialog} className="adventure-production" aria-label="ぼうけんの戦闘" onCancel={event => event.preventDefault()}>
