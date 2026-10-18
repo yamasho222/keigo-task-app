@@ -17,6 +17,7 @@
 .de-aim .de-core { animation:de-crystal-breathe 2.8s ease-in-out infinite alternate; }.de-aim .de-core-echo { scale:1.05; }
 .de-prisms { position:absolute; inset:0; }.de-prism { position:absolute; left:calc(5% + var(--de-prism)*25%); top:3%; width:40%; height:44%; animation:de-core-float 2.6s ease-in-out infinite; animation-delay:calc(var(--de-prism)*-.8s); }
 .de-prism img { position:absolute; inset:0; width:100%; height:100%; opacity:var(--de-prism-power); transition:opacity .25s,filter .25s; }
+.de-prism:only-child { left:25%; top:0; width:50%; height:55%; }
 .de-prism-lit img { filter:drop-shadow(0 0 8px #ffe7a899); }.de-prism i { position:absolute; inset:8%; background:radial-gradient(ellipse,#ffe8af44,transparent 65%); opacity:0; }.de-prism-lit i { opacity:1; }
 .de-motes { position:absolute; inset:0; opacity:calc(.15 + var(--de-power)*.65); }.de-motes>i { position:absolute; border-radius:50%; background:var(--de-color); box-shadow:0 0 5px var(--de-color); animation:de-mote 3.5s linear infinite; }
 .de-repel .de-motes>i { background:transparent; border:1px solid #bafaff99; width:6px!important; height:8px!important; }

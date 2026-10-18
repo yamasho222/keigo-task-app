@@ -5,8 +5,10 @@ import {
   type CampaignEquipment, type CampaignSupplies,
 } from './campaignEquipment';
 import { DRAGON_ADVENTURE_CYCLES, dragonFocusTarget, isDragonHeavyIntent, type DragonAdventure } from './dragonCampaignAdventure';
-import { SAVED_SKILL_KINDS, skillAt, skillBonus, type DragonSkillKind, type DragonSkills } from './dragonSkillRules';
+import { SAVED_SKILL_KINDS, skillOffers, skillBonus, type DragonSkillKind, type DragonSkills } from './dragonSkillRules';
+import { validSkillUnlocks } from './battleSkillRules';
 import { nextDragonCritical, validDragonCritical, type DragonCritical } from './dragonCriticalRules';
+import { capAllyHits, emptyDragonEffects, rollAllyAttack, validDragonEffects, type AllyHit, type DragonEffects } from './dragonBattleEffects';
 
 export const CAMPAIGN_VERSION = 1;
 export const DRAGON_BODY_HP = 1200;
@@ -18,11 +20,12 @@ export type CampaignIntent = 'claw' | 'charge' | 'breath' | 'opening' | 'orbPrep
 export type CampaignTarget = 'body' | `crystal:${number}` | `wing:${number}` | 'orb';
 export type CampaignEvent = {
   kind: 'ticket' | 'hit' | 'companion' | 'guard' | 'counter' | 'heal' | 'partBreak' | 'landing' | 'crystalHeal'
-    | 'interrupt' | 'orbReflect' | 'checkpoint' | 'phase' | 'defeat' | 'revive' | 'victory' | 'bed' | 'equip' | 'craft' | 'upgrade' | 'harvest' | 'pause' | 'counterReady' | 'weakHit' | 'skillBonus' | 'critical';
+    | 'interrupt' | 'orbReflect' | 'checkpoint' | 'phase' | 'defeat' | 'revive' | 'victory' | 'bed' | 'equip' | 'craft' | 'upgrade' | 'harvest' | 'pause' | 'counterReady' | 'weakHit' | 'skillBonus' | 'critical' | 'burn' | 'stun' | 'waterWard' | 'lightReserve' | 'effect';
   amount: number;
   target?: CampaignTarget;
   intent?: CampaignIntent;
   message?: string;
+  allies?: AllyHit[];
 };
 export type DragonCampaign = {
   bodyMaxHp?: number;
@@ -36,17 +39,23 @@ export type DragonCampaign = {
   turns: number; defeats: number; rewardClaimed: boolean; seed: number; log: string[];
   adventure?: DragonAdventure;
   skills?: DragonSkills;
+  unlockedSkills?: DragonSkillKind[];
+  rescueSeen?: boolean;
   critical?: DragonCritical;
+  allySeed?: number;
+  effects?: DragonEffects;
+  heldItem?: 'none' | 'shield' | 'water';
 };
 export type CampaignHarvestPlace = 'farm' | 'wood' | 'ranch' | 'lapis' | 'nether';
 export type CampaignAction =
   | { kind: 'attack' | 'ultimate' | 'guard' | 'bed' | 'heal' | 'pause' | 'resume' | 'retry' }
   | { kind: 'select'; target: CampaignTarget }
+  | { kind: 'hold'; item: 'none' | 'shield' | 'water' }
   | { kind: 'equip'; equipment: CampaignEquipment }
   | { kind: 'craft'; recipeId: string }
   | { kind: 'upgrade'; category: 'attack' | 'defense' }
   | { kind: 'harvest'; place: CampaignHarvestPlace }
-  | { kind: 'beginSkill' | 'cancelSkill' }
+  | { kind: 'beginSkill' | 'cancelSkill' | 'rescue' }
   | { kind: 'chooseSkill'; token: string; mode: DragonSkillKind }
   | { kind: 'releaseSkill'; token: string; score: number };
 export type CampaignOutcome = { state: DragonCampaign; events: CampaignEvent[]; error?: string };
@@ -82,8 +91,11 @@ export function campaignRawDamage(s: DragonCampaign, intent = campaignIntent(s))
   return 0;
 }
 export function campaignCounterDamage(s: DragonCampaign, guarding = false): number {
+  if ((s.effects?.stun ?? 0) > 0) return 0;
   const intent = campaignIntent(s);
-  return incomingDamage(s.equipment, campaignRawDamage(s, intent), ['breath', 'orbFire', 'storm'].includes(intent) ? 'fire' : 'physical', guarding);
+  let amount = incomingDamage(s.equipment, campaignRawDamage(s, intent), ['breath', 'orbFire', 'storm'].includes(intent) ? 'fire' : 'physical', guarding);
+  if ((s.effects?.water ?? 0) > 0) amount = Math.ceil(amount / 2);
+  return Math.max(0, amount - (s.effects?.light ?? 0));
 }
 export function campaignBedAvailable(s: DragonCampaign): boolean {
   return s.bedsUsed < 3 && (s.supplies.materials.spare_bed ?? 0) > 0
@@ -121,7 +133,7 @@ export function refreshCampaignDay(s: DragonCampaign, day: string): DragonCampai
 
 export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction): CampaignOutcome {
   const reject = (error: string): CampaignOutcome => ({ state: input, events: [], error });
-  const allowed = ['attack', 'ultimate', 'guard', 'bed', 'heal', 'pause', 'resume', 'retry', 'select', 'equip', 'craft', 'upgrade', 'harvest', 'beginSkill', 'chooseSkill', 'releaseSkill', 'cancelSkill'];
+  const allowed = ['attack', 'ultimate', 'guard', 'bed', 'heal', 'pause', 'resume', 'retry', 'select', 'hold', 'equip', 'craft', 'upgrade', 'harvest', 'beginSkill', 'chooseSkill', 'releaseSkill', 'cancelSkill', 'rescue'];
   if (!action || !allowed.includes(action.kind)) return reject('こうどうを えらんでね。');
   if (input.status === 'won') return reject('もう たおしたよ！');
   const pending = input.skills?.pending;
@@ -150,11 +162,12 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
 
   if (action.kind === 'beginSkill') {
     if (!s.skills || s.status !== 'battle' || s.hp <= 0 || s.gauge < 3 || !canFund() || campaignTargetHp(s, s.selected) <= 0) return reject('ひっさつの じゅんびを しよう。');
-    s.skills.pending = { token: `${s.id}:${s.revision}:${s.skills.casts}`, target: s.selected, mode: skillAt(s.skills.casts) };
+    const offers = skillOffers(s.skills.casts, s.skills.last, s.unlockedSkills);
+    s.skills.pending = { token: `${s.id}:${s.revision}:${s.skills.casts}`, target: s.selected, mode: offers.length === 1 ? offers[0] : null };
     return finish();
   }
   if (action.kind === 'chooseSkill') {
-    if (!s.skills || !pending || pending.mode || pending.token !== action.token || skillAt(s.skills.casts) !== action.mode) return reject('いまの ひっさつを たしかめよう。');
+    if (!s.skills || !pending || pending.mode || pending.token !== action.token || !skillOffers(s.skills.casts, s.skills.last, s.unlockedSkills).includes(action.mode)) return reject('いまの ひっさつを たしかめよう。');
     s.skills.pending = { ...pending, mode: action.mode }; return finish();
   }
   if (action.kind === 'cancelSkill') {
@@ -163,6 +176,10 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
   }
   if (skillScore !== null && s.skills && pending) {
     s.selected = pending.target; s.skills.last = pending.mode; s.skills.casts++; s.skills.pending = null;
+  }
+  if (action.kind === 'rescue') {
+    if (s.status !== 'battle' || s.rescueSeen || !s.equipment.buddies.length) return reject('なかまは いっしょに たたかうよ。');
+    s.rescueSeen = true; return finish();
   }
 
   if (action.kind === 'pause') {
@@ -177,7 +194,16 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
     if (s.status !== 'lost') return reject('いまは おきあがらなくて だいじょうぶ。');
     if (s.tickets < 1) return reject('もういちど たたかうには チケットが1枚いるよ。');
     s.tickets--; s.hands = CAMPAIGN_ACTIONS; s.hp = s.hp > 0 ? s.hp : Math.min(10, maxHp(s.equipment));
-    s.status = 'battle'; emit('ticket', 1); emit('revive', s.hp); note('おきあがった！ このチケットで 4回うごけるよ。'); return finish();
+    s.effects = emptyDragonEffects(); s.status = 'battle'; emit('ticket', 1); emit('revive', s.hp); note('おきあがった！ このチケットで 4回うごけるよ。'); return finish();
+  }
+  if (action.kind === 'hold') {
+    if (s.status !== 'battle' || !['none', 'shield', 'water'].includes(action.item)) return reject('もちものを たしかめてね。');
+    if (action.item === 'shield' && !s.supplies.owned.shield || action.item === 'water' && (s.supplies.materials.water ?? 0) < 1) return reject('もっているものから えらぼう。');
+    if ((s.heldItem ?? (s.equipment.shield ? 'shield' : 'none')) === action.item) return { state: input, events: [] };
+    if (!canFund()) return reject('つけかえには 1こうどう いるよ。');
+    spend(); s.heldItem = action.item; s.equipment.shield = action.item === 'shield';
+    if (s.adventure) { s.adventure.counter = false; s.adventure.pressure = 0; }
+    emit('equip'); note('もちものを かえた。'); return finish();
   }
   if (action.kind === 'craft' || action.kind === 'upgrade' || action.kind === 'harvest' || action.kind === 'equip') {
     if (s.status === 'battle') return reject('じゅんびの 画面で かえよう。');
@@ -218,7 +244,7 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
       if (s.barrierTurns > 0) s.barrierTurns--;
       if (s.landingTurns === 0 && s.safePending) { s.safePending = false; s.safePreparation = true; }
     }
-    s.equipment = structuredClone(eq); s.hp = Math.min(s.hp, maxHp(eq)); emit('equip'); note('そうびを かえた。'); return finish();
+    s.equipment = structuredClone(eq); s.heldItem = eq.shield ? 'shield' : s.heldItem === 'water' ? 'water' : 'none'; s.hp = Math.min(s.hp, maxHp(eq)); emit('equip'); note('そうびを かえた。'); return finish();
   }
 
   if (s.status !== 'battle' || s.hp <= 0) return reject('じゅんびして たたかおう。');
@@ -236,6 +262,8 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
 
   const oldIntent = campaignIntent(s), oldPhase = s.phase, oldLanding = s.landingTurns, oldBarrier = s.barrierTurns;
   const special = action.kind === 'ultimate', bed = action.kind === 'bed', guarding = action.kind === 'guard';
+  const oldEffects = { ...(s.effects ?? emptyDragonEffects()) };
+  s.effects = { ...oldEffects };
   const focus = dragonFocusTarget(input);
   const riposte = !!s.adventure?.counter && action.kind === 'attack';
   if (s.adventure) { s.adventure.counter = false; s.adventure.beat++; }
@@ -245,10 +273,12 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
     const checkpoint = Math.min(s.checkpointHp, Math.ceil(s.bodyHp / CAMPAIGN_CHECKPOINT_HP) * CAMPAIGN_CHECKPOINT_HP);
     if (checkpoint < s.checkpointHp) { s.checkpointHp = checkpoint; emit('checkpoint', checkpoint); }
   };
-  const bodyDamage = (amount: number, kind: 'hit' | 'bed' | 'orbReflect') => {
+  let crystalHealed = false;
+  const bodyDamage = (amount: number, kind: 'hit' | 'bed' | 'orbReflect' | 'burn') => {
     const dealt = Math.min(s.bodyHp, amount); s.bodyHp -= dealt;
     emit(kind, dealt, { target: 'body' });
-    if (s.bodyHp > 0 && brokenCrystals(s) < 8) {
+    if (!crystalHealed && s.bodyHp > 0 && brokenCrystals(s) < 8) {
+      crystalHealed = true;
       // Confirmed progress is permanent, even when crystals heal between attacks.
       const heal = Math.min(s.checkpointHp - s.bodyHp, 8 - brokenCrystals(s));
       s.bodyHp += heal; if (heal > 0) emit('crystalHeal', heal, { target: 'body' });
@@ -262,6 +292,7 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
     s.gauge = special ? 0 : Math.min(3, s.gauge + 1);
     const target = s.selected, part = target !== 'body';
     const damage = attackDamage(s.equipment, special, part, !part && oldLanding > 0);
+    let allyHits: AllyHit[] = special ? s.equipment.buddies.slice(0, 3).map(buddy => ({ id: buddy.id, amount: Math.ceil(buddy.level / 4) })) : [];
     if (!special && s.critical) {
       const roll = nextDragonCritical(s.critical); s.critical = roll.state;
       if (roll.hit) {
@@ -283,7 +314,9 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
       damage.weapon += bonus; damage.total += bonus; emit('skillBonus', bonus, { target, message: `${skillScore}` });
     }
     if (!special && s.skills && s.equipment.buddies.length > 0) {
-      damage.companions = 1; damage.total++;
+      const allies = rollAllyAttack(s.equipment.buddies, s.allySeed ?? (s.seed ^ 0xa511e9b3) >>> 0);
+      s.allySeed = allies.seed; allyHits = allies.hits;
+      damage.companions = allies.total; damage.total += allies.total;
     }
     if (s.adventure && s.phase === 'rage' && !part && oldLanding === 0) {
       if (!special && ['charge1', 'charge2'].includes(oldIntent)) s.adventure.pressure++;
@@ -322,8 +355,22 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
     const barrier = part && target.startsWith('crystal:') && Number(target.split(':')[1]) >= 4 && oldBarrier === 0 && !(s.adventure && special);
     const own = barrier ? Math.ceil(damage.weapon / 2) : damage.weapon;
     const assist = Math.max(0, (hit?.amount ?? 0) - own);
-    if (assist > 0) emit('companion', assist, { target });
+    if (assist > 0) emit('companion', assist, { target, allies: capAllyHits(allyHits, assist) });
     if (!reflected) note(special ? 'なかまと ひっさつ！' : events.some(event => event.kind === 'critical') ? 'かいしんの いちげき！' : 'こうげき！');
+  }
+  // Existing burns tick on paid combat turns only, never on the casting turn or menu actions.
+  if (oldEffects.burn > 0 && s.bodyHp > 0) { s.effects.burn--; bodyDamage(5, 'burn'); }
+  if (special && skillScore !== null && pending?.mode) {
+    if (pending.mode === 'burst') { s.effects.burn = 3; emit('effect', 3, { message: 'やけど', target: 'body' }); }
+    if (pending.mode === 'gauge') { s.effects.stun = 1; emit('effect', 1, { message: 'しびれ', target: 'body' }); }
+    if (pending.mode === 'repel' || pending.mode === 'trace') { s.effects.water = 2; emit('effect', 2, { message: 'まもり', target: 'body' }); }
+    if (pending.mode === 'aim') {
+      const restored = Math.min(4, maxHp(s.equipment) - s.hp); s.hp += restored;
+      s.effects.light = Math.max(s.effects.light, 4 - restored);
+      if (restored) emit('heal', restored);
+      if (s.effects.light) emit('lightReserve', s.effects.light);
+      emit('effect', 4, { message: 'いやし', target: 'body' });
+    }
   }
   if (s.bodyHp === 0) {
     s.status = 'won'; s.checkpointHp = 0; s.orbHp = 0; s.orbTurns = 0;
@@ -358,6 +405,14 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
     if (s.adventure && oldPhase === 'rage') s.intentIndex = PHASE_CYCLES.rage.indexOf('opening');
     else advanceIntent();
   }
+  else if (oldEffects.stun > 0 && !special && !bed && !reflected && campaignRawDamage(input, oldIntent) > 0) {
+    s.effects.stun = Math.max(0, s.effects.stun - 1); emit('stun', s.effects.stun); note('しびれて うごけない！');
+    if (oldIntent === 'gust') s.orbTurns = 1;
+    else {
+      if (oldIntent === 'orbFire') { s.orbHp = 0; s.orbTurns = 0; if (s.selected === 'orb') s.selected = 'body'; }
+      advanceIntent();
+    }
+  }
   else if (special || bed) {
     emit('interrupt', 0, { intent: oldIntent });
     if (s.orbHp > 0) { s.orbHp = 0; s.orbTurns = 0; if (s.selected === 'orb') s.selected = 'body'; }
@@ -368,7 +423,13 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
   else if (oldIntent === 'orbPrepare') { s.orbHp = 8; s.orbTurns = 2; s.intentIndex = 0; }
   else {
     taken = incomingDamage(s.equipment, campaignRawDamage(input, oldIntent), ['breath', 'orbFire', 'storm'].includes(oldIntent) ? 'fire' : 'physical', guarding);
-    if (taken > 0) emit('counter', Math.min(s.hp, taken), { intent: oldIntent });
+    const incomingBeforeWard = taken;
+    if (taken > 0 && s.effects.water > 0) { taken = Math.ceil(taken / 2); s.effects.water--; emit('waterWard', taken); }
+    if (taken > 0 && s.effects.light > 0) {
+      const absorbed = Math.min(taken, s.effects.light); taken -= absorbed; s.effects.light -= absorbed;
+      emit('lightReserve', absorbed, { message: 'まもった' });
+    }
+    if (incomingBeforeWard > 0) emit('counter', Math.min(s.hp, taken), { intent: oldIntent });
     if (oldIntent === 'gust') s.orbTurns = 1;
     else if (oldIntent === 'orbFire') { s.orbHp = 0; s.orbTurns = 0; if (s.selected === 'orb') s.selected = 'body'; }
     else {
@@ -393,6 +454,7 @@ export function stepDragonCampaign(input: DragonCampaign, action: CampaignAction
     s.wings = s.wings.map(hp => hp > 0 ? 48 : 0);
     s.orbHp = 0; s.orbTurns = 0; s.landingTurns = 0; s.barrierTurns = 0; s.gauge = 0; s.hands = 0;
     s.status = 'lost'; s.defeats++; s.selected = 'body'; s.intentIndex = 0;
+    s.effects = emptyDragonEffects();
     s.safePreparation = true; s.safePending = false; emit('defeat', rollback); note('たおされた…。こわしたところは のこっているよ。');
     if (s.adventure) { s.adventure.counter = false; s.adventure.pressure = 0; }
   }
@@ -447,5 +509,10 @@ export function isDragonCampaign(value: unknown): value is DragonCampaign {
     }
   }
   if (s.critical !== undefined && !validDragonCritical(s.critical)) return false;
+  if (s.allySeed !== undefined && !int(s.allySeed, 0, 4294967295)) return false;
+  if (s.unlockedSkills !== undefined && !validSkillUnlocks(s.unlockedSkills)) return false;
+  if (s.rescueSeen !== undefined && typeof s.rescueSeen !== 'boolean') return false;
+  if (s.effects !== undefined && !validDragonEffects(s.effects)) return false;
+  if (s.heldItem !== undefined && !['none', 'shield', 'water'].includes(s.heldItem)) return false;
   return true;
 }

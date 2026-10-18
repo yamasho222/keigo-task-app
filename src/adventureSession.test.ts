@@ -66,7 +66,7 @@ describe('profile-owned production adventure transactions', () => {
     expect(s.adventure!.endermanDefeats).toBe(1); const tickets = s.tickets;
     s = step(s, { kind: 'retry' }, 'warped_forest'); expect(s.tickets).toBe(tickets - 1);
     expect(s.adventure!.hp).toBe(10); expect(s.adventure!.hands).toBe(4);
-    s = step(s, { kind: 'enter' }, 'warped_forest'); expect(s.adventure!.enderman!.enemyHp).toBe(36);
+    s = step(s, { kind: 'enter' }, 'warped_forest'); expect(s.adventure!.enderman!.enemyHp).toBe(52);
     s = step(s, { kind: 'enderman', action: { kind: 'strike' } }, 'warped_forest');
     expect(s.tickets).toBe(tickets - 1); expect(s.adventure!.hands).toBe(3);
   });
@@ -159,6 +159,7 @@ describe('profile-owned production adventure transactions', () => {
   it('persists a pending ultimate, blocks other battles and only consumes it once', () => {
     let s = ready('the_end'); s.adventure!.gauge = 3;
     s = step(s, { kind: 'dragon', action: { kind: 'beginSkill' } }, 'the_end');
+    s = step(s, { kind: 'dragon', action: { kind: 'chooseSkill', token: s.adventure!.dragon!.skills!.pending!.token, mode: 'repel' } }, 'the_end');
     const pending = s.adventure!.dragon!.skills!.pending!, hp = s.adventure!.hp;
     s = normalizeMiningState(JSON.parse(JSON.stringify(s)));
     expect(act(s, { kind: 'enter' }, 'fortress').error).toBeTruthy();

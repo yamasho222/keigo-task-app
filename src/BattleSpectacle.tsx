@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import './battleSpectacle.css';
+import './dragonBattleEffects.css';
 
 export type BattleSpectacleProps = {
   kind: 'slash' | 'ultimate' | 'enemy' | 'enemyUltimate' | 'guard' | 'heal' | 'break' | 'bed' | 'victory';
@@ -11,6 +12,7 @@ export type BattleSpectacleProps = {
   seed?: number;
   /** Actual engine HP delta, not nominal weapon power. Only shown at impact. */
   amount?: number;
+  critical?: boolean;
 };
 
 function particleStyle(index: number, seed: number): CSSProperties {
@@ -42,12 +44,13 @@ function Blade({ className = '' }: { className?: string }) {
  * Mount inside a positioned arena. Change key per action (not per phase).
  * No timers, rules, storage, sound or completion callback live in this layer.
  */
-export function BattleSpectacle({ kind, phase, variant = 'blaze', shield = false, reduced = false, buddies = [], seed = 0, amount }: BattleSpectacleProps) {
+export function BattleSpectacle({ kind, phase, variant = 'blaze', shield = false, reduced = false, buddies = [], seed = 0, amount, critical = false }: BattleSpectacleProps) {
   const special = kind === 'ultimate';
   const incoming = kind === 'enemy' || kind === 'enemyUltimate';
   const contact = phase === 'impact';
   const showAmount = contact && Number.isFinite(amount) && amount! > 0 && ['slash', 'ultimate', 'enemy', 'enemyUltimate', 'heal', 'bed'].includes(kind);
-  return <div className={`bs-scene bs-${kind} bs-${variant} bs-phase-${phase}${reduced ? ' bs-reduced' : ''}${shield ? ' bs-shielded' : ''}`} aria-hidden="true" data-bs-kind={kind} data-bs-phase={phase}>
+  return <div className={`bs-scene bs-${kind} bs-${variant} bs-phase-${phase}${reduced ? ' bs-reduced' : ''}${shield ? ' bs-shielded' : ''}${critical ? ' bs-critical' : ''}`} aria-hidden="true" data-bs-kind={kind} data-bs-phase={phase}>
+    {critical && contact && <div className="battle-critical-flash"><b>かいしん！</b><svg viewBox="0 0 300 230"><path d="m12 10 273 205-41-68L12 10Zm277-2L14 216l62-29L289 8Z" /></svg></div>}
     {special && <div className="bs-backdrop" />}
     {special && phase === 'windup' && <div className="bs-gather"><div className="bs-orbit bs-orbit-a" /><div className="bs-orbit bs-orbit-b" /><Blade /><Sparks seed={seed} /></div>}
     {special && phase === 'strike' && <div className="bs-combo">

@@ -44,9 +44,9 @@ describe('Dragon campaign presentation snapshots', () => {
     const before = enableDragonSkills(dragonCampaignFixture('wings', '2026-10-17', true)); before.selected = 'body';
     const result = stepDragonCampaign(before, { kind: 'attack' });
     const timeline = buildCampaignPlayback(before, result.state, { kind: 'attack' }, result.events);
-    const own = timeline.frames.find(frame => frame.stage === 'impact')!, intro = timeline.frames.find(frame => frame.stage === 'assist')!, ally = timeline.frames.find(frame => frame.stage === 'assistImpact')!, counter = timeline.frames.find(frame => frame.stage === 'counter')!;
+    const own = timeline.frames.find(frame => frame.stage === 'impact')!, intro = timeline.frames.find(frame => frame.stage === 'assist')!, ally = timeline.frames.filter(frame => frame.stage === 'assistImpact').at(-1)!, counter = timeline.frames.find(frame => frame.stage === 'counter')!;
     expect(own.shown.bodyHp).toBe(before.bodyHp - 4); expect(intro.shown.bodyHp).toBe(own.shown.bodyHp);
-    expect(ally.shown.bodyHp).toBe(before.bodyHp - 5); expect(own.at).toBeLessThan(intro.at); expect(intro.at).toBeLessThan(ally.at); expect(ally.at).toBeLessThan(counter.at);
+    expect(ally.shown.bodyHp).toBe(before.bodyHp - 4 - result.events.find(event => event.kind === 'companion')!.amount); expect(own.at).toBeLessThan(intro.at); expect(intro.at).toBeLessThan(ally.at); expect(ally.at).toBeLessThan(counter.at);
     expect(result.state.turns).toBe(1); expect(result.state.hands).toBe(3);
     expect(timeline.frames.filter(frame => frame.stage === 'counter')).toHaveLength(1);
   });
@@ -62,7 +62,8 @@ describe('Dragon campaign presentation snapshots', () => {
   });
   it('separates a scored ultimate into sword and three allies after a persisted release', () => {
     const original = enableDragonSkills(dragonCampaignFixture('ultimate', '2026-10-17', true));
-    const before = stepDragonCampaign(original, { kind: 'beginSkill' }).state;
+    const begun = stepDragonCampaign(original, { kind: 'beginSkill' }).state;
+    const before = stepDragonCampaign(begun, { kind: 'chooseSkill', token: begun.skills!.pending!.token, mode: 'burst' }).state;
     const action = { kind: 'releaseSkill' as const, token: before.skills!.pending!.token, score: 100 };
     const result = stepDragonCampaign(before, action);
     expect(result.events.find(event => event.kind === 'companion')?.amount).toBe(9);

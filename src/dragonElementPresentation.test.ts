@@ -38,10 +38,10 @@ describe('independent high-detail elemental textures', () => {
     const clean = renderToStaticMarkup(createElement(DragonElementArt, { kind, power: 1, reduced: false, phase: 'recover' }));
     expect(clean).not.toContain('de-core-field'); expect(clean).not.toContain('de-weapon');
   });
-  it('retains each individual aim score and lights three independent crystals', () => {
-    const html = renderToStaticMarkup(createElement(DragonElementArt, { kind: 'aim', power: .5, reduced: false, phase: 'charge', shots: [100, 50, 0] }));
-    expect(html.match(/class="de-prism de-prism-lit"/g)).toHaveLength(3);
-    expect(html).toContain('--de-prism-power:1'); expect(html).toContain('--de-prism-power:0.725'); expect(html).toContain('--de-prism-power:0.45');
+  it.each([[100, 1], [50, .725], [0, .45]])('lights one centered crystal for a single score of %s', (score, power) => {
+    const html = renderToStaticMarkup(createElement(DragonElementArt, { kind: 'aim', power: .5, reduced: false, phase: 'charge', shots: [score] }));
+    expect(html.match(/class="de-prism de-prism-lit"/g)).toHaveLength(1);
+    expect(html).toContain(`--de-prism-power:${power}`);
   });
   it.each(kinds)('%s waits for image readiness without starting the minigame clock', kind => {
     const html = renderToStaticMarkup(createElement(DragonSkillGame, { kind, reduced: false, onDone: () => undefined }));

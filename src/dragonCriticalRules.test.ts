@@ -19,10 +19,10 @@ const damage = (s: DragonCampaign) => stepDragonCampaign(s, { kind: 'attack' });
 const hitAmount = (s: DragonCampaign) => damage(s).events.find(event => event.kind === 'hit')!.amount;
 
 describe('persisted Dragon normal-attack criticals', () => {
-  it('has a stable independent 20% stream over 100,000 draws', () => {
+  it('has a stable independent 10% stream over 100,000 draws', () => {
     let state = { version: 1 as const, seed: 123456 }, count = 0;
     for (let i = 0; i < 100000; i++) { const roll = nextDragonCritical(state); state = roll.state; count += Number(roll.hit); }
-    expect(count / 100000).toBeGreaterThan(.195); expect(count / 100000).toBeLessThan(.205);
+    expect(count / 100000).toBeGreaterThan(.098); expect(count / 100000).toBeLessThan(.102);
   });
   it('upgrades old isolated trial saves without changing progress or reseeding', () => {
     const old = createDragonCampaign('2026-10-18'); const upgraded = enableDragonCritical(old);
@@ -54,13 +54,14 @@ describe('persisted Dragon normal-attack criticals', () => {
     before.selected = 'crystal:4';
     expect(hitAmount(before)).toBe(4);
   });
-  it('leaves a single normal buddy point unmultiplied and presents it later', () => {
+  it('leaves all buddies unmultiplied and presents their rolled total later', () => {
     const before = enableDragonSkills(battle()), result = damage(before);
-    expect(result.events.find(event => event.kind === 'hit')?.amount).toBe(9);
-    expect(result.events.find(event => event.kind === 'companion')?.amount).toBe(1);
+    const helper = result.events.find(event => event.kind === 'companion')!;
+    expect(helper.allies).toHaveLength(3);
+    expect(result.events.find(event => event.kind === 'hit')?.amount).toBe(8 + helper.amount);
     const playback = buildCampaignPlayback(before, result.state, { kind: 'attack' }, result.events);
     expect(playback.frames.find(frame => frame.stage === 'impact')?.shown.bodyHp).toBe(1192);
-    expect(playback.frames.find(frame => frame.stage === 'assistImpact')?.shown.bodyHp).toBe(1191);
+    expect(playback.frames.filter(frame => frame.stage === 'assistImpact').at(-1)?.shown.bodyHp).toBe(1192 - helper.amount);
   });
   it('does not invent a buddy hit after the sword already destroyed a part', () => {
     const before = enableDragonSkills(battle()); before.selected = 'wing:0'; before.wings[0] = 8;
@@ -97,6 +98,7 @@ describe('persisted Dragon normal-attack criticals', () => {
   it('a scored ultimate does not crit or advance the stream', () => {
     let before = enableDragonSkills(battle()); before.gauge = 3;
     before = stepDragonCampaign(before, { kind: 'beginSkill' }).state;
+    before = stepDragonCampaign(before, { kind: 'chooseSkill', token: before.skills!.pending!.token, mode: 'burst' }).state;
     const result = stepDragonCampaign(before, { kind: 'releaseSkill', token: before.skills!.pending!.token, score: 100 });
     expect(result.error).toBeUndefined(); expect(result.state.critical).toEqual(before.critical);
     expect(result.events.some(event => event.kind === 'critical')).toBe(false);

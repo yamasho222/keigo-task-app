@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { AIM_CENTERS, BURST_TAP_CAP, SKILL_DURATION, SKILL_NAMES, SKILL_TITLES, aimCursor, aimScore, burstScore, gaugeScore, repelTargets, repelScore, skillGaugePosition, type DragonSkillKind } from './dragonSkillRules';
+import { AIM_CENTERS, AIM_COUNT, BURST_TAP_CAP, SKILL_DURATION, SKILL_NAMES, SKILL_TITLES, aimCursor, aimScore, aimTotalScore, burstScore, gaugeScore, repelTargets, repelScore, skillGaugePosition, type DragonSkillKind } from './dragonSkillRules';
 import { DragonSkillArt } from './DragonSkillArt';
 import { DragonBurstArt, type BurstTapPoint } from './DragonBurstArt';
 import { richBurstEnabled, warmBurstAssets } from './dragonBurstPresentation';
@@ -42,7 +42,7 @@ export function DragonSkillGame({ kind, onDone, reduced, resumed = false, blocke
   useEffect(() => { callback.current = onDone; }, [onDone]);
   useEffect(() => { if (!sound) audio.current?.stop(); }, [sound]);
   const currentScore = useCallback(() => kind === 'burst' ? burstScore(taps.current) : kind === 'repel' ? repelScore(reflected.current.size)
-    : kind === 'aim' ? Math.round(aim.current.reduce((sum, value) => sum + value, 0) / 3) : 0, [kind]);
+    : kind === 'aim' ? aimTotalScore(aim.current) : 0, [kind]);
   const finish = useCallback((score: number) => {
     if (finished.current) return;
     finished.current = true; setResult(score);
@@ -62,7 +62,7 @@ export function DragonSkillGame({ kind, onDone, reduced, resumed = false, blocke
       const delta = Math.max(0, now - Math.max(previous, freezeUntil.current)); previous = now;
       if (freezeUntil.current && now >= freezeUntil.current) {
         freezeUntil.current = 0; setFeedback(null);
-        if (aim.current.length === 3) { finish(currentScore()); return; }
+        if (aim.current.length === AIM_COUNT) { finish(currentScore()); return; }
       }
       elapsedRef.current = Math.min(SKILL_DURATION, elapsedRef.current + delta); setElapsed(elapsedRef.current);
       if (elapsedRef.current >= SKILL_DURATION) finish(currentScore());
@@ -93,16 +93,16 @@ export function DragonSkillGame({ kind, onDone, reduced, resumed = false, blocke
       if (sound) audio.current?.tap(kind, reflected.current.size / 10);
       if (reflected.current.size === 10) finish(100);
     } else if (kind === 'aim') {
-      if (aim.current.length >= 3) return;
-      const cursor = aimCursor(now - aimStart.current), score = aimScore(cursor, AIM_CENTERS[aim.current.length]);
+      if (aim.current.length >= AIM_COUNT) return;
+      const cursor = aimCursor(now - aimStart.current), score = aimScore(cursor, AIM_CENTERS[0]);
       aim.current = [...aim.current, score]; aimStart.current = now; setAimOrigin(now); setShots(aim.current);
       setFeedback({ id: aim.current.length, score, cursor }); setBeat(value => value + 1); freezeUntil.current = performance.now() + 620;
       if (sound) audio.current?.shot(score);
     }
   }
   const gauge = skillGaugePosition(elapsed), cursor = feedback?.cursor ?? aimCursor(elapsed - aimOrigin);
-  const center = AIM_CENTERS[Math.min(2, feedback ? shots.length - 1 : shots.length)];
-  const score = result ?? (kind === 'gauge' ? gaugeScore(gauge) : kind === 'burst' ? burstScore(count) : kind === 'repel' ? repelScore(returns.length) : Math.round(shots.reduce((sum, value) => sum + value, 0) / 3));
+  const center = AIM_CENTERS[0];
+  const score = result ?? (kind === 'gauge' ? gaugeScore(gauge) : kind === 'burst' ? burstScore(count) : kind === 'repel' ? repelScore(returns.length) : aimTotalScore(shots));
   const power = kind === 'gauge' ? result !== null ? result / 100 : gauge : score / 100;
   const instruction = { burst: 'いっぱい タップ！', gauge: 'てっぺんで とめよう！', repel: 'たまを タップ！', aim: 'まんなかで タップ！' }[kind];
   return <dialog ref={dialog} className={`dm-dialog dm-game dm-${kind} ${richBurst ? 'dm-burst-rich' : richElement ? 'dm-element-rich' : ''} ${compact ? 'dm-burst-compact' : ''} ${reduced ? 'dm-reduced' : ''} ${result !== null ? 'dm-finished' : ''}`} aria-label={`${practice ? '練習：' : ''}${SKILL_NAMES[kind]}の必殺`} onCancel={event => { event.preventDefault(); if (!blocked) { if (practice && !started && onExit) onExit(); else finish(resumed ? 0 : currentScore()); } }}>
@@ -119,7 +119,7 @@ export function DragonSkillGame({ kind, onDone, reduced, resumed = false, blocke
               const returned = returns.includes(target.id);
               return <button key={target.id} type="button" className={`dm-repel-ball ${returned ? 'dm-returned' : ''}`} style={{ left: `${target.x}%`, top: `${target.y}%`, '--dm-age': target.age / 1100, '--de-return-x': `${50 - target.x}cqw`, '--de-return-y': `${48 - target.y}cqh` } as CSSProperties} aria-label={`光の玉${target.id + 1}を打ち返す`} disabled={!active || returned} onPointerDown={event => { if (event.button === 0) hit(target.id); }} onClick={event => { if (event.detail === 0) hit(target.id); }}><i /><b /><span />{richElement && <img src={returned ? ELEMENT_ASSETS.repel.core : ELEMENT_PROJECTILE_IMAGE} alt="" draggable={false} />}</button>;
             })}</>}
-            {kind === 'aim' && <div className="dm-aim-scene"><div className={`dm-aim-lane ${feedback ? 'dm-aim-hit' : ''}`}><span className="dm-aim-target" style={{ left: `${center * 100}%` }} /><i className="dm-aim-cursor" style={{ left: `${cursor * 100}%` }}><b /></i></div><div className="dm-shots" aria-label={`ねらった回数${shots.length}/3`}>{[0, 1, 2].map(i => <i key={i} className={shots[i] !== undefined ? `is-done ${shots[i] >= 85 ? 'is-perfect' : ''}` : ''}>{shots[i] !== undefined ? <><b>{shots[i]}</b><small>{shots[i] >= 65 ? '★' : shots[i] > 0 ? '✦' : '・'}</small></> : <span>◆</span>}</i>)}</div>{feedback && <div className={`dm-shot-feedback ${feedback.score >= 85 ? 'dm-perfect' : ''}`} key={feedback.id}><i /><b>{feedback.score}<small>点</small></b><span>{feedback.score === 100 ? 'PERFECT' : feedback.score >= 65 ? 'いいぞ！' : feedback.score > 0 ? 'ヒット！' : 'おしい！'}</span></div>}</div>}
+            {kind === 'aim' && <div className="dm-aim-scene"><div className={`dm-aim-lane ${feedback ? 'dm-aim-hit' : ''}`}><span className="dm-aim-target" style={{ left: `${center * 100}%` }} /><i className="dm-aim-cursor" style={{ left: `${cursor * 100}%` }}><b /></i></div><div className="dm-shots" aria-label={`ねらった回数${shots.length}/${AIM_COUNT}`}>{Array.from({ length: AIM_COUNT }, (_, i) => <i key={i} className={shots[i] !== undefined ? `is-done ${shots[i] >= 85 ? 'is-perfect' : ''}` : ''}>{shots[i] !== undefined ? <><b>{shots[i]}</b><small>{shots[i] >= 65 ? '★' : shots[i] > 0 ? '✦' : '・'}</small></> : <span>◆</span>}</i>)}</div>{feedback && <div className={`dm-shot-feedback ${feedback.score >= 85 ? 'dm-perfect' : ''}`} key={feedback.id}><i /><b>{feedback.score}<small>点</small></b><span>{feedback.score === 100 ? 'PERFECT' : feedback.score >= 65 ? 'いいぞ！' : feedback.score > 0 ? 'ヒット！' : 'おしい！'}</span></div>}</div>}
             {result !== null && <div className="dm-score" role="status"><small>POWER</small><strong>{result}<small>点</small></strong><div>{[0, 40, 80].map(threshold => <span key={threshold} className={result >= threshold ? 'is-lit' : ''}>★</span>)}</div><b>{result >= 85 ? 'すごい！' : 'いくぞ！'}</b></div>}
           </div>
           {!started ? <button className="dm-fire" type="button" aria-label="ミニゲームをはじめる" disabled={burstAssets === 'loading'} onClick={begin}>{burstAssets === 'loading' ? 'じゅんびちゅう…' : '▶ はじめる'}</button>

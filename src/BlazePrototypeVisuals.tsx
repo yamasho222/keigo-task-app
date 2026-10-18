@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import type { BlazePlaybackStage } from './blazePrototypePlayback';
 import { BLAZE_ACTIONS_PER_TICKET } from './blazePrototypeEngine';
 import { BLAZE_SWORD_IMAGES } from './blazePrototypeAssets';
+import { DragonElementArt } from './DragonElementArt';
 
 export type BattleIconKind = 'shield' | 'bread' | 'ticket' | 'back' | 'next' | 'close' | 'sound' | 'mute' | 'settings' | 'replay' | 'play';
 export function GuardArt({ shield = false }: { shield?: boolean }) {
@@ -76,12 +77,12 @@ export function BlazeUltimateFx({ stage, tier = 'diamond', intent = 'burst', dem
 }
 
 export function BattleDemo({ lesson }: { lesson: number }) {
-  return <div key={lesson} className={`bp-demo bp-demo-${lesson}`} aria-label={['剣で攻撃すると敵の体力が減り、必殺の光がたまる実演', 'まもると火球のダメージが減る実演。完全ガードではない', 'パンを1個食べてハートが回復する実演', `チケット1枚が${BLAZE_ACTIONS_PER_TICKET}回の行動になる実演。攻撃・守る・必殺に共通`, '光が3個たまると必殺の剣が使え、敵の反撃も止める実演', '火を集めた次は大きな火球。敵の様子が変わる実演'][lesson]} role="img">
+  return <div key={lesson} className={`bp-demo bp-demo-${lesson}`} aria-label={['剣で攻撃すると敵の体力が減り、必殺の光がたまる実演', 'まもると火球のダメージが減る実演。完全ガードではない', 'パンを1個食べてハートが回復する実演', `チケット1枚が${BLAZE_ACTIONS_PER_TICKET}回の行動になる実演。攻撃・守る・必殺に共通`, '光が3個たまると水の必殺で玉を打ち返し、続く2回の攻撃のダメージを半分にする実演', '火を集めた次は大きな火球。敵の様子が変わる実演'][lesson]} role="img">
     {lesson === 0 ? <><div className="bp-demo-enemy"><div className="bp-demo-hp"><i /></div><img src="/mining/Blaze.webp" alt="" /></div><div className="bp-demo-sword"><SwordArt /></div><span className="bp-demo-charge-dot" /></>
     : lesson === 1 ? <><Hearts hp={13} previousHp={20} /><span className="bp-demo-fire"><BlazeTelegraph intent="burst" /></span><div className="bp-demo-shield"><BattleIcon kind="shield" /></div></>
     : lesson === 2 ? <><div className="bp-demo-bread"><BattleIcon kind="bread" /></div><div className="bp-demo-recovery"><Hearts hp={10} /><div><Hearts hp={20} /></div></div></>
     : lesson === 3 ? <><div className="bp-demo-ticket"><BattleIcon kind="ticket" /></div><span className="bp-demo-arrow">›</span><div className="bp-demo-actions">{Array.from({ length: BLAZE_ACTIONS_PER_TICKET }, (_, i) => <span key={i} />)}</div><div className="bp-demo-paid"><SwordArt /><BattleIcon kind="shield" /><SwordArt special /></div></>
-    : lesson === 4 ? <><div className="bp-demo-charge"><i /><i /><i /></div><BlazeUltimateFx demonstration /></>
+    : lesson === 4 ? <><DragonElementArt kind="repel" power={.8} phase="charge" reduced={false} /><div className="bp-demo-charge"><i /><i /><i /></div></>
     : <><img className="bp-demo-blaze" src="/mining/Blaze.webp" alt="" /><div className="bp-demo-forecast-charge"><BlazeTelegraph intent="charge" /></div><div className="bp-demo-forecast-burst"><BlazeTelegraph intent="burst" /></div></>}
   </div>;
 }

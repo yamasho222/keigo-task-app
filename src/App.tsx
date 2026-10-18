@@ -130,11 +130,12 @@ import {
   isGameTask, ensureGameTaskInList, gamePlayKey, tasksForProgress, createGameTask,
   isOneOffSpecialTask, oneOffSpecialClaimKey, tasksForSessionList, sortTasksForSessionDisplay,
   resolveTaskTimeKey, sharedSessionsLabel, generateSharedKey,
-  maxTaskIdAcross, collectSharedSessions, migrateDefaultHomeworkSharing,
+  maxTaskIdAcross, migrateDefaultHomeworkSharing,
   buildSharedTaskRow,
   specialRewardFloorCompact, specialRewardFloorSetupHint,
   isSpecialRewardFloor, normalizeOneOffSpecialTreatPending,
 } from "./sharedTasks";
+import { editTaskPlacement, moveTaskInList, remapTaskRecord } from "./taskEditing";
 import {
   getPendingRewardItems,
   mergeQueueIntoPendingMaps,
@@ -238,7 +239,7 @@ function weekdayBadgeLabel(weekdays?: number[]): string | null {
 }
 
 function taskSharedBadgeStyle(task: Task): { label: string; color: string; backgroundColor: string } | null {
-  if (!task.sharedKey || !task.sharedSessions?.length) return null;
+  if (!task.sharedKey || !task.sharedSessions || task.sharedSessions.length < 2) return null;
   return {
     label: `共有 ${sharedSessionsLabel(task.sharedSessions)}`,
     color: theme.category.purple,
@@ -4549,7 +4550,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
 
     const sid = sessions[0];
     const { tasks: base, setTasks } = sessionState[sid];
-    const maxId = base.reduce((m, t) => Math.max(m, t.id), 0);
+    const maxId = maxTaskIdAcross(morningTasks, daytimeTasks, homeTasks, eveningTasks);
     const task: Task = { id: maxId + 1, title: title.trim(), emoji, scope };
     if (scope === "regular") task.weekdays = normalizedWeekdays;
     if (scope === "special") task.specialRewardFloor = specialRewardFloor;
@@ -4565,85 +4566,30 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     targetSessions?: SessionId[],
     specialRewardFloor: SpecialRewardFloor = "rare",
   ) => {
-    if (!title.trim()) return;
-    const existing = sessionState[session].tasks.find((t) => t.id === id);
-    if (!existing || isGameTask(existing)) return;
-
+    const existing = sessionState[session].tasks.find(t => t.id === id);
+    if (!existing) return;
     const scope = existing.scope ?? "regular";
-    const normalizedWeekdays = scope === "regular"
-      ? normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS)
-      : undefined;
-
-    const desiredSessions = (targetSessions?.length
-      ? targetSessions
-      : existing.sharedKey
-        ? collectSharedSessions(getAllSessionTasks(), existing.sharedKey)
-        : [session]) as SessionId[];
-    const sortedDesired = [...new Set(desiredSessions)].sort(
-      (a, b) => SESSION_IDS.indexOf(a) - SESSION_IDS.indexOf(b),
-    );
-
-    if (sortedDesired.length >= 2) {
-      const sharedKey = existing.sharedKey ?? generateSharedKey();
-      const currentSessions = existing.sharedKey
-        ? collectSharedSessions(getAllSessionTasks(), sharedKey)
-        : [session];
-
-      for (const sid of currentSessions) {
-        if (!sortedDesired.includes(sid)) {
-          const row = sessionState[sid].tasks.find((t) => t.sharedKey === sharedKey || t.id === id);
-          if (row) removeTaskRow(sid, row.id, row);
-        }
-      }
-
-      let nextId = maxTaskIdAcross(morningTasks, daytimeTasks, homeTasks, eveningTasks);
-      for (const sid of sortedDesired) {
-        const { tasks: base, setTasks } = sessionState[sid];
-        const row = base.find((t) => t.sharedKey === sharedKey);
-        if (row) {
-          setTasks(base.map((t) => (t.sharedKey === sharedKey ? {
-            ...t,
-            title: title.trim(),
-            emoji,
-            scope,
-            weekdays: normalizedWeekdays,
-            specialRewardFloor: scope === "special" ? specialRewardFloor : undefined,
-            sharedKey,
-            sharedSessions: sortedDesired,
-          } : t)));
-        } else {
-          nextId += 1;
-          const created = buildSharedTaskRow(
-            nextId, title.trim(), emoji, scope, normalizedWeekdays, sharedKey, sortedDesired,
-          );
-          if (scope === "special") created.specialRewardFloor = specialRewardFloor;
-          setTasks([
-            ...base,
-            created,
-          ]);
-        }
-      }
-      return;
+    const edited = editTaskPlacement(getAllSessionTasks(), session, id, {
+      title, emoji,
+      weekdays: scope === "regular" ? normalizeWeekdaysForSave(weekdays ?? ALL_WEEKDAYS) : undefined,
+      specialRewardFloor: scope === "special" ? specialRewardFloor : undefined,
+    }, targetSessions, generateSharedKey());
+    if (!edited) return;
+    for (const sid of SESSION_IDS) {
+      sessionState[sid].setTasks(edited.sessions[sid].tasks);
+      sessionState[sid].setDone(edited.sessions[sid].done);
+      sessionState[sid].setSkipped(edited.sessions[sid].skipped);
     }
-
-    if (existing.sharedKey) {
-      const sharedKey = existing.sharedKey;
-      for (const sid of SESSION_IDS) {
-        const row = sessionState[sid].tasks.find((t) => t.sharedKey === sharedKey);
-        if (row && sid !== session) removeTaskRow(sid, row.id, row);
-      }
+    setBestTimes(prev => remapTaskRecord(prev, edited.oldTimeKeys, edited.newTimeKeys));
+    setTaskCompletedAt(prev => remapTaskRecord(prev, edited.oldTimeKeys, edited.newTimeKeys));
+    if (scope === "special") {
+      setOneOffSpecialClaimed(prev => remapTaskRecord(prev, [edited.oldClaimKey], [edited.newClaimKey]));
+      setOneOffSpecialTreatPending(prev => remapTaskRecord(prev, [edited.oldClaimKey], [edited.newClaimKey]));
     }
-
-    const { tasks: base, setTasks } = sessionState[session];
-    setTasks(base.map((t) => {
-      if (t.id !== id) return t;
-      const updated: Task = { ...t, title: title.trim(), emoji };
-      delete updated.sharedKey;
-      delete updated.sharedSessions;
-      if (scope === "regular") updated.weekdays = normalizedWeekdays;
-      updated.specialRewardFloor = scope === "special" ? specialRewardFloor : undefined;
-      return updated;
-    }));
+    if (activeWorkTask && edited.related.some(r => r.session === activeWorkTask.session && r.task.id === activeWorkTask.taskId)) {
+      const destination = edited.rows.find(r => r.session === activeWorkTask.session) ?? edited.rows[0];
+      setActiveWorkTask({ session: destination.session, taskId: destination.task.id });
+    }
   };
 
   const clearBestTime = (session: SessionId, taskId: number) => {
@@ -5872,6 +5818,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             onAddTask={(title, emoji, scope, weekdays, targetSessions, specialRewardFloor) => addTask(taskListSession, title, emoji, scope, weekdays, targetSessions, specialRewardFloor)}
             onEditTask={(sess, id, title, emoji, weekdays, targetSessions, specialRewardFloor) => updateTask(sess, id, title, emoji, weekdays, targetSessions, specialRewardFloor)}
             onDeleteTask={(sess, id) => deleteTask(sess, id)}
+            onReorder={(sess, tasks) => sessionState[sess].setTasks(tasks)}
             customTaskEmojis={customTaskEmojis}
             onAddCustomTaskEmoji={addCustomTaskEmoji}
             todayMission={todayMission}
@@ -6309,6 +6256,7 @@ const LIST_GESTURE_SLOP = 10;
 
 function TaskListSwipeRow({
   task,
+  disabled = false,
   showRestBadge,
   filterDow,
   swipeOpen,
@@ -6318,6 +6266,7 @@ function TaskListSwipeRow({
   onDelete,
 }: {
   task: Task;
+  disabled?: boolean;
   showRestBadge: boolean;
   filterDow: number | null;
   swipeOpen: boolean;
@@ -6366,6 +6315,7 @@ function TaskListSwipeRow({
   }, []);
 
   const beginGesture = (clientX: number, clientY: number, pointerId: number) => {
+    if (disabled) return;
     const startOffset = swipeOpen ? -LIST_SWIPE_DELETE_WIDTH : 0;
     gesture.current = {
       phase: "pending",
@@ -6421,6 +6371,7 @@ function TaskListSwipeRow({
   };
 
   const handleSelect = () => {
+    if (disabled) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
@@ -6445,6 +6396,7 @@ function TaskListSwipeRow({
         type="button"
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
         aria-label="タスクを削除"
+        disabled={disabled}
         style={{
           position: "absolute", right: 0, top: 0, bottom: 0, width: LIST_SWIPE_DELETE_WIDTH,
           border: "none", cursor: "pointer",
@@ -6534,9 +6486,9 @@ function TaskListSwipeRow({
   );
 }
 
-function TaskListScreen({
+export function TaskListScreen({
   session, morningTasks, daytimeTasks, homeTasks, eveningTasks,
-  onSwitchSession, onBack, onAddTask, onEditTask, onDeleteTask,
+  onSwitchSession, onBack, onAddTask, onEditTask, onDeleteTask, onReorder,
   customTaskEmojis, onAddCustomTaskEmoji,
   todayMission, onOpenMissionSetup, onClearMission,
 }: {
@@ -6550,6 +6502,7 @@ function TaskListScreen({
   onAddTask: (title: string, emoji: string, scope: TaskScope, weekdays?: number[], targetSessions?: SessionId[], specialRewardFloor?: SpecialRewardFloor) => void;
   onEditTask: (session: SessionId, id: number, title: string, emoji: string, weekdays?: number[], targetSessions?: SessionId[], specialRewardFloor?: SpecialRewardFloor) => void;
   onDeleteTask: (session: SessionId, id: number) => void;
+  onReorder: (session: SessionId, tasks: Task[]) => void;
   customTaskEmojis: string[];
   onAddCustomTaskEmoji: (emoji: string) => void;
   todayMission: DailyMission | null;
@@ -6561,6 +6514,7 @@ function TaskListScreen({
   const [openSwipeId, setOpenSwipeId] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<TaskScope>("regular");
+  const [reordering, setReordering] = useState(false);
 
   const tasksBySession: Record<SessionId, Task[]> = {
     morning: morningTasks,
@@ -6569,7 +6523,7 @@ function TaskListScreen({
     evening: eveningTasks,
   };
   const allTasks = tasksBySession[session];
-  const filteredTasks = allTasks.filter((t) => taskMatchesWeekdayFilter(t, filterDow));
+  const filteredTasks = sortTasksForSessionDisplay(allTasks.filter((t) => taskMatchesWeekdayFilter(t, filterDow)));
   const editingTask = editingTaskId !== null ? allTasks.find((t) => t.id === editingTaskId) : null;
   const todayVisibleCount = allTasks.filter((t) => isTaskVisibleToday(t)).length;
 
@@ -6670,6 +6624,10 @@ function TaskListScreen({
         <div style={{ fontSize: 13, fontWeight: 600, color: theme.text.secondary }}>
           {summaryText}
         </div>
+        <button type="button" aria-pressed={reordering} onClick={() => { setReordering(value => !value); setOpenSwipeId(null); }} style={{ minHeight: 44, padding: "8px 14px", borderRadius: 10, border: `1px solid ${theme.stroke.secondary}`, background: reordering ? theme.accent.primary : theme.fill.secondary, color: reordering ? "#fff" : theme.text.primary, fontWeight: 700, cursor: "pointer" }}>
+          {reordering ? "並び替えをおわる" : "↕ 順番を並び替える"}
+        </button>
+        {reordering && <p style={{ fontSize: 12, color: theme.text.secondary, margin: 0 }}>同じ種類のタスクを ↑ ↓ で移動できます。順番は自動で保存します。</p>}
 
         {filteredTasks.length === 0 ? (
           <div style={{
@@ -6694,17 +6652,25 @@ function TaskListScreen({
             {filteredTasks.map((task) => {
               const showRestBadge = filterDow === null && !isTaskVisibleToday(task);
               return (
-                <TaskListSwipeRow
-                  key={task.id}
+                <div key={task.id} data-task-order-id={task.id} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0 }}><TaskListSwipeRow
                   task={task}
+                  disabled={reordering}
                   showRestBadge={showRestBadge}
                   filterDow={filterDow}
                   swipeOpen={openSwipeId === task.id}
                   onSwipeOpen={() => setOpenSwipeId(task.id)}
                   onSwipeClose={() => setOpenSwipeId(null)}
-                  onSelect={() => setEditingTaskId(task.id)}
+                  onSelect={() => { if (!reordering) setEditingTaskId(task.id); }}
                   onDelete={() => handleDeleteTask(task.id)}
-                />
+                /></div>
+                {reordering && !isGameTask(task) && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {([-1, 1] as const).map(direction => {
+                    const next = moveTaskInList(allTasks, filteredTasks, task.id, direction), atBoundary = next === allTasks;
+                    return <button key={direction} type="button" aria-label={`${task.title}を${direction < 0 ? "上" : "下"}へ`} disabled={atBoundary} onClick={() => onReorder(session, next)} style={{ minWidth: 44, minHeight: 44, borderRadius: 10, border: `1px solid ${theme.stroke.secondary}`, background: theme.fill.secondary, color: theme.text.primary, fontSize: 21, cursor: atBoundary ? "default" : "pointer", opacity: atBoundary ? .3 : 1 }}>{direction < 0 ? "↑" : "↓"}</button>;
+                  })}
+                </div>}
+                </div>
               );
             })}
           </div>

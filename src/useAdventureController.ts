@@ -31,7 +31,7 @@ export function useAdventureController(mining: MiningState, location: AdventureL
   useEffect(() => {
     const key = `${location}:${activeDay}`;
     if (entered.current === key) return;
-    if (mining.adventure?.dragon?.skills?.pending) return;
+    if ([mining.adventure?.dragon, mining.adventure?.blaze, mining.adventure?.enderman].some(run => run?.skills?.pending)) return;
     entered.current = key;
     const result = send({ kind: 'enter' });
     if (result.error) queueMicrotask(() => setError(result.error!));

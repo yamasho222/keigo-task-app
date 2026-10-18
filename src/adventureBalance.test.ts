@@ -47,6 +47,7 @@ function simulate(tier: 'mixed' | 'diamond' | 'netherite', rank: 0 | 3, score: n
     let action: CampaignAction;
     if (special) {
       command({ kind: 'dragon', action: { kind: 'beginSkill' } });
+      command({ kind: 'dragon', action: { kind: 'chooseSkill', token: mining.adventure!.dragon!.skills!.pending!.token, mode: 'repel' } });
       action = { kind: 'releaseSkill', token: mining.adventure!.dragon!.skills!.pending!.token, score };
     } else action = { kind: campaignBedAvailable(s) && (s.landingTurns > 0 || campaignCounterDamage(s) >= s.hp) ? 'bed' : ['breath', 'orbFire', 'storm'].includes(campaignIntent(s)) ? 'guard' : 'attack' };
     lastAction = action.kind; command({ kind: 'dragon', action });

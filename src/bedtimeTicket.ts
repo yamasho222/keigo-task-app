@@ -2,8 +2,8 @@ import { parseDateKey } from "./japaneseCalendar";
 import { addTickets } from "./miningProgress";
 import type { MiningState } from "./miningTypes";
 
-/** 夜の遊びロック開始（21:00）。早ねボタンの締切とは別 */
-export const NIGHT_PLAY_LOCK_START_MINUTES = 21 * 60;
+/** 夜の遊びロック開始（20:30）。早ねボタンの締切とは別 */
+export const NIGHT_PLAY_LOCK_START_MINUTES = 20 * 60 + 30;
 /** 早ね宣言の締切（21:30 まで） */
 export const BEDTIME_DEADLINE_MINUTES = 21 * 60 + 30;
 /** 翌朝チケット付与・遊びロック解除 */

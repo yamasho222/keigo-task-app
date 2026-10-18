@@ -42,7 +42,11 @@ const updateSW = registerSW({
 });
 
 const root = createRoot(document.getElementById("root")!);
-if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("adventure-release") === "1") {
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("task-settings") === "1") {
+  void import("./TaskSettingsLab").then(({ default: TaskSettingsLab }) => root.render(<StrictMode><TaskSettingsLab /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("battle-effects") === "1") {
+  void import("./BattleEffectsLab").then(({ default: BattleEffectsLab }) => root.render(<StrictMode><BattleEffectsLab /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("adventure-release") === "1") {
   void import("./AdventureReleaseLab").then(({ default: AdventureReleaseLab }) => root.render(<StrictMode><AdventureReleaseLab /></StrictMode>));
 } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("dragon-campaign") === "1") {
   // Isolated long campaign: exclusive DEV storage, never load real profiles/cloud.

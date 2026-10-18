@@ -9,7 +9,7 @@ describe('enderman staged presentation', () => {
     expect(playback.frames.map(f => f.stage)).toEqual(['ticket', 'strike', 'impact', 'counter', 'hurt']);
     expect(playback.frames[0].shown).toMatchObject({ tickets: 3, handsLeft: 4, gauge: 0 });
     expect(playback.frames[1].shown).toMatchObject({ handsLeft: 3, gauge: 0 });
-    expect(playback.frames[2].shown).toMatchObject({ enemyHp: 36, gauge: 1, intent: 'warp', misses: 1 });
+    expect(playback.frames[2].shown).toMatchObject({ enemyHp: 52, gauge: 1, intent: 'warp', misses: 1 });
     expect(result.state.intent).toBe('ambush');
   });
   it('keeps old intent and HP visible until the counter actually lands', () => {
@@ -18,7 +18,7 @@ describe('enderman staged presentation', () => {
     const playback = buildEndermanPlayback(before, result.state, action, result.events);
     expect(playback.frames.map(f => f.stage)).not.toContain('ticket');
     const impact = playback.frames.find(f => f.stage === 'impact')!.shown;
-    expect(impact).toMatchObject({ enemyHp: 29, hp: 20, intent: 'ambush', handsLeft: 0 });
+    expect(impact).toMatchObject({ enemyHp: 45, hp: 20, intent: 'ambush', handsLeft: 0 });
     expect(playback.frames.find(f => f.stage === 'hurt')!.shown.hp).toBe(18);
     expect(result.state.intent).toBe('opening');
   });
@@ -28,7 +28,7 @@ describe('enderman staged presentation', () => {
     expect(playback.frames.map(f => f.stage)).toEqual(['ticket', 'focus', 'strike', 'impact']);
     expect(playback.frames.every(f => f.shown.phase === 'battle' && f.shown.pearls === 0)).toBe(true);
     expect(playback.frames.find(f => f.stage === 'impact')!.shown).toMatchObject({ enemyHp: 0, handsLeft: 3 });
-    expect(result.state).toMatchObject({ phase: 'won', handsLeft: 0, pearls: 1 });
+    expect(result.state).toMatchObject({ phase: 'won', handsLeft: 3, pearls: 1 });
     expect(playback.duration).toBeGreaterThan(playback.frames.at(-1)!.at);
   });
   it('eat shows bread first then HP without an enemy action', () => {

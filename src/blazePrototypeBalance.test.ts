@@ -48,9 +48,9 @@ describe('blaze balance simulation', () => {
     console.table(report);
   });
 
-  it('records the full-health iron aggressive loss under the 25% armor rule', () => {
+  it('records the 24-HP enemy outcome under the 25% armor rule with a legacy unscored ultimate', () => {
     expect(simulateBlaze({}, 'aggressive')).toEqual({
-      phase: 'lost', ticketsSpent: 2, turns: 5, breadUsed: 0, hpHearts: 0, enemyHp: 4,
+      phase: 'won', ticketsSpent: 2, turns: 5, breadUsed: 0, hpHearts: 1.5, enemyHp: 0,
     });
   });
 
@@ -68,22 +68,22 @@ describe('blaze balance simulation', () => {
     }
     // Each cell: phase / tickets / turns / bread / remaining hearts / enemy HP.
     expect(outcomes).toEqual([
-      'lost/2/5/0/0/4 | won/2/7/0/3.5/0 | won/2/6/2/10/0',
-      'lost/1/2/0/0/20 | lost/1/3/0/0/20 | won/2/6/2/5/0',
+      'won/2/5/0/1.5/0 | won/2/6/0/5/0 | won/2/5/1/6.5/0',
+      'lost/1/2/0/0/16 | lost/1/3/0/0/16 | won/2/5/2/6.5/0',
       'won/1/4/0/1.5/0 | won/2/5/0/5/0 | won/1/4/1/6.5/0',
-      'lost/1/2/0/0/16 | lost/1/3/0/0/16 | won/1/4/2/6.5/0',
-      'won/2/6/0/0.5/0 | won/2/7/0/3.5/0 | won/2/6/1/5.5/0',
-      'lost/1/2/0/0/20 | lost/1/3/0/0/20 | won/2/6/2/5.5/0',
+      'lost/1/2/0/0/12 | lost/1/3/0/0/12 | won/1/4/2/6.5/0',
+      'won/2/5/0/2/0 | won/2/6/0/5/0 | won/2/5/1/7/0',
+      'lost/1/2/0/0/16 | lost/1/3/0/0/16 | won/2/5/2/7/0',
       'won/1/4/0/2/0 | won/2/5/0/5/0 | won/1/4/1/7/0',
-      'lost/1/2/0/0/16 | lost/1/3/0/0/16 | won/1/4/2/7/0',
-      'won/2/6/0/1.5/0 | won/2/7/0/4/0 | won/2/6/1/6.5/0',
-      'lost/1/2/0/0/20 | lost/2/6/0/0/4 | won/2/6/2/6.5/0',
+      'lost/1/2/0/0/12 | lost/1/3/0/0/12 | won/1/4/2/7/0',
+      'won/2/5/0/3/0 | won/2/6/0/5.5/0 | won/2/5/1/8/0',
+      'lost/1/2/0/0/16 | won/2/6/0/0.5/0 | won/2/5/2/8/0',
       'won/1/4/0/3/0 | won/2/5/0/5.5/0 | won/1/4/1/8/0',
-      'lost/1/2/0/0/16 | won/2/5/0/0.5/0 | won/1/4/2/8/0',
-      'won/2/6/0/3.5/0 | won/2/7/0/5.5/0 | won/2/6/1/8.5/0',
-      'lost/1/3/0/0/16 | won/2/7/0/0.5/0 | won/2/6/2/8.5/0',
+      'lost/1/2/0/0/12 | won/2/5/0/0.5/0 | won/1/4/2/8/0',
+      'won/2/5/0/4.5/0 | won/2/6/0/6.5/0 | won/2/5/1/9.5/0',
+      'lost/1/3/0/0/12 | won/2/6/0/1.5/0 | won/2/5/2/9.5/0',
       'won/1/4/0/4.5/0 | won/2/5/0/6.5/0 | won/1/4/1/9.5/0',
-      'lost/1/3/0/0/10 | won/2/5/0/1.5/0 | won/1/4/2/9.5/0',
+      'lost/1/3/0/0/6 | won/2/5/0/1.5/0 | won/1/4/2/9.5/0',
     ]);
   });
 
@@ -92,7 +92,7 @@ describe('blaze balance simulation', () => {
     state.tickets = 0;
     vi.spyOn(engine, 'createBlazeRun').mockReturnValue(state);
     expect(simulateBlaze({}, 'prepared')).toEqual({
-      phase: 'stalled', ticketsSpent: 0, turns: 0, breadUsed: 0, hpHearts: 10, enemyHp: 28,
+      phase: 'stalled', ticketsSpent: 0, turns: 0, breadUsed: 0, hpHearts: 10, enemyHp: 24,
     });
   });
 
@@ -101,7 +101,7 @@ describe('blaze balance simulation', () => {
     Object.assign(state, { tickets: 0, handsLeft: 1 });
     vi.spyOn(engine, 'createBlazeRun').mockReturnValue(state);
     expect(simulateBlaze({}, 'aggressive')).toEqual({
-      phase: 'stalled', ticketsSpent: 0, turns: 1, breadUsed: 0, hpHearts: 10, enemyHp: 24,
+      phase: 'stalled', ticketsSpent: 0, turns: 1, breadUsed: 0, hpHearts: 10, enemyHp: 20,
     });
   });
 

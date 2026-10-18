@@ -16,7 +16,7 @@ function localDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 21:00:00 以降〜翌朝 6:30:00 手前 */
+/** 20:30:00 以降〜翌朝 6:30:00 手前 */
 export function isMiningNightHours(now: Date): boolean {
   const minutes = minutesOfDay(now);
   return minutes >= NIGHT_PLAY_LOCK_START_MINUTES || minutes < BEDTIME_CLAIM_MINUTES;
@@ -30,7 +30,7 @@ export function isMiningNightLocked(opts: {
   return isMiningNightHours(opts.now ?? new Date());
 }
 
-/** 21:00〜翌6:30 を同じ夜として扱うキー（6:30 未満は前日） */
+/** 20:30〜翌6:30 を同じ夜として扱うキー（6:30 未満は前日） */
 export function miningNightLockNightKey(now: Date): string {
   const d = new Date(now.getTime());
   if (minutesOfDay(d) < BEDTIME_CLAIM_MINUTES) {

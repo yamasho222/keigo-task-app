@@ -14,10 +14,10 @@ describe('Dragon attacks are distinguishable without reading', () => {
     else { expect(html).not.toContain('<canvas'); expect(html).toContain(`data-renderer="element-${skill}-v1"`); }
     const marker = { burst: 'db-slash-main', gauge: 'thunder-strike.webp', repel: 'water-strike.webp', aim: 'light-strike.webp' }[skill]; expect(html).toContain(marker);
   });
-  it('shows a large post-hit ally cut-in, rotating one helper for normal attacks', () => {
+  it('shows every participating helper in the large post-hit cut-in', () => {
     const buddies = ['one', 'two', 'three'].map(id => ({ id, image: `/${id}.png`, level: 10 }));
     const html = renderToStaticMarkup(createElement(DragonAllyFx, { buddies, stroke: 1, special: false, impact: false, reduced: false }));
-    expect(html).toContain('/two.png'); expect(html).not.toContain('/one.png'); expect(html).toContain('なかまの ついげき');
+    expect(html).toContain('/two.png'); expect(html).toContain('/one.png'); expect(html).toContain('/three.png'); expect(html).toContain('なかまの ついげき');
     const all = renderToStaticMarkup(createElement(DragonAllyFx, { buddies, stroke: 1, special: true, impact: true, reduced: true }));
     expect(all).toContain('da-ally-impact'); expect(all).toContain('da-reduced'); expect(all.match(/<img/g)).toHaveLength(3);
   });

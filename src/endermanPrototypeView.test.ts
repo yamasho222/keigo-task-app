@@ -12,11 +12,11 @@ describe('enderman child-facing interface', () => {
     const view = html();
     expect(view.match(/class="bp-command /g)).toHaveLength(4);
     expect(view).toContain('こうげき'); expect(view).toContain('かいふく、パン残り2個');
-    expect(view).toContain('>36<small> / 36</small>'); expect(view).toContain('次のチケット1枚で4回行動');
+    expect(view).toContain('>52<small> / 52</small>'); expect(view).toContain('次のチケット1枚で4回行動');
     expect(view).not.toContain('bp-command-power'); expect(view).not.toContain('防具軽減');
   });
   it('uses the correct enemy name and exposes equipment separately from attack', () => {
-    const view = html(); expect(view).toContain('そうび、もちもの：なし');
+    const view = html(); expect(view).toContain('aria-label="もちもの"');
     expect(view).toContain('alt="エンダーマン"'); expect(view).not.toContain('エンドマン');
     expect(view.match(/class="bp-heart /g)).toHaveLength(10);
   });

@@ -64,7 +64,7 @@ describe('partial guard with armor, held shield and water', () => {
     const snapshot = structuredClone(before), result = actOnEnderman(before, { kind: 'guard' });
     expect(before).toEqual(snapshot);
     expect(result.state.hp).toBe(before.hp - endermanIncomingDamage(before, true));
-    expect(result.state).toMatchObject({ gauge: 2, enemyHp: 36, turn: 1, handsLeft: 3, tickets: 3, intent: 'warp' });
+    expect(result.state).toMatchObject({ gauge: 2, enemyHp: 52, turn: 1, handsLeft: 3, tickets: 3, intent: 'warp' });
     expect(result.events.find(e => e.kind === 'counter')?.amount).toBe(endermanIncomingDamage(before, true));
   });
 });
@@ -83,7 +83,7 @@ describe('held item changes cost exactly one action, never a counter or intent r
     const before = { ...createEndermanRun({ item: 'water' }), intent: 'ambush' as const, hp: 9, gauge: 2, handsLeft, tickets: handsLeft ? 0 : 1 };
     const snapshot = structuredClone(before), result = actOnEnderman(before, { kind: 'equip', item: 'shield' });
     expect(before).toEqual(snapshot); expect(result.error).toBeUndefined(); expect(result.events).toEqual([]);
-    expect(result.state).toMatchObject({ item: 'shield', hp: 9, gauge: 2, turn: 1, handsLeft: handsLeft ? handsLeft - 1 : 3, tickets: 0, intent: 'ambush', enemyHp: 36 });
+    expect(result.state).toMatchObject({ item: 'shield', hp: 9, gauge: 2, turn: 1, handsLeft: handsLeft ? handsLeft - 1 : 3, tickets: 0, intent: 'ambush', enemyHp: 52 });
     expect(actOnEnderman(result.state, { kind: 'equip', item: 'shield' }).state).toBe(result.state);
     // Switching removed the bucket's attack bonus and passive protection.
     expect(endermanIncomingDamage(result.state)).toBe(14);

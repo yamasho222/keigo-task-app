@@ -45,7 +45,7 @@ export function EndChapterNoticePanel({ kind, onClose }: { kind: EndChapterNotic
   </NoticeDialog> : <NoticeDialog title="つくれるものが ふえたよ！" onClose={onClose}>
     <div className="end-update-craftables">
       <section><MiningItemIcon material="bread" size={72} /><h3>パン</h3><p>たべて かいふく</p></section>
-      <section><MiningItemIcon material="shield" size={72} /><h3>たて</h3><p>そうびで<br />「まもる」が アップ</p></section>
+      <section><MiningItemIcon material="shield" size={72} /><h3>たて</h3><p>クラフトできるよ</p></section>
     </div>
     <BreadRecipePicture />
     <small>ざいりょうを あつめて クラフトしよう！</small>

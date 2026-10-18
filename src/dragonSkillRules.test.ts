@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DragonSkillGame } from './DragonSkillGame';
-import { AIM_CENTERS, BURST_TAP_CAP, SKILL_KINDS, TRACE_CHECKPOINTS, advanceTrace, aimCursor, aimScore, burstScore, enableDragonSkills, gaugeScore, isUltimateAction, playableSkill, repelTargets, repelScore, skillAt, skillBonus, skillGaugePosition, skillOffers, traceScore } from './dragonSkillRules';
+import { AIM_CENTERS, AIM_COUNT, BURST_TAP_CAP, SKILL_KINDS, TRACE_CHECKPOINTS, advanceTrace, aimCursor, aimScore, aimTotalScore, burstScore, enableDragonSkills, gaugeScore, isUltimateAction, playableSkill, repelTargets, repelScore, skillAt, skillBonus, skillGaugePosition, skillOffers, traceScore } from './dragonSkillRules';
 import { dragonCampaignFixture } from './dragonCampaignFixtures';
 import { isDragonCampaign, refreshCampaignDay, stepDragonCampaign, type CampaignAction, type DragonCampaign } from './dragonCampaignEngine';
 import { buildCampaignPlayback } from './dragonCampaignPlayback';
@@ -15,7 +15,10 @@ function act(state: DragonCampaign, action: CampaignAction) {
   expect(JSON.stringify(state)).toBe(before); expect(result.error).toBeUndefined(); expect(isDragonCampaign(result.state)).toBe(true);
   return result;
 }
-function ready(state = fixture()) { return act(state, { kind: 'beginSkill' }).state; }
+function ready(state = fixture(), mode: typeof SKILL_KINDS[number] = 'burst') {
+  const begun = act(state, { kind: 'beginSkill' }).state;
+  return act(begun, { kind: 'chooseSkill', token: begun.skills!.pending!.token, mode }).state;
+}
 const release = (state: DragonCampaign, score: number) => act(state, { kind: 'releaseSkill', token: state.skills!.pending!.token, score });
 
 describe('four six-second skills, common bounded scoring', () => {
@@ -42,7 +45,13 @@ describe('four six-second skills, common bounded scoring', () => {
     expect(html).toContain('連打0/31回'); expect(html).toContain('残り6秒');
     expect(skillBonus('diamond', 100)).toBe(32); expect(skillBonus('netherite', 100)).toBe(48);
   });
-  it('scores each of three aims by proximity, not just one lucky shot', () => {
+  it('scores one timed aim by proximity with no three-shot averaging', () => {
+    expect(AIM_COUNT).toBe(1); expect(AIM_CENTERS).toEqual([.5]);
+    expect(aimTotalScore([100])).toBe(100); expect(aimTotalScore([60])).toBe(60); expect(aimTotalScore([0])).toBe(0);
+    expect(aimTotalScore([])).toBe(0); expect(aimTotalScore([NaN])).toBe(0); expect(aimTotalScore([Infinity])).toBe(0);
+    expect(aimTotalScore([101])).toBe(100); expect(aimTotalScore([-1])).toBe(0);
+    const html = renderToStaticMarkup(createElement(DragonSkillGame, { kind: 'aim', reduced: false, onDone: () => undefined }));
+    expect(html).toContain('ねらった回数0/1'); expect(html).not.toContain('ねらった回数0/3');
     for (const center of AIM_CENTERS) { expect(aimScore(center, center)).toBe(100); expect(aimScore(center + .05, center)).toBe(100); expect(aimScore(center + .35, center)).toBe(0); }
     expect(aimCursor(0)).toBe(0); expect(aimCursor(800)).toBe(1); expect(aimCursor(1600)).toBe(0);
     expect(aimScore(.5, .5)).toBeGreaterThan(aimScore(.7, .5));
@@ -57,9 +66,9 @@ describe('four six-second skills, common bounded scoring', () => {
     expect(traceScore(repeated)).toBeLessThan(10);
     expect(advanceTrace(0, { x: NaN, y: 0 }, TRACE_CHECKPOINTS[0])).toBe(0);
   });
-  it('always assigns one game in a fixed four-cast loop independent of last', () => {
+  it('offers every unlocked game independent of cast history or last selection', () => {
     for (let casts = 0; casts < 30; casts++) for (const last of [null, ...SKILL_KINDS]) {
-      const offers = skillOffers(casts, last); expect(offers).toEqual([SKILL_KINDS[casts % 4]]);
+      const offers = skillOffers(casts, last); expect(offers).toEqual(['repel', 'aim', 'burst', 'gauge']);
     }
     expect(SKILL_KINDS).toEqual(['burst', 'gauge', 'repel', 'aim']);
     expect(skillAt(4)).toBe('burst'); expect(playableSkill('trace')).toBe('repel');
@@ -117,9 +126,10 @@ describe('one persisted ultimate transaction, no double payment or replay', () =
     const timeline = buildCampaignPlayback(s, best.state, { kind: 'releaseSkill', token: 'x', score: 100 }, best.events);
     expect(timeline.frames.some(f => f.stage === 'strike')).toBe(true); expect(isUltimateAction({ kind: 'releaseSkill', token: 'x', score: 100 })).toBe(true);
   });
-  it('adds one ordinary ally damage total, not one per level or per companion', () => {
+  it('adds a separate weighted contribution from every ordinary companion', () => {
     const s = enableDragonSkills(dragonCampaignFixture('wings', '2026-10-17', true)); s.selected = 'body';
-    const result = act(s, { kind: 'attack' }); expect(result.events.find(e => e.kind === 'hit')?.amount).toBe(5); expect(result.events.find(e => e.kind === 'companion')?.amount).toBe(1);
+    const result = act(s, { kind: 'attack' }), helper = result.events.find(e => e.kind === 'companion')!;
+    expect(helper.allies).toHaveLength(3); expect(result.events.find(e => e.kind === 'hit')?.amount).toBe(4 + helper.amount);
     s.equipment.buddies = [];
     expect(act(s, { kind: 'attack' }).events.find(e => e.kind === 'hit')?.amount).toBe(4);
   });
@@ -143,16 +153,17 @@ describe('one persisted ultimate transaction, no double payment or replay', () =
     expect(isDragonCampaign(old)).toBe(true);
     expect(release(JSON.parse(JSON.stringify(old)), 0).state.skills!.casts).toBe(1);
     old.skills!.pending!.mode = null;
+    old.unlockedSkills = ['burst'];
     const wrong = stepDragonCampaign(old, { kind: 'chooseSkill', token: old.skills!.pending!.token, mode: 'aim' });
     expect(wrong.state).toBe(old); expect(wrong.error).toBeTruthy();
     const selected = act(old, { kind: 'chooseSkill', token: old.skills!.pending!.token, mode: 'burst' });
     expect(release(selected.state, 0).state.skills!.pending).toBeNull();
   });
-  it('persists the fixed order over two whole cycles, counting only completed casts', () => {
+  it('persists explicitly selected games over eight casts, counting only completed casts', () => {
     let s = enableDragonSkills(dragonCampaignFixture('wings', '2026-10-17', true)); s.selected = 'body'; s.equipment.buddies = [];
     for (let i = 0; i < 8; i++) {
       s.gauge = 3;
-      const pending = ready(s); expect(pending.skills!.pending!.mode).toBe(SKILL_KINDS[i % 4]);
+      const pending = ready(s, SKILL_KINDS[i % 4]); expect(pending.skills!.pending!.mode).toBe(SKILL_KINDS[i % 4]);
       expect(pending.skills!.casts).toBe(i);
       s = release(JSON.parse(JSON.stringify(pending)), 0).state;
       expect(s.skills!.casts).toBe(i + 1);

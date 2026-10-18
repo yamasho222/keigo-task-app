@@ -21,8 +21,10 @@ export function enableDragonSkills(state: DragonCampaign): DragonCampaign {
   return state.skills ? state : { ...state, skills: { version: 1, casts: 0, last: null, pending: null } };
 }
 export const isUltimateAction = (action: CampaignAction) => action.kind === 'ultimate' || action.kind === 'releaseSkill';
-/** Kept as a one-item adapter for legacy callers: the cast is automatic, not a choice. */
-export function skillOffers(casts: number, last?: SavedDragonSkillKind | null): DragonSkillKind[] { void last; return [skillAt(casts)]; }
+/** Completed casts remain in old saves for history, but never constrain the choice. */
+export function skillOffers(casts: number, last?: SavedDragonSkillKind | null, unlocked?: readonly DragonSkillKind[]): DragonSkillKind[] {
+  void casts; void last; return [...(unlocked ?? ['repel', 'aim', 'burst', 'gauge'])];
+}
 export function skillBonus(sword: SwordTier, score: number): number {
   // Existing sword ultimate is 8/12. Add a guaranteed 12/18 + scored 20/30.
   // Together this is diamond 20..40, netherite 30..60 before enchants/allies.
@@ -49,7 +51,10 @@ export function aimCursor(elapsed: number): number {
   const t = Math.max(0, elapsed) % 1600 / 800;
   return t <= 1 ? t : 2 - t;
 }
-export const AIM_CENTERS = [.3, .7, .5] as const;
+export const AIM_CENTERS = [.5] as const;
+export const AIM_COUNT = AIM_CENTERS.length;
+/** One timed hit determines the full score; no old three-shot averaging. */
+export const aimTotalScore = (shots: readonly number[]) => Math.round(Math.max(0, Math.min(100, Number.isFinite(shots[0]) ? shots[0] : 0)));
 export function aimScore(cursor: number, center: number): number {
   return Math.round(Math.max(0, 1 - Math.max(0, Math.abs(cursor - center) - .06) / .29) * 100);
 }

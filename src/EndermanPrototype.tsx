@@ -1,4 +1,11 @@
 import type { EndermanPort } from './adventurePorts';
+import { enableDragonCritical } from './dragonCriticalRules';
+import { BattleBagIcon } from './BattleItemsDialog';
+import { BattleSkillActivity } from './BattleSkillActivity';
+import { DragonAttackFx } from './DragonAttackFx';
+import { DragonStatusArt, DragonStatusBadges } from './DragonBattleEffectsArt';
+import { enableBattleSkills, isBattleUltimate } from './battleSkillRules';
+import { playableSkill } from './dragonSkillRules';
 import { BreadRecoveryHelp } from './EndChapterNoticePanel';
 import { recoveryAvailability } from './endChapterNotices';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -22,7 +29,7 @@ const TIER_NAMES = { none: 'なし', iron: '鉄', gold: '金', diamond: 'ダイ�
 function copySetup(s: EndermanSetup): EndermanSetup { return { ...s, loadout: { ...s.loadout, armor: { ...s.loadout.armor } } }; }
 
 export default function EndermanPrototype({ production }: { production?: EndermanPort } = {}) {
-  const [localRun, setRun] = useState(createEndermanRun);
+  const [localRun, setRun] = useState<EndermanRun>(() => enableBattleSkills(enableDragonCritical({ ...createEndermanRun(), seed: 10617 }), ['repel', 'aim']));
   const run = production?.run ?? localRun, current = useRef(run);
   const [setup, setSetup] = useState<EndermanSetup>(() => copySetup(run));
   const [draft, setDraft] = useState<EndermanSetup>(() => copySetup(run));
@@ -33,6 +40,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
   const [busy, setBusy] = useState(false), busyRef = useRef(false);
   const [notice, setNotice] = useState(''), [sound, setSound] = useState(true);
   const [recoveryHelp, setRecoveryHelp] = useState(false);
+  const [liveSkill, setLiveSkill] = useState('');
   const [reduced, setReduced] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const timers = useRef<number[]>([]), sequence = useRef(0);
   const audio = useRef<ReturnType<typeof createBlazeAudio> | null>(null);
@@ -60,6 +68,10 @@ export default function EndermanPrototype({ production }: { production?: Enderma
     const before = current.current, result = production ? production.act(action) : actOnEnderman(before, action);
     if (result.error) { setNotice(result.error); return; }
     setNotice('');
+    if (action.kind === 'beginSkill' || action.kind === 'chooseSkill') {
+      const p = result.state.skills?.pending; if (p?.mode) setLiveSkill(`${p.token}:${p.mode}`);
+    }
+    if (['beginSkill', 'chooseSkill', 'cancelSkill'].includes(action.kind)) { commit(result.state); return; }
     if (action.kind === 'return' || action.kind === 'equip') { commit(result.state); if (action.kind === 'return') production?.onClose(); return; }
     if (sound) { audio.current ??= createBlazeAudio(); audio.current.unlock(); }
     busyRef.current = true; setBusy(true);
@@ -69,12 +81,12 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       const show = () => {
         setAnimation({ id, action, before, events: result.events, frame });
         const counter = result.events.some(event => event.kind === 'counter');
-        if (frame.stage === 'strike') cue(action.kind === 'ultimate' ? 'ultimate' : 'slash');
+        if (frame.stage === 'strike') cue(isBattleUltimate(action.kind) ? 'ultimate' : 'slash');
         if (frame.stage === 'heal') cue('heal');
-        if (frame.stage === 'impact' && result.events.some(event => event.kind === 'hit')) cue('impact');
+        if (frame.stage === 'impact' && result.events.some(event => event.kind === 'hit')) cue(result.events.some(event => event.kind === 'critical') ? 'critical' : 'impact');
         if (frame.stage === 'impact' && result.events.some(event => event.kind === 'kill')) cue('break');
         if (frame.stage === 'counter' && counter) cue(before.intent === 'ambush' ? 'enemyUltimate' : 'enemy');
-        if (frame.stage === 'counter' && action.kind === 'ultimate') cue('break');
+        if (frame.stage === 'counter' && isBattleUltimate(action.kind)) cue('break');
         if (frame.stage === 'hurt' && counter) cue(action.kind === 'guard' ? 'guard' : 'impact');
       };
       if (frame.at === 0) show(); else timers.current.push(window.setTimeout(show, frame.at));
@@ -89,7 +101,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
     audio.current?.stop();
     timers.current.forEach(window.clearTimeout); timers.current = [];
     busyRef.current = false; setBusy(false); setAnimation(null); setNotice('');
-    const copied = copySetup(next); setSetup(copied); commit(createEndermanRun(copied)); setModal(null);
+    const copied = copySetup(next); setSetup(copied); commit(enableBattleSkills(enableDragonCritical({ ...createEndermanRun(copied), seed: 10617 }), ['repel', 'aim'])); setModal(null);
     timers.current.push(window.setTimeout(() => title.current?.focus(), 0));
   }
   function equip(item: EndermanSetup['item']) {
@@ -105,7 +117,9 @@ export default function EndermanPrototype({ production }: { production?: Enderma
   const wet = shown.item === 'water', playing = run.phase === 'battle', dead = shown.enemyHp === 0;
   const recovery = recoveryAvailability(production?.breadStock ?? run.bread, production?.foodToday ?? 0, run.hp, run.maxHp);
   const canSpend = run.tickets > 0 || run.handsLeft > 0, disabled = busy || !playing || !canSpend;
-  const special = action?.kind === 'ultimate', guarding = action?.kind === 'guard';
+  const special = isBattleUltimate(action?.kind), guarding = action?.kind === 'guard';
+  const cast = animation?.before.skills?.pending?.mode;
+  const critical = !!animation?.events.some(event => event.kind === 'critical');
   const missed = animation?.events.some(event => event.kind === 'miss') ?? false;
   const splashed = animation?.events.some(event => event.kind === 'splash') ?? false;
   const impact = stage === 'impact' || stage === 'counter' || stage === 'hurt';
@@ -127,7 +141,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
     <header className="bp-header ep-header">
       <button className="bp-icon-button" aria-label="かえる" disabled={busy || !playing} onClick={() => setModal('leave')}><BattleIcon kind="back" /></button>
       <h1 ref={title} tabIndex={-1}>ゆがんだ もり{!production && <small>おためし</small>}</h1>
-      <button className={`ep-gear-button ${defeats >= 2 && !wet ? 'ep-hint-glow' : ''}`} aria-label={`そうび、もちもの：${ENDERMAN_ITEM_NAMES[run.item]}`} disabled={busy || (!!production && !playing)} onClick={() => setModal('gear')}><EndermanItemArt item={run.item} /><span>そうび</span></button>
+      <button className={`ep-gear-button ${defeats >= 2 && !wet ? 'ep-hint-glow' : ''}`} aria-label="もちもの" disabled={busy || (!!production && !playing)} onClick={() => setModal('gear')}><BattleBagIcon /><span>もちもの</span></button>
       <button className="bp-icon-button bp-help-button" aria-label="絵であそびかたを見る" disabled={busy} onClick={() => { setLesson(0); setModal('help'); }}>?</button>
       {!production && <button className="bp-icon-button bp-parent-button" aria-label="保護者用の試験設定" disabled={busy} onClick={() => { setDraft(copySetup({ ...setup, item: run.item })); setModal('setup'); }}><BattleIcon kind="settings" /></button>}
     </header>
@@ -145,7 +159,10 @@ export default function EndermanPrototype({ production }: { production?: Enderma
         {missed && impact && <span className="ep-miss-mark" aria-hidden="true">ひらり！<small>✦ ＋1</small></span>}
         {splashed && stage === 'impact' && <span className="ep-splash-mark" aria-hidden="true">びくっ！</span>}
       </div>
-      {animation && (action?.kind === 'strike' || special) && stage !== 'ticket' && (!missed || stage === 'strike') && <BattleSpectacle key={`attack${animation.id}`} kind={special ? 'ultimate' : 'slash'} phase={attackPhase} variant="enderman" reduced={reduced} seed={animation.id} amount={animation.before.enemyHp - shown.enemyHp} />}
+      {animation && special && cast && stage !== 'ticket' && <DragonAttackFx stage={attackPhase} technique="cleave" special counter={false} stroke={animation.id} reduced={reduced} buddies={[]} sword={run.loadout.sword} skill={playableSkill(cast)} power={action?.kind === 'releaseSkill' ? action.score / 100 : 0} />}
+      {animation && (action?.kind === 'strike' || special && !cast) && stage !== 'ticket' && (!missed || stage === 'strike') && <BattleSpectacle key={`attack${animation.id}`} kind={special ? 'ultimate' : 'slash'} phase={attackPhase} variant="enderman" critical={critical} reduced={reduced} seed={animation.id} amount={animation.before.enemyHp - shown.enemyHp} />}
+      <DragonStatusArt effects={shown.effects} pulse={stage} />
+      {stage === 'effect' && animation?.events.filter(event => event.kind === 'burn' || event.kind === 'heal').map((event, i) => <span className="dc-damage dc-effect-number" key={i}>{event.kind === 'burn' ? `🔥 −${event.amount}` : `♥ ＋${event.amount}`}</span>)}
       {counter && (stage === 'counter' || stage === 'hurt') && <BattleSpectacle key={`enemy${animation!.id}`} kind={shown.intent === 'ambush' ? 'enemyUltimate' : 'enemy'} phase={stage === 'counter' ? 'strike' : 'impact'} variant="enderman" shield={guarding} reduced={reduced} seed={animation!.id} />}
       {guarding && stage !== 'ticket' && <BattleSpectacle key={`guard${animation!.id}`} kind="guard" phase={stage === 'hurt' && counter ? 'impact' : 'windup'} variant="enderman" shield={run.item === 'shield'} reduced={reduced} seed={animation!.id} />}
       {special && (stage === 'counter' || stage === 'hurt') && <BattleSpectacle key={`break${animation!.id}`} kind="break" phase={stage === 'counter' ? 'impact' : 'recover'} variant="enderman" reduced={reduced} seed={animation!.id} />}
@@ -167,9 +184,10 @@ export default function EndermanPrototype({ production }: { production?: Enderma
     <section className="bp-actions" aria-label="戦いの操作">
       <button className="bp-command bp-attack" disabled={disabled} aria-label="こうげき" onClick={() => act({ kind: 'strike' })}><SwordArt tier={run.loadout.sword} /><strong>こうげき</strong><span className="bp-command-token" aria-hidden="true" /></button>
       <button className="bp-command bp-guard" disabled={disabled} aria-label="まもる" onClick={() => act({ kind: 'guard' })}><GuardArt shield={run.item === 'shield'} /><strong>まもる</strong><span className="bp-command-token" aria-hidden="true" /></button>
-      <button className={`bp-command bp-ultimate ${shown.gauge >= 3 ? 'is-ready' : ''}`} disabled={disabled || run.gauge < 3} aria-label={`ひっさつ、光${shown.gauge}個、3個で使える`} onClick={() => act({ kind: 'ultimate' })}><SwordArt tier={run.loadout.sword} special /><strong>ひっさつ</strong><span className="bp-charge-lights" aria-hidden="true">{[0, 1, 2].map(i => <i key={i} className={i < shown.gauge ? 'is-filled' : ''} />)}</span><span className="bp-command-token" aria-hidden="true" /></button>
+      <button className={`bp-command bp-ultimate ${shown.gauge >= 3 ? 'is-ready' : ''}`} disabled={disabled || run.gauge < 3} aria-label={`ひっさつ、光${shown.gauge}個、3個で使える`} onClick={() => act({ kind: 'beginSkill' })}><SwordArt tier={run.loadout.sword} special /><strong>ひっさつ</strong><span className="bp-charge-lights" aria-hidden="true">{[0, 1, 2].map(i => <i key={i} className={i < shown.gauge ? 'is-filled' : ''} />)}</span><span className="bp-command-token" aria-hidden="true" /></button>
       <button className="bp-command bp-eat" disabled={busy || !playing || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : `かいふく、パン残り${shown.bread}個`} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
     </section>
+    <DragonStatusBadges effects={shown.effects} />
     {notice && <p className="ep-notice" role="alert">{notice}</p>}<p className="bp-sr-only" role="status" aria-live="polite">{description}</p>
   </div>
   <dialog ref={dialog} className="bp-dialog ep-dialog" aria-labelledby="ep-dialog-title" onCancel={dismissModal} onClose={dismissModal}>
@@ -188,5 +206,6 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       <div className="bp-setup-preview"><span>防具軽減 <b>{(blazeArmorReductionRate(draft.loadout) * 100).toFixed(2)}%</b></span><span>攻撃 <b>{endermanAttackDamage(draft)}</b></span><span>必殺 <b>{endermanAttackDamage(draft, true)}</b></span><span>通常反撃 <b>♥{endermanIncomingDamage({ ...draft, intent: 'approach' }) / 2}</b></span><span>飛びかかり <b>♥{endermanIncomingDamage({ ...draft, intent: 'ambush' }) / 2}</b></span></div>
       <details className="bp-parent-details"><summary>現在の戦闘データ・きろく</summary><p>HP {run.hp}/{run.maxHp}、敵HP {run.enemyHp}/{run.enemyMaxHp}、チケット {run.tickets}枚、支払い済み残り {run.handsLeft}回、パン {run.bread}個、光 {run.gauge}、空振り {run.misses}回。持ち物変更は1行動、反撃・予告変更なし。パンは手数・反撃なし。まもるは50%、盾なら80%軽減。防具の後に掛け、最後に切り上げます。盾は持つだけでは軽減しません。</p><ol>{run.log.map((entry, i) => <li key={i}>{entry}</li>)}</ol></details><div className="bp-dialog-buttons"><button className="bp-secondary-button" onClick={dismissModal}>キャンセル</button><button className="bp-large-button" onClick={() => reset(draft)}>この設定で最初から</button></div>
     </> : null}
-  </dialog>{recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}</main>;
+  </dialog>{recoveryHelp && <BreadRecoveryHelp onClose={() => setRecoveryHelp(false)} />}
+  {!animation && <BattleSkillActivity skills={run.skills} unlocked={run.unlockedSkills ?? ['repel', 'aim']} onAction={act} sound={sound} reduced={reduced} liveToken={liveSkill} />}</main>;
 }

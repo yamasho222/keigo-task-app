@@ -4,7 +4,7 @@ type Props = {
   onDismiss: () => void;
 };
 
-/** 21時のこうざん終了。ベッド画像＋「今日はおしまい」 */
+/** 20時30分のこうざん終了。ベッド画像＋「今日はおしまい」 */
 export function MiningNightEndOverlay({ onDismiss }: Props) {
   return (
     <div

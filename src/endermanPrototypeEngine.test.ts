@@ -9,8 +9,8 @@ function rejected(run: EndermanRun, action: EndermanAction) {
 }
 
 describe('enderman equipment and damage', () => {
-  it('starts one visible 36HP enemy, the same four-action ticket and two breads, without water', () => {
-    expect(createEndermanRun()).toMatchObject({ hp: 20, enemyHp: 36, enemyMaxHp: 36, tickets: 4, handsLeft: 0, bread: 2, gauge: 0, intent: 'warp', item: 'none', pearls: 0 });
+  it('starts one visible 52HP enemy, the same four-action ticket and two breads, without water', () => {
+    expect(createEndermanRun()).toMatchObject({ hp: 20, enemyHp: 52, enemyMaxHp: 52, tickets: 4, handsLeft: 0, bread: 2, gauge: 0, intent: 'warp', item: 'none', pearls: 0 });
     expect(createEndermanRun({ startHp: 'half' }).hp).toBe(10);
   });
   it.each([['diamond', 4, 7], ['netherite', 6, 9]] as const)('%s sword adds water before the ultimate multiplier', (sword, normal, wet) => {
@@ -56,25 +56,25 @@ describe('enderman equipment and damage', () => {
 describe('warp, defense, water and special interaction', () => {
   it('only a telegraphed dry normal attack misses; spends one hand but gains charge, and cannot miss twice in succession', () => {
     const result = actOnEnderman(createEndermanRun(), { kind: 'strike' });
-    expect(result.state).toMatchObject({ enemyHp: 36, hp: 20, tickets: 3, handsLeft: 3, gauge: 1, misses: 1, intent: 'ambush' });
+    expect(result.state).toMatchObject({ enemyHp: 52, hp: 20, tickets: 3, handsLeft: 3, gauge: 1, misses: 1, intent: 'ambush' });
     expect(result.events).toEqual([{ kind: 'miss', amount: 0 }]);
-    const next = step(result.state, 'strike'); expect(next).toMatchObject({ enemyHp: 32, gauge: 2, intent: 'opening', hp: 6 });
+    const next = step(result.state, 'strike'); expect(next).toMatchObject({ enemyHp: 48, gauge: 2, intent: 'opening', hp: 6 });
     expect(next.misses).toBe(1);
   });
   it('guarding a warp creates a guaranteed, counter-free opening without damaging the enemy or building gauge', () => {
     const guarded = step(createEndermanRun(), 'guard');
-    expect(guarded).toMatchObject({ intent: 'opening', hp: 20, enemyHp: 36, gauge: 0, handsLeft: 3 });
-    const hit = step(guarded, 'strike'); expect(hit).toMatchObject({ enemyHp: 32, hp: 20, intent: 'approach', gauge: 1 });
+    expect(guarded).toMatchObject({ intent: 'opening', hp: 20, enemyHp: 52, gauge: 0, handsLeft: 3 });
+    const hit = step(guarded, 'strike'); expect(hit).toMatchObject({ enemyHp: 48, hp: 20, intent: 'approach', gauge: 1 });
   });
   it.each(['warp', 'ambush', 'approach', 'opening'] as const)('ultimate catches %s, stops the counter, then gives an opening', intent => {
     const before = { ...createEndermanRun(), intent, gauge: 3 };
     const result = actOnEnderman(before, { kind: 'ultimate' });
-    expect(result.state).toMatchObject({ enemyHp: 28, hp: 20, gauge: 0, intent: 'opening', misses: 0 });
+    expect(result.state).toMatchObject({ enemyHp: 44, hp: 20, gauge: 0, intent: 'opening', misses: 0 });
     expect(result.events.map(e => e.kind)).toEqual(['hit', 'pin']);
   });
   it('water prevents the dodge and gives +3 damage with a visible splash event', () => {
     const result = actOnEnderman(createEndermanRun({ item: 'water' }), { kind: 'strike' });
-    expect(result.state).toMatchObject({ enemyHp: 29, hp: 20, misses: 0, intent: 'opening', gauge: 1 });
+    expect(result.state).toMatchObject({ enemyHp: 45, hp: 20, misses: 0, intent: 'opening', gauge: 1 });
     expect(result.events.map(e => e.kind)).toEqual(['hit', 'splash']);
   });
   it('equipping spends one action each, without healing, intent reroll or an enemy reset', () => {
@@ -88,12 +88,12 @@ describe('warp, defense, water and special interaction', () => {
       expect(run.turn).toBe(original.turn + changes);
       expect(run.tickets * 4 + run.handsLeft).toBe(original.tickets * 4 + original.handsLeft - changes);
     }
-    expect(step(run, 'strike')).toMatchObject({ enemyHp: 29, hp: 5, intent: 'opening' });
+    expect(step(run, 'strike')).toMatchObject({ enemyHp: 45, hp: 5, intent: 'opening' });
   });
   it('eating never rerolls the telegraph, charges light, or uses a hand/ticket', () => {
     const before = { ...step(createEndermanRun(), 'strike'), hp: 5 };
     const next = step(before, 'eat');
-    expect(next).toMatchObject({ hp: 15, bread: 1, tickets: 3, handsLeft: 3, turn: 1, gauge: 1, intent: 'ambush', enemyHp: 36 });
+    expect(next).toMatchObject({ hp: 15, bread: 1, tickets: 3, handsLeft: 3, turn: 1, gauge: 1, intent: 'ambush', enemyHp: 52 });
     expect(step(next, 'eat')).toMatchObject({ hp: 20, bread: 0 }); rejected(step(next, 'eat'), { kind: 'eat' });
   });
 });
@@ -117,7 +117,7 @@ describe('ticket boundaries, outcomes and balance', () => {
   it('only grants a pearl on a kill, clamps overkill, skips the counter and pays once', () => {
     const run = { ...createEndermanRun(), enemyHp: 1, intent: 'approach' as const };
     const result = actOnEnderman(run, { kind: 'strike' });
-    expect(result.state).toMatchObject({ enemyHp: 0, phase: 'won', hp: 20, handsLeft: 0, pearls: 1 });
+    expect(result.state).toMatchObject({ enemyHp: 0, phase: 'won', hp: 20, handsLeft: 3, pearls: 1 });
     expect(result.events).toEqual([{ kind: 'hit', amount: 1 }, { kind: 'kill', amount: 1 }]);
     rejected(result.state, { kind: 'strike' }); rejected(result.state, { kind: 'equip', item: 'water' });
   });
@@ -131,8 +131,8 @@ describe('ticket boundaries, outcomes and balance', () => {
   it.each(['diamond', 'netherite'] as const)('wins with water + %s sword, and stronger swords save tickets', sword => {
     let run = createEndermanRun({ item: 'water', loadout: { sword, armor: blazeFullArmor('iron') } });
     for (let i = 0; i < 16 && run.phase === 'battle'; i++) run = step(run, run.gauge === 3 ? 'ultimate' : 'strike');
-    expect(run).toMatchObject({ phase: 'won', hp: 18, pearls: 1, misses: 0, bread: 2 });
-    expect(run.turn).toBe(sword === 'diamond' ? 5 : 4); expect(run.tickets).toBe(sword === 'diamond' ? 2 : 3);
+    expect(run).toMatchObject({ phase: 'won', hp: sword === 'diamond' ? 16 : 18, pearls: 1, misses: 0, bread: 2 });
+    expect(run.turn).toBe(sword === 'diamond' ? 7 : 5); expect(run.tickets).toBe(2);
   });
   it('dry iron armor cannot survive accepting a heavy hit then relying on unshielded guard alone', () => {
     let run = createEndermanRun();
@@ -146,7 +146,7 @@ describe('ticket boundaries, outcomes and balance', () => {
   it('cannot win by guarding forever, and the dry reckless strategy is dangerous', () => {
     let guarded = createEndermanRun(), reckless = createEndermanRun();
     for (let i = 0; i < 16; i++) guarded = step(guarded, 'guard');
-    expect(guarded).toMatchObject({ enemyHp: 36, phase: 'lost', handsLeft: 0, gauge: 0, hp: 0 });
+    expect(guarded).toMatchObject({ enemyHp: 52, phase: 'lost', handsLeft: 0, gauge: 0, hp: 0 });
     for (let i = 0; i < 16 && reckless.phase === 'battle'; i++) reckless = step(reckless, reckless.gauge === 3 ? 'ultimate' : 'strike');
     expect(reckless.phase).toBe('lost'); expect(reckless.pearls).toBe(0);
   });
@@ -181,7 +181,7 @@ describe('ticket boundaries, outcomes and balance', () => {
         expect(run.gauge).toBeGreaterThanOrEqual(0); expect(run.gauge).toBeLessThanOrEqual(3);
         expect(run.pearls).toBe(run.phase === 'won' ? 1 : 0);
         expect(result.events.filter(e => e.kind === 'hit').reduce((sum, e) => sum + e.amount, 0)).toBe(before.enemyHp - run.enemyHp);
-        if (run.phase !== 'battle') expect(run.handsLeft).toBe(0);
+        if (run.phase === 'lost' || run.phase === 'returned') expect(run.handsLeft).toBe(0);
       }
     }
   });
