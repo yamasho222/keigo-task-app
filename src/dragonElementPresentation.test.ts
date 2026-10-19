@@ -45,7 +45,7 @@ describe('independent high-detail elemental textures', () => {
   });
   it.each(kinds)('%s waits for image readiness without starting the minigame clock', kind => {
     const html = renderToStaticMarkup(createElement(DragonSkillGame, { kind, reduced: false, onDone: () => undefined }));
-    expect(html).toContain('じゅんびちゅう'); expect(html).toContain('残り6秒'); expect(html).not.toContain('<canvas');
+    expect(html).toContain('じゅんびちゅう'); expect(html).toContain(kind === 'repel' ? 'のこり1球' : '残り6秒'); expect(html).not.toContain('<canvas');
   });
   it('keeps a URL-only legacy fallback without changing saves', () => {
     expect(richElementEnabled('?dragon-campaign=1')).toBe(true); expect(richElementEnabled('?skill-art=legacy')).toBe(false);

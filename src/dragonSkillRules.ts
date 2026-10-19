@@ -7,7 +7,7 @@ export type DragonSkillKind = typeof SKILL_KINDS[number];
 export type SavedDragonSkillKind = DragonSkillKind | 'trace';
 export const SAVED_SKILL_KINDS: readonly SavedDragonSkillKind[] = [...SKILL_KINDS, 'trace'];
 export const playableSkill = (kind: SavedDragonSkillKind): DragonSkillKind => kind === 'trace' ? 'repel' : kind;
-export const SKILL_NAMES: Record<DragonSkillKind, string> = { burst: 'れんだ', gauge: 'ゲージ', repel: 'うちかえす', aim: 'ねらう' };
+export const SKILL_NAMES: Record<DragonSkillKind, string> = { burst: 'れんだ', gauge: 'ゲージ', repel: 'ひっぱる', aim: 'ねらう' };
 export const SKILL_TITLES: Record<DragonSkillKind, string> = { burst: 'れっかの つるぎ', gauge: 'いかずちの つるぎ', repel: 'そうりゅうの いちげき', aim: 'せんこうの いちげき' };
 export const skillAt = (casts: number): DragonSkillKind => SKILL_KINDS[Math.max(0, Math.floor(casts)) % SKILL_KINDS.length];
 export const SKILL_DURATION = 6000;
