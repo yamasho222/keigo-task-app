@@ -9,9 +9,9 @@
 .br-reward .br-content h2 { margin:2px 0; color:#fff2c8; font-size:clamp(24px,6vw,34px); line-height:1.25; text-shadow:0 3px 12px #0009; background:none; border:0; }
 .br-reward .br-content .br-item-name { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:10px; margin:3px 0 0; color:#f6e7d4; font-size:15px; font-weight:700; line-height:1.5; }
 .br-item-name strong { color:#ffe2a0; font-size:20px; font-variant-numeric:tabular-nums; }
-.bp-arena>.bp-result-won { padding:0 0 16px; background:#17131e; overflow:auto; justify-content:safe center; }
+.bp-arena>.bp-result-won { padding:0 0 16px; gap:10px; background:#17131e; overflow:auto; justify-content:safe center; }
 .bp-result-won>.br-reward { position:relative; flex-shrink:0; }
-.bp-result-won>.bp-large-button,.bp-result-won>.ep-result-buttons { margin:0 12px; flex-shrink:0; }
+.bp-result-won>.bp-large-button,.bp-result-won>.bp-secondary-button,.bp-result-won>.ep-result-buttons { margin:0 12px; flex-shrink:0; }
 .dc-result.dc-win { padding:0; background:#17131e; }
 .dc-win>.dc-quiet-button { display:block; position:relative; z-index:1; margin:0 auto 18px; min-width:160px; }
 @keyframes br-reveal { from { opacity:0; transform:translateY(14px) scale(.8) rotate(-8deg); } to { opacity:1; transform:none; } }

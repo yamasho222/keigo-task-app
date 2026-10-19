@@ -16,10 +16,17 @@ function localDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 20:30:00 以降〜翌朝 6:30:00 手前 */
+/** 21:00:00 以降〜翌朝 6:30:00 手前 */
 export function isMiningNightHours(now: Date): boolean {
   const minutes = minutesOfDay(now);
   return minutes >= NIGHT_PLAY_LOCK_START_MINUTES || minutes < BEDTIME_CLAIM_MINUTES;
+}
+
+/** Battles stop first. Never spend a ticket merely to stop for the night. */
+export function isBattleNightLocked(opts: { enabled: boolean; now?: Date }): boolean {
+  if (!opts.enabled) return false;
+  const minutes = minutesOfDay(opts.now ?? new Date());
+  return minutes >= 20 * 60 + 30 || minutes < BEDTIME_CLAIM_MINUTES;
 }
 
 export function isMiningNightLocked(opts: {
@@ -30,7 +37,7 @@ export function isMiningNightLocked(opts: {
   return isMiningNightHours(opts.now ?? new Date());
 }
 
-/** 20:30〜翌6:30 を同じ夜として扱うキー（6:30 未満は前日） */
+/** 21:00〜翌6:30 を同じ夜として扱うキー（6:30 未満は前日） */
 export function miningNightLockNightKey(now: Date): string {
   const d = new Date(now.getTime());
   if (minutesOfDay(d) < BEDTIME_CLAIM_MINUTES) {

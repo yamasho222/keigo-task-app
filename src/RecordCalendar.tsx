@@ -18,11 +18,12 @@ import {
 } from "./japaneseCalendar";
 import { formatCatchUpDateLabel, isCatchUpEligible } from "./catchUp";
 
-export interface DayHistory { morning: boolean; daytime: boolean; home: boolean; evening: boolean; }
+export interface DayHistory { morning: boolean; daytime: boolean; home: boolean; evening: boolean; homeRetired?: boolean; }
 
 export type SickSkipMap = Record<string, DayHistory>;
 
 interface SessionFlags {
+  homeRetired?: boolean;
   morning: boolean;
   daytime: boolean;
   home: boolean;
@@ -31,6 +32,7 @@ interface SessionFlags {
 
 function getSessionFlags(day?: DayHistory): SessionFlags {
   return {
+    homeRetired: day ? day.homeRetired : true,
     morning: !!day?.morning,
     daytime: !!day?.daytime,
     home: !!day?.home,
@@ -214,7 +216,7 @@ function cellStyle(
   isBridge = false,
 ): CSSProperties {
   const count = completedSessionCount(flags, date);
-  const required = requiredSessionCount(date);
+  const required = requiredSessionCount(date, flags);
   const withDaytime = isDaytimeSessionDay(date);
   const base: CSSProperties = {
     aspectRatio: "1",
@@ -239,6 +241,11 @@ function cellStyle(
   const m = flags.morning ? theme.category.yellow : theme.fill.secondary;
   const h = flags.home ? theme.category.orange : theme.fill.secondary;
   const e = flags.evening ? `${theme.category.purple}88` : theme.fill.secondary;
+  if (flags.homeRetired) {
+    const colors = withDaytime ? [m, flags.daytime ? theme.category.blue : theme.fill.secondary, e] : [m, e];
+    const stops = colors.map((color, i) => `${color} ${i / colors.length * 100}%, ${color} ${(i + 1) / colors.length * 100}%`).join(', ');
+    return { ...base, background: `linear-gradient(180deg, ${stops})`, color: theme.text.primary };
+  }
   if (!withDaytime) {
     return {
       ...base,
@@ -262,7 +269,7 @@ function cellIcon(
   isBridge = false,
 ) {
   const count = completedSessionCount(flags, date);
-  const required = requiredSessionCount(date);
+  const required = requiredSessionCount(date, flags);
   if (count === required) {
     if (isBridge) return <span style={{ fontSize: 11, fontWeight: 800 }}>休</span>;
     return isLate ? "🕘" : "⭐";
@@ -466,7 +473,7 @@ export function RecordScreen({
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", fontSize: 11, color: theme.text.tertiary }}>
         <span>🌅 朝</span>
         <span>🌤 昼（土日・祝日）</span>
-        <span>🏠 帰宅後</span>
+        <span>🏠 帰宅後（過去の記録）</span>
         <span>🌙 夜</span>
         <span>⭐ きょうは{todayRequired}つ全部</span>
         <span>休 体調スキップ（連続は途切れない）</span>

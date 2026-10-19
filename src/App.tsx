@@ -136,6 +136,8 @@ import {
   isSpecialRewardFloor, normalizeOneOffSpecialTreatPending,
 } from "./sharedTasks";
 import { editTaskPlacement, moveTaskInList, remapTaskRecord } from "./taskEditing";
+import { approveRetiredCatchUpHistory, retireHomeSession, type HomeRetirement } from './homeSessionRetirement';
+import { grantFullDayTickets } from './fullDayTickets';
 import {
   getPendingRewardItems,
   mergeQueueIntoPendingMaps,
@@ -352,7 +354,7 @@ function isSessionScreen(s: ScreenId): s is SessionId {
 }
 
 function emptyDayHistory(): DayHistory {
-  return { morning: false, daytime: false, home: false, evening: false };
+  return { morning: false, daytime: false, home: false, evening: false, homeRetired: true };
 }
 
 const CELEB_TYPES: CelebType[] = ["confetti", "burst", "stripes", "bars", "diagonal"];
@@ -373,6 +375,7 @@ const FLOAT_COLORS = [
 // ── localStorage ──────────────────────────────────────
 
 interface StoredState {
+  homeRetirement?: HomeRetirement;
   date: string;
   morningDone: number[];
   daytimeDone: number[];
@@ -808,9 +811,10 @@ function resolveOneOffFloorFromTaskLists(
 
 function hydrateStoredState(data: StoredState): StoredState {
   const lists = normalizeAllTaskLists(data);
-  return {
+  return retireHomeSession({
     ...data,
     ...lists,
+    history: data.history ?? {},
     morningDone: data.morningDone ?? [],
     daytimeDone: data.daytimeDone ?? [],
     eveningDone: data.eveningDone ?? [],
@@ -832,7 +836,7 @@ function hydrateStoredState(data: StoredState): StoredState {
     parentRescuePassword: normalizeParentRescuePassword(data.parentRescuePassword),
     miningNightLockEnabled: normalizeMiningNightLockEnabled(data.miningNightLockEnabled),
     compensationClaims: data.compensationClaims ?? {},
-  };
+  }, todayKey());
 }
 
 function loadStoredState(childId?: string): StoredState {
@@ -870,7 +874,7 @@ function loadStoredState(childId?: string): StoredState {
       };
     }
   } catch { /* ignore */ }
-  return {
+  return hydrateStoredState({
     ...freshCompletionSlice(
       MORNING_TASKS_DEFAULT,
       DAYTIME_TASKS_DEFAULT,
@@ -879,7 +883,7 @@ function loadStoredState(childId?: string): StoredState {
     ),
     history: {},
     sessionSickSkip: {},
-  };
+  });
 }
 
 function getVisibleSessionTabs(d = new Date()) {
@@ -902,7 +906,6 @@ function getSessionScreen(now = new Date()): SessionId {
   const h = now.getHours();
   if (h < 12) return "morning";
   if (h < 16 && isDaytimeSessionDay(now)) return "daytime";
-  if (h < 19) return "home";
   return "evening";
 }
 
@@ -1565,6 +1568,7 @@ function rememberCustomTaskEmoji(prev: string[], emoji: string): string[] {
 export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) {
   const storageChildId = cloud?.childId;
   const stored = loadStoredState(storageChildId);
+  const [homeRetirement] = useState(stored.homeRetirement);
 
   const [screen,         setScreen]         = useState<ScreenId>(getInitialScreen());
   const [morningTasks,   setMorningTasks]   = useState<Task[]>(stored.morningTasks ?? MORNING_TASKS_DEFAULT);
@@ -1719,6 +1723,13 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     setShowMiningNightEnd(true);
     return true;
   };
+  const commitMiningGameplay = useCallback((patch: (prev: MiningState) => MiningState) => {
+    if (!import.meta.env.DEV && isMiningNightLocked({ enabled: miningNightLockEnabled })) {
+      setShowMiningNightEnd(true);
+      return;
+    }
+    commitMining(patch);
+  }, [commitMining, miningNightLockEnabled]);
   const [compensationClaims, setCompensationClaims] = useState<Record<string, boolean>>(
     stored.compensationClaims ?? {},
   );
@@ -2077,6 +2088,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
   // ── localStorage save ──
   useEffect(() => {
     const state: StoredState = {
+      homeRetirement,
       date: taskDayKey(),
       morningDone:    [...morningDone],
       daytimeDone:    [...daytimeDone],
@@ -2147,6 +2159,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     cloud?.saveState(state, stickerAlbum);
   }, [
     storageChildId,
+    homeRetirement,
     cloud?.saveState,
     morningDone, daytimeDone, eveningDone, homeDone,
     morningSkipped, daytimeSkipped, eveningSkipped, homeSkipped,
@@ -3223,7 +3236,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (granted > 0) showMiningTicketToast(granted);
   };
 
-  /** 全日クリア＋4連ストリーク票 */
+  /** 全日クリア2枚＋4連ストリーク票。締切・体調スキップの条件は維持 */
   const grantMiningTicketsForFullDay = (
     date: string,
     newHistory: Record<string, DayHistory>,
@@ -3235,13 +3248,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const beforeTickets = miningRef.current.tickets;
     commitMining((prev) => {
       let next = prev;
-      if (!next.fullDayTicketClaimed[date]) {
-        next = addTickets(next, 1);
-        next = {
-          ...next,
-          fullDayTicketClaimed: { ...next.fullDayTicketClaimed, [date]: true },
-        };
-      }
+      next = grantFullDayTickets(next, date);
       const streak = getFullDayStreak(newHistory, lateDays, sessionSickSkip);
       if (streak > 0 && streak % 4 === 0 && !next.streakTicketClaimed[streak]) {
         next = addTickets(next, 1);
@@ -4146,7 +4153,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     if (approved) return;
     const today = todayKey();
     const prev = history[today] ?? emptyDayHistory();
-    let updatedDay = { ...prev };
+    let updatedDay = { ...prev, homeRetired: true };
     sessionState[parentSession].setApproved(true);
     updatedDay = { ...updatedDay, [parentSession]: true };
     const newHistory = { ...history, [today]: updatedDay };
@@ -4305,7 +4312,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
     const dateKey = activeCatchUpDate;
     const prev = history[dateKey] ?? emptyDayHistory();
     setContextApproved(parentSession, true);
-    const updatedDay = { ...prev, [parentSession]: true };
+    const updatedDay = approveRetiredCatchUpHistory(prev, parentSession);
     const newHistory = { ...history, [dateKey]: updatedDay };
     setHistory(newHistory);
     applyCatchUpStreakRewards(dateKey, newHistory);
@@ -4324,7 +4331,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
       bulkCompleteCatchUpDay(day, sessionTasksRecord, catchUpDate, sessions),
     );
     const prev = history[dateKey] ?? emptyDayHistory();
-    const updatedDay = { ...prev };
+    const updatedDay = { ...prev, homeRetired: true };
     for (const sid of sessions) updatedDay[sid] = true;
     const newHistory = { ...history, [dateKey]: updatedDay };
     setHistory(newHistory);
@@ -4464,6 +4471,7 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
           setShowMiningNightEnd(true);
           miningNightEndShownRef.current = nightKey;
         }
+        setScreen(getSessionScreen());
         return;
       }
       setShowPendingRewardsSheet(false);
@@ -5799,7 +5807,8 @@ export default function KeigoTaskApp({ cloud }: { cloud?: ActiveChildContext }) 
             stickerAlbum={stickerAlbum}
             buddyProgress={buddyProgress}
             dateKey={todayKey()}
-            onChange={commitMining}
+            onChange={commitMiningGameplay}
+            nightLockEnabled={!import.meta.env.DEV && miningNightLockEnabled}
             onBack={goHome}
             devJump={miningDevJump}
             onDevJumpConsumed={() => setMiningDevJump(null)}
@@ -6963,7 +6972,7 @@ function SessionMultiPicker({
         2つ以上選ぶと共有タスク（1日1回）になります
       </div>
       <div style={{ display: "flex", gap: 6 }}>
-        {SESSION_IDS.map((sid) => (
+        {SESSION_IDS.filter(sid => sid !== 'home').map((sid) => (
           <button key={sid} type="button" onClick={() => toggle(sid)} style={chipStyle(selected.includes(sid))}>
             {SESSION_SHORT_LABELS[sid]}
           </button>
@@ -7490,6 +7499,7 @@ function TaskScreen({
         }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: theme.text.primary, lineHeight: 1.2, flex: 1, minWidth: 0 }}>
             {label}
+            {!catchUpMode && <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, fontWeight: 600, color: theme.accent.primary }}>⭐ 1日のタスクをぜんぶできたら 🎫＋2</div>}
           </div>
           {!catchUpMode && (onSickSkip || onCancelSickSkip) && (sickSkipActive || !sessionApproved) && (
             <button

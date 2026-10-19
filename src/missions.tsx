@@ -479,7 +479,7 @@ export function MissionBriefingOverlay({
           {mission.title}
         </div>
         <div style={{ fontSize: 14, color: theme.text.secondary, marginBottom: 24 }}>
-          すべての時間（朝・帰宅・夜など）で親のハンコがそろったら、レア以上のごほうび！
+          すべての時間（朝・夜、休日は昼も）で親のハンコがそろったら、レア以上のごほうび！
         </div>
         <button type="button" onClick={onDismiss} style={{
           width: "100%", padding: "14px", borderRadius: 12, border: "none",

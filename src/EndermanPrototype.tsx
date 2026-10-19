@@ -179,6 +179,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       {!playing && !busy && <div className={`bp-result bp-result-${run.phase}`}>
         {run.phase === 'won' ? <BattleReward enemy="エンダーマン" item="エンダーパール" image="/mining/Ender_Pearl.png" variant="enderman" headingRef={resultTitle} reduced={reduced} /> : <><div className="bp-result-picture" aria-hidden="true"><img src="/mining/Steve.png" alt="" /></div><h2 ref={resultTitle} tabIndex={-1}>{run.phase === 'lost' ? 'また ちょうせん！' : 'ただいま！'}</h2></>}
         {run.phase === 'lost' && !wet && <div className="ep-result-clue"><EndermanCluePicture /><p>{defeats >= 2 ? 'もっていけるものは、けんだけじゃ ないみたい。' : 'あそこには、ちかづかなかったね…。'}</p></div>}
+        {production && run.phase === 'won' && <button type="button" className="bp-secondary-button" onClick={production.onClose}><BattleIcon kind="back" />かえる</button>}
         <div className="ep-result-buttons"><button className="bp-secondary-button" onClick={() => setModal('gear')}><EndermanItemArt item={run.item} />そうび</button><button className="bp-large-button" onClick={() => reset()}><BattleIcon kind="replay" />{production && run.phase === 'lost' ? '1まいで おきあがる（ハート5・4かい）' : 'もういちど'}</button></div>
         {!production && <a className="ep-other-battle" href="?blaze-prototype=1">ブレイズの おためしへ</a>}
       </div>}
