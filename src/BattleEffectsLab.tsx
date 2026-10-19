@@ -51,6 +51,7 @@ export default function BattleEffectsLab() {
             <button style={{ minHeight: 64 }} onClick={() => { const s = dragonCampaignFixture('victory', new Date().toLocaleDateString('sv-SE'), true); s.rescueSeen = true; s.bodyHp = 1; dragonRef.current = s; setDragon(s); setMode('dragon'); }}>エンドラ撃破直前</button>
             <button style={{ minHeight: 64 }} onClick={() => setMode('guard')}>守る演出の確認</button>
             <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills(createBlazeRun({ item: 'shield' }), ['repel']); s.enemies[0].intent = 'burst'; blazeRef.current = s; setBlaze(s); setMode('blaze'); }}>盾あり・大きな火球</button>
+            <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills(createBlazeRun(), ['repel']); s.gauge = 3; blazeRef.current = s; setBlaze(s); setMode('blaze'); }}>ブレイズ・水の必殺</button>
           </div>
           <p>Lv10が3体。通常の追撃は1体ずつ75%で1、20%で2、5%で3。必殺は1体3で合計9。</p>
           <p><a href="?adventure-release=1" style={{ color: '#badeff' }}>段階解放・HP・チケット持ち越しを実際の戦闘管理で確認する</a></p>

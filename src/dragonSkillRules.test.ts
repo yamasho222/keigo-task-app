@@ -189,7 +189,7 @@ describe('one persisted ultimate transaction, no double payment or replay', () =
 describe('skill screens and complete-battle balance', () => {
   it.each(SKILL_KINDS)('renders %s with pictures, a timeout indicator and an early-release escape', kind => {
     const html = renderToStaticMarkup(createElement(DragonSkillGame, { kind, onDone: () => undefined, reduced: false }));
-    expect(html).toContain('残り6秒'); expect(html).toContain('このまま はなつ'); expect(html).toContain('<svg'); expect(html).not.toContain('じゅんばん');
+    expect(html).toContain(kind === 'repel' ? 'のこり1球' : '残り6秒'); expect(html).toContain('このまま はなつ'); expect(html).toContain('<svg'); expect(html).not.toContain('じゅんばん');
   });
   it('shows an interrupted game as release-only rather than allowing a free retry', () => {
     const html = renderToStaticMarkup(createElement(DragonSkillGame, { kind: 'gauge', onDone: () => undefined, reduced: true, resumed: true }));

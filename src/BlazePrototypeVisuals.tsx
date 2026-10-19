@@ -80,7 +80,7 @@ export function BlazeUltimateFx({ stage, tier = 'diamond', intent = 'burst', dem
 }
 
 export function BattleDemo({ lesson }: { lesson: number }) {
-  return <div key={lesson} className={`bp-demo bp-demo-${lesson}`} aria-label={['剣で攻撃すると敵の体力が減り、必殺の光がたまる実演', 'まもると火球のダメージが減る実演。完全ガードではない', 'パンを1個食べてハートが回復する実演', `チケット1枚が${BLAZE_ACTIONS_PER_TICKET}回の行動になる実演。攻撃・守る・必殺に共通`, '光が3個たまると水の必殺で玉を打ち返し、続く2回の攻撃のダメージを半分にする実演', '火を集めた次は大きな火球。敵の様子が変わる実演'][lesson]} role="img">
+  return <div key={lesson} className={`bp-demo bp-demo-${lesson}`} aria-label={['剣で攻撃すると敵の体力が減り、必殺の光がたまる実演', 'まもると火球のダメージが減る実演。完全ガードではない', 'パンを1個食べてハートが回復する実演', `チケット1枚が${BLAZE_ACTIONS_PER_TICKET}回の行動になる実演。攻撃・守る・必殺に共通`, '光が3個たまると水の必殺で引っ張って泡を割り、続く2回の攻撃のダメージを半分にする実演', '火を集めた次は大きな火球。敵の様子が変わる実演'][lesson]} role="img">
     {lesson === 0 ? <><div className="bp-demo-enemy"><div className="bp-demo-hp"><i /></div><img src="/mining/Blaze.webp" alt="" /></div><div className="bp-demo-sword"><SwordArt /></div><span className="bp-demo-charge-dot" /></>
     : lesson === 1 ? <><Hearts hp={13} previousHp={20} /><span className="bp-demo-fire"><BlazeTelegraph intent="burst" /></span><div className="bp-demo-shield"><GuardArt /></div></>
     : lesson === 2 ? <><div className="bp-demo-bread"><BattleIcon kind="bread" /></div><div className="bp-demo-recovery"><Hearts hp={10} /><div><Hearts hp={20} /></div></div></>
