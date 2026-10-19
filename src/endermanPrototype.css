@@ -31,7 +31,7 @@
 .ep-intent-ambush:not(.ep-is-wet) .ep-enderman-sprite { filter:drop-shadow(0 0 2px #efd3f5) drop-shadow(0 0 11px #a33c91); }
 .ep-telegraph { position:absolute; z-index:5; width:98px; height:114px; left:76%; top:4%; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#e8d4ff; filter:drop-shadow(0 2px 3px #173037); }
 .ep-telegraph>svg { width:86px; height:72px; fill:none; stroke:currentColor; stroke-width:5; stroke-linecap:round; stroke-linejoin:round; }
-.ep-telegraph>span { white-space:nowrap; font-size:12px; padding:3px 7px; border-radius:8px; color:#fff; background:#283f50e8; }
+.ep-telegraph>span:not(.bf-mark) { white-space:nowrap; font-size:12px; padding:3px 7px; border-radius:8px; color:#fff; background:#283f50e8; }
 .ep-ghost-mark { stroke-dasharray:4 6; }
 .ep-sign-ambush { color:#ffc2c8; }
 .ep-sign-ambush>b { position:absolute; top:-2px; right:5px; font-size:35px; color:#fff2df; background:#92465c; border:2px solid #ffb6c5; border-radius:10px; width:31px; text-align:center; line-height:36px; }
@@ -117,7 +117,7 @@
   .ep-gear-button .ep-item-art,.ep-gear-button .ep-empty-hand { width:25px; height:25px; }
   .ep-telegraph { width:74px; height:94px; left:75%; top:0; }
   .ep-telegraph>svg { width:66px; height:60px; }
-  .ep-telegraph>span { font-size:10px; padding:2px 5px; }
+  .ep-telegraph>span:not(.bf-mark) { font-size:10px; padding:2px 5px; }
   .ep-sign-ambush>b { font-size:25px; width:25px; line-height:28px; }
   .ep-forest-hollow { left:0; width:34%; height:27%; }
   .ep-pond-equipped { left:8%; width:84%; height:40%; bottom:-3%; }

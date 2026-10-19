@@ -13,6 +13,7 @@ import { maxHp, upgradeCampaign, type CampaignEquipment, type CampaignSupplies }
 import { readAdventure, type AdventureState, type AdventureLocation } from './adventureState';
 import { refreshUnlocks } from './miningProgress';
 import { getMaterialCount, type MiningState } from './miningTypes';
+import { freshBattleLearning, learnOnEncounter, migrateBattleLearning } from './battleLearning';
 
 export const PRODUCTION_DRAGON_HP = 2700;
 export type AdventureCommand = { revision: number; day: string; location: AdventureLocation } & (
@@ -49,22 +50,24 @@ function nextHeldItem(mining: MiningState): 'none' | 'shield' | 'water' {
 }
 export function ensureAdventure(mining: MiningState, day: string): MiningState {
   if (!validCampaignDay(day)) throw new Error('Invalid adventure day');
-  const current = readAdventure(mining.adventure);
-  if (current) {
-    if (day <= current.day || [current.dragon, current.blaze, current.enderman].some(run => run?.skills?.pending)) return mining;
-    return { ...mining, adventure: { ...current, day, hp: maxHp(adventureEquipment(mining)), foodToday: 0, fallen: false, revision: current.revision + 1 } };
+  const stored = readAdventure(mining.adventure);
+  if (stored) {
+    const current = { ...stored, learning: migrateBattleLearning(stored, mining.unlockedGachas) };
+    const prepared = stored.learning ? mining : { ...mining, adventure: current };
+    if (day <= current.day || [current.dragon, current.blaze, current.enderman].some(run => run?.skills?.pending)) return prepared;
+    return { ...prepared, adventure: { ...current, day, hp: maxHp(adventureEquipment(prepared)), foodToday: 0, fallen: false, revision: current.revision + 1 } };
   }
   const hp = mining.playerHpDate && mining.playerHpDate < day ? 20 : Math.min(20, mining.playerHp ?? 20);
   const legacyHand = Object.values(mining.combatProgress ?? {}).some(progress => progress?.attackStep === 1 || progress?.freeFirstAttack) ? 1 : 0;
   return { ...mining, adventure: { version: 1, revision: 0, day, hp, hands: hp > 0 ? legacyHand : 0, gauge: Math.min(3, mining.specialGauge ?? 0),
-    foodToday: 0, fallen: hp === 0, seed: 10617, endermanDefeats: 0, lessons: {}, attack: { kind: 'none', rank: 0 }, defense: { kind: 'none', rank: 0 } } };
+    foodToday: 0, fallen: hp === 0, seed: 10617, endermanDefeats: 0, lessons: {}, learning: freshBattleLearning(), attack: { kind: 'none', rank: 0 }, defense: { kind: 'none', rank: 0 } } };
 }
 function hydrate(mining: MiningState, s: AdventureState, location: AdventureLocation, buddies: BuddyProgressMap) {
   const eq = adventureEquipment({ ...mining, adventure: s }, buddies), supplies = adventureSupplies(mining);
   const loadout: BlazeLoadout = { sword: eq.sword, armor: eq.armor, magic: { attack: eq.attack, defense: eq.defense } };
   const bread = Math.min(supplies.materials.bread ?? 0, 2 - s.foodToday), hp = Math.min(s.hp, maxHp(eq));
   const common = { hp, maxHp: maxHp(eq), tickets: mining.tickets, handsLeft: s.hands, gauge: s.gauge, bread, loadout };
-  const unlocked = unlockedBattleSkills(mining.unlockedGachas);
+  const unlocked = s.learning?.learned ?? unlockedBattleSkills(mining.unlockedGachas);
   const critical = s.critical ?? s.dragon?.critical ?? s.blaze?.critical ?? s.enderman?.critical ?? { version: 1 as const, seed: (s.seed ^ 0x9e3779b9) >>> 0 };
   if (location === 'fortress') {
     const run = structuredClone(s.blaze?.phase === 'lost' && !s.fallen ? createBlazeRun({ loadout }) : s.blaze ?? createBlazeRun({ loadout }));
@@ -111,6 +114,7 @@ export function transitionAdventure(input: MiningState, command: AdventureComman
   let mining: MiningState;
   try { mining = ensureAdventure(input, command.day); } catch { return reject('記録を上書きせず停止しました。更新を確認してください。'); }
   const s = structuredClone(mining.adventure!);
+  if (s.learning?.pending && !(command.location === s.learning.pending.location && (command.kind === 'lesson' || command.kind === 'enter'))) return reject('えの せつめいを みてから たたかおう。');
   const pendingLocation = s.dragon?.skills?.pending ? 'dragon' : s.blaze?.skills?.pending ? 'blaze' : s.enderman?.skills?.pending ? 'enderman' : null;
   if (pendingLocation && !(command.kind === pendingLocation && 'action' in command && ['releaseSkill', 'chooseSkill', 'cancelSkill'].includes(command.action.kind))) return reject('ひっさつを はなってから つづけよう。');
   let next = { ...mining, materials: { ...mining.materials }, crafted: { ...mining.crafted } };
@@ -131,7 +135,11 @@ export function transitionAdventure(input: MiningState, command: AdventureComman
     return { state: refreshUnlocks(next), ...(outcome ? { outcome } : {}) };
   };
   let outcome: AdventureResult['outcome'];
-  if (command.kind === 'lesson') { s.lessons[command.location] = true; return save(); }
+  if (command.kind === 'lesson') {
+    s.lessons[command.location] = true;
+    if (s.learning) s.learning = { ...s.learning, seen: { ...s.learning.seen, [command.location]: true }, pending: null };
+    return save();
+  }
   if (command.kind === 'magic' || command.kind === 'upgrade') {
     if (!next.crafted.enchanting_table) return reject('まほうのテーブルを つくろう。');
     if (command.kind === 'magic' && s.dragon && s.dragon.status !== 'won' && !s.dragon.safePreparation) return reject('たたかいの くぎりで かえよう。');
@@ -158,6 +166,7 @@ export function transitionAdventure(input: MiningState, command: AdventureComman
     if (s.dragon?.status === 'lost') s.dragon.status = 'paused';
     return save();
   }
+  if ((command.kind === 'enter' || command.kind === 'next') && !s.fallen && s.learning) s.learning = learnOnEncounter(s.learning, command.location);
   const projected = hydrate(next, s, command.location, buddies);
   if (command.kind === 'enter' || command.kind === 'next') {
     if (projected.kind === 'dragon') {

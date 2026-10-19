@@ -20,7 +20,7 @@ describe('child-facing battle surface', () => {
     expect(html).toContain('aria-label="かいふく、パン残り2個"');
     expect(html).toContain('<strong>かいふく</strong>');
     expect(html).toContain('/mining/Diamond_Sword.png');
-    expect(html).toContain('bp-icon-shield');
+    expect(html).toContain('bs-bare-guard');
     expect(html).toContain('bp-icon-bread');
   });
   it('represents health as ten hearts and bread as two actual pictures', () => {

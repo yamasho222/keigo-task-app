@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { BattleGuardArt } from './BattleGuardArt';
 import './battleSpectacle.css';
 import './dragonBattleEffects.css';
 
@@ -74,7 +75,7 @@ export function BattleSpectacle({ kind, phase, variant = 'blaze', shield = false
       {contact && <div className="bs-enemy-contact"><div className="bs-contact-notch" /><Rings /><Sparks seed={seed} /></div>}
     </div>}
     {kind === 'guard' && <div className="bs-defense">
-      <svg className="bs-shield" viewBox="0 0 140 160" fill="none"><path className="bs-shield-face" d={shield ? 'm70 8 52 18v57c0 32-52 67-52 67S18 115 18 83V26Z' : 'M25 125V70a45 45 0 0 1 90 0v55Z'} /><path className="bs-shield-rib" d="M70 18v115M31 55h78" /></svg>
+      <BattleGuardArt shield={shield} large />
       {contact && <div className="bs-block-contact"><Rings /><Sparks seed={seed} /><svg className="bs-deflected" viewBox="0 0 260 100" fill="none"><path d="M130 87Q102 12 10 22m0 0 14-12M130 87Q158 12 250 22m0 0-14-12" /></svg></div>}
     </div>}
     {kind === 'heal' && <div className="bs-restoration">
@@ -85,7 +86,7 @@ export function BattleSpectacle({ kind, phase, variant = 'blaze', shield = false
     {kind === 'bed' && <div className="bs-bed-burst">
       {phase === 'windup' ? <svg className="bs-bed-picture" viewBox="0 0 200 120"><path className="bs-bed-frame" d="M14 60h172v35H14zM20 95h12v20H20zm148 0h12v20h-12z" /><path className="bs-bed-cover" d="M18 44h164v35H18z" /><path className="bs-bed-pillow" d="M24 44h45v24H24z" /></svg> : <><div className="bs-dust bs-dust-a" /><div className="bs-dust bs-dust-b" /><div className="bs-dust bs-dust-c" /><Rings /><Sparks seed={seed} /><div className="bs-ground-cracks" /></>}
     </div>}
-    {kind === 'victory' && <div className="bs-celebration"><div className="bs-laurel bs-laurel-left" /><div className="bs-laurel bs-laurel-right" /><svg className="bs-victory-star" viewBox="0 0 100 100"><path d="m50 4 12 30 33 2-26 23 8 33-27-18-27 18 8-33L5 36l33-2Z" /></svg><Sparks seed={seed} confetti /></div>}
+    {kind === 'victory' && <div className="bs-victory-atmosphere"><div className="bs-victory-beam" /><div className="bs-victory-horizon" /><Sparks seed={seed} confetti /></div>}
     {special && phase === 'windup' && buddies.length > 0 && <div className="bs-buddies">{buddies.slice(0, 4).map((buddy, index) => <div className="bs-buddy" key={buddy.id} style={{ '--bs-slot': index } as CSSProperties}>
       <img className="bs-buddy-image" src={buddy.image} alt="" /><div className="bs-buddy-stars">{Array.from({ length: Math.min(3, Math.max(1, Math.floor(buddy.level) || 1)) }, (_, star) => <i className="bs-buddy-star" key={star} />)}</div>
     </div>)}</div>}

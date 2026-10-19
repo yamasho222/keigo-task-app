@@ -57,11 +57,7 @@
 .bs-enemy-contact { position:absolute; left:15%; right:15%; top:62%; bottom:0; }
 .bs-enemyUltimate .bs-enemy-contact>.bs-contact-notch { width:135px; height:85px; }
 .bs-shielded .bs-bolt { animation-name:bs-bolt-stop; }
-.bs-defense { position:absolute; left:50%; bottom:1%; width:150px; height:175px; translate:-50% 0; color:#c4f3ff; --bs-accent:#8dd9f0; --bs-light:#edfcff; }
-.bs-shield { position:absolute; width:100%; height:100%; }
-.bs-shield-face { fill:#2a6e865c; stroke:#b8f1ff; stroke-width:4; }
-.bs-shield-rib { stroke:#ecfcff; stroke-width:3; opacity:.7; }
-.bs-phase-impact .bs-shield { animation:bs-brace 310ms ease-out both; }
+.bs-defense { position:absolute; left:50%; translate:-50% 0; color:#c4f3ff; --bs-accent:#8dd9f0; --bs-light:#edfcff; }
 .bs-block-contact { position:absolute; inset:-12% -20% 10%; }
 .bs-block-contact>.bs-rings { top:35%; width:110%; height:55%; }
 .bs-deflected { position:absolute; top:-10%; left:-45%; width:190%; height:70%; stroke:#bceeff; stroke-width:4; animation:bs-contact 460ms ease-out both; }
@@ -84,11 +80,11 @@
 .bs-dust { position:absolute; left:25%; top:35%; width:50%; height:50%; border-radius:42% 58% 35% 65%; background:radial-gradient(ellipse,#e2c9be9c,#967a9c55 58%,transparent 72%); animation:bs-dust-bloom 650ms ease-out both; }
 .bs-dust-b { left:5%; top:40%; rotate:-25deg; animation-delay:60ms; }
 .bs-dust-c { left:45%; top:40%; rotate:25deg; animation-delay:60ms; }
-.bs-celebration { position:absolute; left:50%; top:48%; width:250px; height:210px; translate:-50% -50%; --bs-accent:#ffe193; --bs-deep:#ca9650; }
-.bs-victory-star { position:absolute; left:75px; top:25px; width:100px; height:100px; fill:#ffe193; stroke:#fff4d6; stroke-width:3; filter:drop-shadow(0 0 18px #ffcf6e66); animation:bs-award 700ms ease-out both; }
-.bs-laurel { position:absolute; left:24px; top:50px; width:60px; height:130px; border-left:5px solid #e6c679; border-radius:50%; rotate:-30deg; }
-.bs-laurel::after { content:''; position:absolute; left:-9px; top:10px; width:35px; height:100px; background:repeating-linear-gradient(35deg,transparent 0 12px,#ffe3a4 13px 21px,transparent 22px 30px); clip-path:ellipse(50% 50%); }
-.bs-laurel-right { left:auto; right:24px; transform:scaleX(-1); rotate:30deg; }
+.bs-victory-atmosphere { position:absolute; inset:0; --bs-accent:#ffe2a6; --bs-deep:#b87d43; }
+.bs-victory-beam { position:absolute; left:15%; top:0; width:70%; height:80%; opacity:.5; background:linear-gradient(180deg,#fff0be14,transparent); clip-path:polygon(35% 0,65% 0,100% 100%,0 100%); }
+.bs-victory-horizon { position:absolute; left:10%; right:10%; bottom:0; height:1px; background:linear-gradient(90deg,transparent,#ffe4ae55,transparent); box-shadow:0 0 16px #ffbf6640; }
+.bs-victory-atmosphere .bs-confetti { top:40%; }
+.bs-victory-atmosphere .bs-particle { width:2px; height:4px; border-radius:50%; }
 .bs-confetti .bs-particle { height:10px; width:7px; animation:bs-confetti-fall 1500ms ease-out both; animation-delay:var(--bs-delay); }
 .bs-confetti .bs-particle:nth-child(3n) { background:#b7e8da; }
 .bs-confetti .bs-particle:nth-child(3n + 1) { background:#d4bbf7; }

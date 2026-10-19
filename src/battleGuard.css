@@ -1,0 +1,21 @@
+.bs-equipped-guard,.bs-bare-guard { position:relative; display:inline-grid; place-items:center; flex-shrink:0; }
+.bs-guard-texture { position:absolute; inset:0; display:block; width:100%; height:100%; max-width:100%; max-height:100%; object-fit:contain; image-rendering:pixelated; filter:drop-shadow(3px 5px 2px #0008); }
+.bs-guard-arms { display:block; width:100%; height:100%; filter:drop-shadow(0 5px 2px #04132199); }
+.bs-guard-pose { position:absolute; inset:0; width:100%; height:100%; }
+.bs-guard-pose.bs-equipped-guard { transform:perspective(600px) rotateY(-18deg) rotateZ(-8deg); filter:drop-shadow(-5px 0 0 #567183) drop-shadow(0 10px 9px #0008); }
+.bs-guard-pose.bs-equipped-guard::after { content:''; position:absolute; inset:8% 18%; background:linear-gradient(110deg,transparent 28%,#ffe9ad33 48%,transparent 61%); mix-blend-mode:screen; pointer-events:none; }
+.bs-defense { width:190px; height:210px; bottom:2%; perspective:600px; }
+.bs-defense::before { content:''; position:absolute; inset:-8% -20%; border-radius:50%; background:radial-gradient(ellipse,#9ccddd2b,transparent 65%); }
+.bs-phase-windup .bs-guard-pose { animation:bg-raise .3s cubic-bezier(.2,.8,.2,1) both; }
+.bs-phase-impact .bs-guard-pose { animation:bg-recoil .42s ease-out both; }
+.bs-phase-impact .bs-defense::before { background:radial-gradient(ellipse,#fff4ca66,#86cbdc22 38%,transparent 67%); }
+.bs-defense .bs-block-contact { inset:-5% -30% 15%; }
+.bs-defense .bs-block-contact>.bs-rings { top:28%; height:24%; }
+.bs-defense .bs-block-contact>.bs-particles { top:24%; --bs-accent:#ffe6b1; --bs-deep:#d28d48; }
+.bs-defense .bs-deflected { top:-20%; stroke:#ffeec5; stroke-width:2; }
+.bp-command .bs-equipped-guard,.dc-command .bs-equipped-guard { transform:rotate(-10deg); }
+.bp-command:disabled>.bs-equipped-guard,.bp-command:disabled>.bs-bare-guard { opacity:.55; }
+@keyframes bg-raise { from { opacity:0; translate:0 70px; } to { opacity:1; translate:0 0; } }
+@keyframes bg-recoil { 0% { translate:0 0; scale:1; } 24% { translate:4px 12px; scale:.92; } 60% { translate:-2px -3px; scale:1.02; } 100% { translate:0 0; scale:1; } }
+@media(max-height:650px) { .bs-defense { width:140px; height:150px; } }
+@media(prefers-reduced-motion:reduce) { .bs-guard-pose { animation:none!important; } }

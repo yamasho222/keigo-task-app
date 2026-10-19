@@ -11,11 +11,13 @@ import type { CampaignOutcome } from './dragonCampaignEngine';
 import type { actOnBlaze } from './blazePrototypeEngine';
 import type { actOnEnderman } from './endermanPrototypeEngine';
 import './adventureProduction.css';
+import { BattleTutorial } from './BattleTutorial';
 
 /** Normal in-app entry. The parent profile owns every resource and save. */
 export function AdventureBattlePanel({ mining, location, dateKey, buddyProgress, onChange, onClose, onPrepare }: { mining: MiningState; location: AdventureLocation; dateKey: string; buddyProgress?: BuddyProgressMap; onChange: (patch: MiningPatch) => void; onClose: () => void; onPrepare?: () => void }) {
   const { view, send, error } = useAdventureController(mining, location, dateKey, buddyProgress, onChange);
   const [notice, setNotice] = useState('');
+  const [replaying, setReplaying] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const ready = !!view && !error;
   useLayoutEffect(() => {
@@ -30,11 +32,15 @@ export function AdventureBattlePanel({ mining, location, dateKey, buddyProgress,
   if (!view || error) return <section className="adventure-production" role="alert">{error || 'たたかいの きろくを よみこんでいます…'}<button type="button" onClick={onClose}>もどる</button></section>;
   const common = { onClose, retry: () => run('retry'), next: () => run('next'), onHelp: () => run('lesson'),
     breadStock: mining.materials.bread ?? 0, foodToday: mining.adventure?.foodToday ?? 0,
-    seenHelp: !!mining.adventure?.lessons[location], endermanDefeats: mining.adventure?.endermanDefeats ?? 0,
+    seenHelp: true, onShowTutorial: () => setReplaying(true), endermanDefeats: mining.adventure?.endermanDefeats ?? 0,
     heldItems: ['none', ...(mining.materials.shield ? ['shield'] : []), ...(mining.materials.water ? ['water'] : [])] };
+  const pending = mining.adventure?.learning?.pending;
+  const tutorial = replaying || pending?.location === location;
   return <dialog ref={dialog} className="adventure-production" aria-label="ぼうけんの戦闘" onCancel={event => event.preventDefault()}>
     {notice && <p className="adventure-notice" role="alert">{notice}</p>}
-    {view.kind === 'blaze' ? <BlazePrototype production={{ ...common, run: view.run, act: action => {
+    {tutorial ? <BattleTutorial location={location} unlocked={view.run.unlockedSkills ?? ['repel']} fresh={replaying ? [] : pending?.skills} replay={replaying} onDone={() => {
+      if (replaying) setReplaying(false); else run('lesson');
+    }} /> : view.kind === 'blaze' ? <BlazePrototype production={{ ...common, run: view.run, act: action => {
       const result = send({ kind: 'blaze', action }); return (result.outcome as ReturnType<typeof actOnBlaze> | undefined) ?? { state: view.run, events: [], error: result.error };
     } }} /> : view.kind === 'enderman' ? <EndermanPrototype production={{ ...common, run: view.run, act: action => {
       const result = send({ kind: 'enderman', action }); return (result.outcome as ReturnType<typeof actOnEnderman> | undefined) ?? { state: view.run, events: [], error: result.error };

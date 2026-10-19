@@ -20,7 +20,8 @@ function act(state: MiningState, request: AdventureRequest, location: AdventureL
   return transitionAdventure(state, { ...request, revision: state.adventure?.revision ?? -1, day, location } as AdventureCommand);
 }
 function step(state: MiningState, request: AdventureRequest, location: AdventureLocation = 'fortress', day = DAY) {
-  const result = act(state, request, location, day); expect(result.error).toBeUndefined();
+  let result = act(state, request, location, day); expect(result.error).toBeUndefined();
+  if (result.state.adventure?.learning?.pending && request.kind === 'enter') result = act(result.state, { kind: 'lesson' }, location, day);
   expect(() => readAdventure(result.state.adventure)).not.toThrow(); return result.state;
 }
 function ready(location: AdventureLocation = 'fortress') { return step(releaseFixture(), { kind: 'enter' }, location); }

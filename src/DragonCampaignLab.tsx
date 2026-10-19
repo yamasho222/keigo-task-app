@@ -1,4 +1,6 @@
 import type { DragonPort } from './adventurePorts';
+import { BattleForecast } from './BattleForecast';
+import { dragonForecast } from './battleForecastRules';
 import { BattleSkillActivity } from './BattleSkillActivity';
 import { DragonCompanionRescue } from './DragonCompanionRescue';
 import { BattleBagIcon, BattleItemsDialog, type HeldBattleItem } from './BattleItemsDialog';
@@ -7,6 +9,7 @@ import { BreadRecoveryHelp } from './EndChapterNoticePanel';
 import { recoveryAvailability } from './endChapterNotices';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BattleSpectacle } from './BattleSpectacle';
+import { BattleReward } from './BattleReward';
 import { DragonAllyFx, DragonAttackFx } from './DragonAttackFx';
 import { DragonThreatArt } from './DragonThreatArt';
 import { DRAGON_THREAT_ASSETS } from './dragonThreatPresentation';
@@ -25,7 +28,7 @@ import { createBlazeAudio } from './blazePrototypeAudio';
 import {
   campaignBodyMaxHp, brokenCrystals, brokenWings, campaignBedAvailable, campaignCounterDamage, campaignIntent, campaignTargetHp,
   createDragonCampaign, crystalMaxHp, refreshCampaignDay, stepDragonCampaign,
-  type CampaignAction, type CampaignEvent, type CampaignIntent, type CampaignTarget, type DragonCampaign,
+  type CampaignAction, type CampaignEvent, type CampaignTarget, type DragonCampaign,
 } from './dragonCampaignEngine';
 import { buildCampaignPlayback, type CampaignFrame } from './dragonCampaignPlayback';
 import { dragonArmorFixture, dragonCampaignFixture, recoverDragonTestHp, type DragonFixture } from './dragonCampaignFixtures';
@@ -63,20 +66,6 @@ function ChapterSymbol({ phase }: { phase: keyof typeof PHASE_NAMES }) {
           : <path d="m35 2-24 33h17l-5 23 27-36H32Z" />}
   </svg>;
 }
-function IntentPicture({ intent, danger, orbTurns }: { intent: CampaignIntent; danger: boolean; orbTurns: number }) {
-  const charging = ['charge', 'charge1', 'charge2', 'orbPrepare'].includes(intent);
-  const opening = intent === 'opening';
-  const label = opening ? 'いまだ！' : intent === 'claw' ? 'くるぞ' : charging ? intent === 'charge2' ? 'もうすぐ！' : 'ためてる…' : intent === 'gust' ? 'あと2かい' : intent === 'orbFire' ? 'あと1かい！' : 'おおわざ！';
-  return <div className={`dc-intent ${danger ? 'dc-danger' : ''} ${opening ? 'dc-opening' : ''} ${charging ? 'dc-charging' : ''}`} role="img" aria-label={`敵の予告：${label}${orbTurns > 0 ? '。玉は自分の行動で進む' : ''}`}>
-    <svg viewBox="0 0 80 80" aria-hidden="true">
-      {opening ? <path d="m40 4 9 23 23 13-23 9-9 27-10-27L7 40l23-13Z" />
-        : intent === 'claw' ? <g><path d="m21 18-5 42 18-38-3 42 17-40 3 40 14-44" /></g>
-          : charging ? <g><circle cx="40" cy="40" r="15" /><path d="m8 8 18 18M8 72l18-18m46-46L54 26m18 46L54 54" /></g>
-            : <g><circle cx="40" cy="40" r="27" /><path d="M40 17v26m0 12v5" /></g>}
-    </svg><b>{label}</b>
-  </div>;
-}
-
 export default function DragonCampaignLab({ production }: { production?: DragonPort } = {}) {
   const [boot] = useState<CampaignLoad>(() => production ? { state: production.run } : initialLoad());
   const [localRun, setRun] = useState<DragonCampaign>(() => boot.state ?? enableDragonCritical(enableDragonSkills(enableDragonAdventure(createDragonCampaign(today())))));
@@ -281,6 +270,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
       <header className="dc-header">
         <button type="button" className="dc-icon-button" aria-label="かえる・準備に戻る" disabled={busy || run.status !== 'battle'} onClick={() => setLeaveOpen(true)}><BattleIcon kind="back" /></button>
         <div><small>{production ? 'THE END' : 'THE END · 試験専用'}</small><h1>エンドラ 最終決戦</h1></div>
+        {production?.onShowTutorial && <button type="button" className="dc-icon-button" aria-label="絵であそびかたを見る" disabled={busy || rescueActive} onClick={production.onShowTutorial}>?</button>}
         <button type="button" className="dc-icon-button" aria-label={sound ? '音を消す' : '音を出す'} aria-pressed={sound} onClick={() => { if (sound) { audio.current?.stop(); skillAudio.current?.stop(); } setSound(value => !value); }}><BattleIcon kind={sound ? 'sound' : 'mute'} /></button>
       </header>
       <nav className="dc-chapters" aria-label="討伐の進み具合">{Object.entries(PHASE_NAMES).map(([key, label], i) => <span key={key} className={i === phaseIndex ? 'is-current' : i < phaseIndex ? 'is-done' : ''} aria-current={i === phaseIndex ? 'step' : undefined}><i aria-hidden="true">{i < phaseIndex ? '✓' : <ChapterSymbol phase={key as keyof typeof PHASE_NAMES} />}</i><small>{label}</small></span>)}</nav>
@@ -288,7 +278,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
       <div className="dc-boss-health"><span>エンダードラゴン</span><HpBar hp={shown.bodyHp} total={campaignBodyMaxHp(shown)} label="エンダードラゴンの体力" /></div>
 
       {run.status !== 'battle' && !animation ? <>
-        {run.status === 'won' ? <section className="dc-result dc-win"><BattleSpectacle kind="victory" phase="impact" variant="dragon" reduced={calm} /><img src="/mining/Elytra.png" alt="エリトラ" onError={event => { event.currentTarget.style.visibility = 'hidden'; }} /><h2 ref={resultHeading} tabIndex={-1}>エンドラを たおした！</h2><p>なかまと つかんだ だいしょうり！</p><span>エリトラを てにいれた</span></section>
+        {run.status === 'won' ? <section className="dc-result dc-win"><BattleReward enemy="エンドラ" item="エリトラ" image="/mining/Elytra.png" variant="dragon" reduced={calm} headingRef={resultHeading} />{production && <button type="button" className="dc-quiet-button" onClick={production.onClose}>ぼうけんへ</button>}</section>
           : <>
             {run.status === 'lost' && <section className="dc-result dc-lost"><h2 ref={resultHeading} tabIndex={-1}>たおされた…</h2><p>こわしたところは のこっているよ</p><button className="dc-retry" type="button" disabled={busy || blocked || run.tickets < 1} onClick={() => production ? production.retry() : void act({ kind: 'retry' })}><BattleIcon kind="ticket" />1まいで おきあがる<span>そのまま 4かい うごける</span></button></section>}
             {run.status === 'paused' && <p className="dc-paused-note">ここまで きろくずみ · のこり {run.hands} かいも そのまま</p>}
@@ -303,7 +293,7 @@ export default function DragonCampaignLab({ production }: { production?: DragonP
         <section className={`dc-arena dc-phase-${shown.phase} dc-intent-${shownIntent} ${enemyAttacking ? `dc-enemy-${stage === 'enemyWindup' ? 'windup' : stage === 'counter' ? 'strike' : 'impact'}` : ''} ${critical && stage === 'impact' ? 'dc-critical' : ''} ${stage === 'hurt' ? 'dc-hurt' : ''} ${special ? 'dc-special' : ''}`} aria-label="エンドラとの戦場" aria-busy={busy}>
           <div className="dc-stars" aria-hidden="true" /><div className="dc-moon" aria-hidden="true" /><div className="dc-end-island" aria-hidden="true" />
           {shown.phase === 'crystals' && <svg className={`dc-beams ${shown.bodyAttempts >= 3 ? 'dc-beams-hint' : ''} ${hitVisible && target === 'body' ? 'dc-beams-active' : ''}`} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{CRYSTAL_POS.map(([x, y], i) => shown.crystals[i] > 0 && <line key={i} x1={x + 7} y1={y + 7} x2="50" y2="47" />)}</svg>}
-          {shown.landingTurns === 0 && !(special && !enemyAttacking) && <div className="dc-forecast"><IntentPicture intent={shownIntent} danger={['breath', 'orbFire', 'storm'].includes(shownIntent)} orbTurns={shown.orbTurns} /></div>}
+          {!busy && <div className="dc-forecast"><BattleForecast signal={dragonForecast(shownIntent, (shown.effects?.stun ?? 0) > 0)} detail={shown.orbHp > 0 ? `玉はあと${shown.orbTurns}回の行動で進む` : undefined} /></div>}
           {!calm && <span className="dc-flight-backlight" aria-hidden="true" />}
           <button className={`dc-dragon ${shown.selected === 'body' ? 'is-selected' : ''} ${hitVisible && (target === 'body' || stage === 'reflected') ? 'dc-struck' : ''} ${shown.landingTurns > 0 || brokenWings(shown) === 2 ? 'dc-landed' : ''} ${enemyAttacking ? 'dc-attacking' : ''} ${stage === 'victory' ? 'dc-boss-falling' : ''} ${shown.adventure && ['charge1', 'charge2'].includes(shownIntent) ? `dc-pressure-${shown.adventure.pressure}` : ''}`} disabled={busy || blocked} type="button" aria-label="エンダードラゴン本体をねらう" aria-pressed={shown.selected === 'body'} onClick={() => void act({ kind: 'select', target: 'body' })}>
             <span className="dc-dragon-aura" aria-hidden="true" /><img className={calm ? 'dc-dragon-still' : 'dc-dragon-flapping'} src={calm ? '/mining/Ender_Dragon_Campaign_v1.png' : '/mining/Ender_Dragon.gif'} alt="エンダードラゴン" draggable={false} /><i className="dc-target-mark" aria-hidden="true" />
