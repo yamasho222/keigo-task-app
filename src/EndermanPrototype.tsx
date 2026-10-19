@@ -14,6 +14,7 @@ import { createBlazeAudio, type BlazeAudioCue } from './blazePrototypeAudio';
 import { BLAZE_SWORD_IMAGES } from './blazePrototypeAssets';
 import { BattleIcon, GuardArt, Hearts, SwordArt, TicketMeter } from './BlazePrototypeVisuals';
 import { BattleSpectacle } from './BattleSpectacle';
+import { BattleReward } from './BattleReward';
 import { actOnEnderman, createEndermanRun, endermanAttackDamage, endermanIncomingDamage, type EndermanAction, type EndermanEvent, type EndermanRun, type EndermanSetup } from './endermanPrototypeEngine';
 import { buildEndermanPlayback, type EndermanFrame } from './endermanPrototypePlayback';
 import { EndermanAfterimages, EndermanCluePicture, EndermanDemo, EndermanItemArt, EndermanTelegraph } from './EndermanPrototypeVisuals';
@@ -129,10 +130,15 @@ export default function EndermanPrototype({ production }: { production?: Enderma
   const attackPhase = stage === 'focus' ? 'windup' : stage === 'strike' ? 'strike' : stage === 'impact' ? 'impact' : 'recover';
   const disappearing = missed && (stage === 'strike' || impact);
   const description = stage === 'ticket' ? 'チケット1枚で4回行動。'
+    : stage === 'focus' ? 'ちからを あつめる！'
+    : stage === 'strike' ? special ? 'ひっさつ！' : 'こうげき！'
     : stage === 'impact' ? missed ? 'ワープ！ よけられた。でも必殺の光はたまった。' : `${animation!.before.enemyHp - shown.enemyHp}ダメージ！`
     : stage === 'guard' ? shown.item === 'shield' ? '盾をかまえた。' : '身をまもった。' : stage === 'heal' ? 'ハートが回復した。'
-    : special && stage === 'counter' ? '必殺でワープと反撃を止めた！'
-    : hurt ? 'とびかかってきた！ ハートが減った。'
+    : stage === 'effect' ? animation?.events.some(event => event.kind === 'burn') ? 'やけどで 5ダメージ！' : 'ひっさつの ちから！'
+    : stage === 'counter' ? counter ? 'とびかかってくる！' : 'いまは こうげきしてこない。'
+    : stage === 'hurt' && guarding && counter ? 'うけとめた！ ダメージをへらした。'
+    : hurt ? 'とびかかってきた！'
+    : stage === 'hurt' && !counter ? 'いまは こうげきしてこない。'
     : playing ? !canSpend ? 'チケットがないよ。帰ろう。' : 'エンダーマンの動きを見てみよう。'
     : run.phase === 'won' ? '勝った！ エンダーパールを1個てにいれた！' : run.phase === 'lost' ? 'たおされた。また挑戦しよう。' : 'ぶじに帰った。';
 
@@ -142,7 +148,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       <button className="bp-icon-button" aria-label="かえる" disabled={busy || !playing} onClick={() => setModal('leave')}><BattleIcon kind="back" /></button>
       <h1 ref={title} tabIndex={-1}>ゆがんだ もり{!production && <small>おためし</small>}</h1>
       <button className={`ep-gear-button ${defeats >= 2 && !wet ? 'ep-hint-glow' : ''}`} aria-label="もちもの" disabled={busy || (!!production && !playing)} onClick={() => setModal('gear')}><BattleBagIcon /><span>もちもの</span></button>
-      <button className="bp-icon-button bp-help-button" aria-label="絵であそびかたを見る" disabled={busy} onClick={() => { setLesson(0); setModal('help'); }}>?</button>
+      <button className="bp-icon-button bp-help-button" aria-label="絵であそびかたを見る" disabled={busy} onClick={() => { if (production?.onShowTutorial) production.onShowTutorial(); else { setLesson(0); setModal('help'); } }}>?</button>
       {!production && <button className="bp-icon-button bp-parent-button" aria-label="保護者用の試験設定" disabled={busy} onClick={() => { setDraft(copySetup({ ...setup, item: run.item })); setModal('setup'); }}><BattleIcon kind="settings" /></button>}
     </header>
     <div className="bp-resources"><TicketMeter tickets={shown.tickets} hands={shown.handsLeft} buying={stage === 'ticket'} /></div>
@@ -155,7 +161,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
         <div className="bp-enemy-shadow" /><div className="ep-silhouette-light" aria-hidden="true" />
         <img className="ep-enderman-sprite" src="/mining/Enderman.png" alt="エンダーマン" />
         <EndermanAfterimages wet={wet} intent={shown.intent} busy={busy} dodged={disappearing} />
-        {!dead && playing && !busy && <EndermanTelegraph intent={shown.intent} wet={wet} />}
+        {!dead && playing && !busy && <EndermanTelegraph intent={shown.intent} wet={wet} stunned={(shown.effects?.stun ?? 0) > 0} />}
         {missed && impact && <span className="ep-miss-mark" aria-hidden="true">ひらり！<small>✦ ＋1</small></span>}
         {splashed && stage === 'impact' && <span className="ep-splash-mark" aria-hidden="true">びくっ！</span>}
       </div>
@@ -171,13 +177,10 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       {!wet && playing && !busy && shown.misses >= 2 && <p className="ep-clue">あそこには ちかづかない…？</p>}
       {playing && !canSpend && !busy && <div className="bp-empty-ticket"><BattleIcon kind="ticket" /><p>チケットが ないよ</p><button className="bp-large-button" onClick={() => setModal('leave')}><BattleIcon kind="back" />かえる</button></div>}
       {!playing && !busy && <div className={`bp-result bp-result-${run.phase}`}>
-        {run.phase === 'won' && <BattleSpectacle kind="victory" phase="impact" variant="enderman" reduced={reduced} seed={run.turn} />}
-        <div className="bp-result-picture" aria-hidden="true">{run.phase === 'won' ? <><span>✦</span><img src="/mining/Ender_Pearl.png" alt="" /><span>✦</span></> : <img src="/mining/Steve.png" alt="" />}</div>
-        <h2 ref={resultTitle} tabIndex={-1}>{run.phase === 'won' ? 'やったー！' : run.phase === 'lost' ? 'また ちょうせん！' : 'ただいま！'}</h2>
-        {run.phase === 'won' && <p>エンダーパール × 1</p>}
+        {run.phase === 'won' ? <BattleReward enemy="エンダーマン" item="エンダーパール" image="/mining/Ender_Pearl.png" variant="enderman" headingRef={resultTitle} reduced={reduced} /> : <><div className="bp-result-picture" aria-hidden="true"><img src="/mining/Steve.png" alt="" /></div><h2 ref={resultTitle} tabIndex={-1}>{run.phase === 'lost' ? 'また ちょうせん！' : 'ただいま！'}</h2></>}
         {run.phase === 'lost' && !wet && <div className="ep-result-clue"><EndermanCluePicture /><p>{defeats >= 2 ? 'もっていけるものは、けんだけじゃ ないみたい。' : 'あそこには、ちかづかなかったね…。'}</p></div>}
         <div className="ep-result-buttons"><button className="bp-secondary-button" onClick={() => setModal('gear')}><EndermanItemArt item={run.item} />そうび</button><button className="bp-large-button" onClick={() => reset()}><BattleIcon kind="replay" />{production && run.phase === 'lost' ? '1まいで おきあがる（ハート5・4かい）' : 'もういちど'}</button></div>
-        <a className="ep-other-battle" href="?blaze-prototype=1">ブレイズの おためしへ</a>
+        {!production && <a className="ep-other-battle" href="?blaze-prototype=1">ブレイズの おためしへ</a>}
       </div>}
     </section>
     <section className={`bp-player-health ${hurt ? 'just-hurt' : ''} ${stage === 'heal' ? 'just-healed' : ''}`} aria-label="あなたの体力"><img className="bp-player-face" src="/mining/Steve.png" alt="あなた" /><Hearts hp={shown.hp} maxHp={shown.maxHp} previousHp={hurt ? animation!.before.hp : shown.hp} /></section>
@@ -188,7 +191,7 @@ export default function EndermanPrototype({ production }: { production?: Enderma
       <button className="bp-command bp-eat" disabled={busy || !playing || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : `かいふく、パン残り${shown.bread}個`} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
     </section>
     <DragonStatusBadges effects={shown.effects} />
-    {notice && <p className="ep-notice" role="alert">{notice}</p>}<p className="bp-sr-only" role="status" aria-live="polite">{description}</p>
+    <p className="bp-battle-message" role="status" aria-live="polite">{notice || description}</p>
   </div>
   <dialog ref={dialog} className="bp-dialog ep-dialog" aria-labelledby="ep-dialog-title" onCancel={dismissModal} onClose={dismissModal}>
     <div className="bp-dialog-top"><h2 id="ep-dialog-title">{modal === 'help' ? 'えで みてみよう' : modal === 'gear' ? 'そうび' : modal === 'leave' ? 'ここで かえる？' : modal === 'reset' ? 'やりなおす？' : '保護者用・試験設定'}</h2><button className="bp-icon-button" aria-label="とじる" onClick={dismissModal}><BattleIcon kind="close" /></button></div>

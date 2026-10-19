@@ -27,12 +27,12 @@ describe('enderman child-facing interface', () => {
       expect(demo).not.toContain('/mining/Water.png'); expect(demo).toContain('/mining/Enderman.png');
     }
   });
-  it('uses different shapes for warp, danger, opening and water, not color alone', () => {
+  it('uses the approved danger and rest symbols while retaining contextual warp descriptions', () => {
     const warp = renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'warp', wet: false }));
-    expect(warp).toContain('<ellipse'); expect(warp).toContain('ep-ghost-mark');
-    expect(renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'ambush', wet: false }))).toContain('>!</b>');
-    expect(renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'opening', wet: false }))).toContain('いまだ！');
-    expect(renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'warp', wet: true }))).toContain('ep-flinch-sign');
+    expect(warp).toContain('😴'); expect(warp).toContain('通常攻撃はよけられる');
+    expect(renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'ambush', wet: false }))).toContain('👊！');
+    expect(renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'opening', wet: false }))).toContain('😴');
+    expect(renderToStaticMarkup(createElement(EndermanTelegraph, { intent: 'warp', wet: true }))).toContain('ワープできない');
   });
   it('represents carried items as pictures and uses a warp-binding special without a fireball', () => {
     expect(renderToStaticMarkup(createElement(EndermanItemArt, { item: 'none' }))).toContain('ep-empty-hand');

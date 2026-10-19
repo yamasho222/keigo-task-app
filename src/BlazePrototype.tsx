@@ -15,6 +15,7 @@ import { createBlazeAudio, type BlazeAudioCue } from './blazePrototypeAudio';
 import { buildBlazePlayback, type BlazePlaybackFrame } from './blazePrototypePlayback';
 import { BattleIcon, BattleDemo, BlazeGathering, BlazeTelegraph, GuardArt, Hearts, SwordArt, TicketMeter } from './BlazePrototypeVisuals';
 import { BattleSpectacle } from './BattleSpectacle';
+import { BattleReward } from './BattleReward';
 import { BLAZE_LESSONS, BLAZE_SWORD_IMAGES } from './blazePrototypeAssets';
 import './blazePrototype.css';
 
@@ -142,14 +143,15 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
   const speaking = stage === 'ticket' ? `チケット1枚で、${BLAZE_ACTIONS_PER_TICKET}回行動できるよ。`
     : stage === 'focus' ? '剣に力をためている！'
     : stage === 'strike' ? ultimate ? 'ひっさつ！' : 'こうげき！'
-    : stage === 'impact' ? `${damageDealt}ダメージ！ 敵の体力が減った！`
+    : stage === 'impact' ? `${critical ? 'かいしん！ ' : ''}${damageDealt}ダメージ！`
     : stage === 'guard' ? shown.item === 'shield' ? '盾をかまえた！' : '身をまもった！'
     : stage === 'eat' ? 'パンをたべた！'
     : stage === 'heal' ? 'ハートが回復した！'
-    : guardedFire ? 'まもった！ ダメージをへらした。'
-    : hurt ? '火球に当たって、ハートが減った。'
-    : stage === 'counter' && ultimate ? 'ブレイズが火をためている。'
-    : stage === 'counter' ? 'ブレイズが火をためている。'
+    : stage === 'effect' ? animation?.events.some(event => event.kind === 'burn') ? 'やけどで 5ダメージ！' : 'ひっさつの ちから！'
+    : guardedFire && stage === 'hurt' ? 'うけとめた！ ダメージをへらした。'
+    : hurt ? 'あつっ！ 火のたまが あたった！'
+    : stage === 'counter' ? counter ? enemy.intent === 'burst' ? '大きな 火のたま！' : '火のたまが くる！' : enemy.intent === 'charge' ? 'ちからを ためている！' : 'いまは こうげきしてこない。'
+    : stage === 'hurt' && !counter ? 'いまは こうげきしてこない。'
     : playing ? !canSpend ? 'チケットがないよ。帰ろう。' : enemy.intent === 'charge' ? '火をためている。次は大きな火球。' : enemy.intent === 'burst' ? '大きな火球がくる。' : '小さな火球がくる。'
     : run.phase === 'won' ? 'ブレイズをたおした！ ブレイズロッドを1本てにいれた！' : run.phase === 'lost' ? 'たおされてしまった。' : 'ぶじに帰った。';
 
@@ -159,7 +161,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       <button className="bp-icon-button" aria-label="かえる" disabled={busy || !playing} onClick={() => setModal('leave')}><BattleIcon kind="back" /></button>
       <h1 ref={titleHeading} tabIndex={-1}>ネザーようさい {!production && <small>おためし</small>}</h1>
       <button className="bp-gear-button" aria-label="もちもの" disabled={busy || (!!production && !playing)} onClick={() => { setNotice(''); setModal('gear'); }}><BattleBagIcon /><span>もちもの</span></button>
-      <button className="bp-icon-button bp-help-button" aria-label="絵であそびかたを見る" disabled={busy} onClick={() => { setLesson(0); setModal('help'); }}>?</button>
+      <button className="bp-icon-button bp-help-button" aria-label="絵であそびかたを見る" disabled={busy} onClick={() => { if (production?.onShowTutorial) production.onShowTutorial(); else { setLesson(0); setModal('help'); } }}>?</button>
       {!production && <button className="bp-icon-button bp-parent-button" aria-label="保護者用の試験設定" disabled={busy} onClick={openSetup}><BattleIcon kind="settings" /></button>}
     </header>
     <div className="bp-resources"><TicketMeter tickets={shown.tickets} hands={shown.handsLeft} buying={stage === 'ticket'} /></div>
@@ -171,7 +173,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
         <div className="bp-enemy-shadow" /><div className="bp-enemy-aura" />
         {!dead && enemy.intent === 'charge' && (!busy || (stage === 'counter' && !ultimate)) && <BlazeGathering />}
         <img className="bp-blaze-sprite" src="/mining/Blaze.webp" alt="ブレイズ" />
-        {!dead && playing && (!busy || (stage === 'counter' && enemy.intent === 'charge' && !ultimate)) && <BlazeTelegraph intent={enemy.intent} />}
+        {!dead && playing && (!busy || (stage === 'counter' && enemy.intent === 'charge' && !ultimate)) && <BlazeTelegraph intent={enemy.intent} stunned={(shown.effects?.stun ?? 0) > 0} />}
       </div>
       {animation && ultimate && cast && stage !== 'ticket' && <DragonAttackFx stage={attackPhase} technique="cleave" special counter={false} stroke={animation.id} reduced={reduced} buddies={[]} sword={run.loadout.sword} skill={playableSkill(cast)} power={action?.kind === 'releaseSkill' ? action.score / 100 : 0} />}
       {animation && (action?.kind === 'strike' || ultimate && !cast) && stage !== 'ticket' && <BattleSpectacle key={`attack${animation.id}`} kind={ultimate ? 'ultimate' : 'slash'} phase={attackPhase} critical={critical} reduced={reduced} seed={animation.id} amount={damageDealt} />}
@@ -184,10 +186,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       {(stage === 'eat' || stage === 'heal') && <BattleSpectacle key={`heal${animation!.id}`} kind="heal" phase={stage === 'eat' ? 'windup' : 'impact'} reduced={reduced} seed={animation!.id} />}
       {playing && !canSpend && !busy && <div className="bp-empty-ticket"><span aria-hidden="true"><BattleIcon kind="ticket" /><b>×</b></span><p>チケットが ないよ</p><button className="bp-large-button" onClick={() => setModal('leave')}><BattleIcon kind="back" />かえる</button></div>}
       {!playing && !busy && <div className={`bp-result bp-result-${run.phase}`}>
-        {run.phase === 'won' && <BattleSpectacle kind="victory" phase="impact" reduced={reduced} seed={run.turn} />}
-        <div className="bp-result-picture" aria-hidden="true">{run.phase === 'won' ? <><span>✦</span><img src="/mining/Blaze_Rod.webp" alt="" /><span>✦</span></> : <img src="/mining/Steve.png" alt="" />}</div>
-        <h2 ref={resultHeading} tabIndex={-1}>{run.phase === 'won' ? 'やったー！' : run.phase === 'lost' ? 'また ちょうせん！' : 'ただいま！'}</h2>
-        {run.phase === 'won' && <p>ブレイズロッド × 1</p>}
+        {run.phase === 'won' ? <BattleReward enemy="ブレイズ" item="ブレイズロッド" image="/mining/Blaze_Rod.webp" headingRef={resultHeading} reduced={reduced} /> : <><div className="bp-result-picture" aria-hidden="true"><img src="/mining/Steve.png" alt="" /></div><h2 ref={resultHeading} tabIndex={-1}>{run.phase === 'lost' ? 'また ちょうせん！' : 'ただいま！'}</h2></>}
         <button className="bp-large-button" onClick={() => reset()}><BattleIcon kind="replay" />{production && run.phase === 'lost' ? '1まいで おきあがる（ハート5・4かい）' : 'もういちど'}</button>
       </div>}
     </section>
@@ -203,7 +202,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       <button className="bp-command bp-eat" disabled={busy || !playing || recovery === 'daily-limit' || recovery === 'full'} aria-label={recovery === 'needs-bread' ? 'かいふく、パンのつくりかた' : `かいふく、パン残り${shown.bread}個`} onClick={() => recovery === 'needs-bread' ? setRecoveryHelp(true) : act({ kind: 'eat' })}><span className="bp-bread-pair" aria-hidden="true">{[0, 1].map(i => <span key={i} className={i < shown.bread ? '' : 'is-eaten'}><BattleIcon kind="bread" /></span>)}</span><strong>かいふく</strong></button>
     </section>
     <DragonStatusBadges effects={shown.effects} />
-    <p className="bp-sr-only" role="status" aria-live="polite">{notice || speaking}</p>
+    <p className="bp-battle-message" role="status" aria-live="polite">{notice || speaking}</p>
   </div>
 
   <dialog className={`bp-dialog ${modal === 'help' ? 'bp-help-dialog' : ''} ${modal === 'setup' ? 'bp-setup-dialog' : ''}`} ref={dialog} onCancel={dismissModal} onClose={dismissModal} aria-labelledby="bp-dialog-title">

@@ -5,9 +5,11 @@ import type { AttackEnchant, DefenseEnchant, EnchantRank } from './campaignEquip
 import { validDragonCritical, type DragonCritical } from './dragonCriticalRules';
 import { validSmallBattleSkills } from './battleSkillRules';
 import { validDragonEffects } from './dragonBattleEffects';
+import { validBattleLearning, type BattleLearning } from './battleLearning';
 
 export type AdventureLocation = 'fortress' | 'warped_forest' | 'the_end';
 export type AdventureState = {
+  learning?: BattleLearning;
   critical?: DragonCritical;
   version: 1; revision: number; day: string; hp: number; hands: number; gauge: number;
   foodToday: number; fallen: boolean; seed: number; endermanDefeats: number;
@@ -39,6 +41,7 @@ export function readAdventure(raw: unknown): AdventureState | undefined {
     || !['none', 'water', 'stone', 'shield'].includes(s.enderman.item) || !int(s.enderman.pearls, 1e9)
     || !['warp', 'ambush', 'approach', 'opening'].includes(s.enderman.intent) || !int(s.enderman.misses, 1e9))) return fail();
   if (s.dragon && !isDragonCampaign(s.dragon)) return fail();
+  if (s.learning !== undefined && !validBattleLearning(s.learning)) return fail();
   if (s.critical !== undefined && !validDragonCritical(s.critical)) return fail();
   if ([s.blaze, s.enderman].some(run => run?.critical !== undefined && !validDragonCritical(run.critical))) return fail();
   if ([s.blaze, s.enderman].some(run => run && (!validSmallBattleSkills(run) || run.effects !== undefined && !validDragonEffects(run.effects)))) return fail();

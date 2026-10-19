@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { enableBattleSkills, unlockedBattleSkills } from './battleSkillRules';
+import { enableBattleSkills } from './battleSkillRules';
 import { actOnBlaze, createBlazeRun, blazeFullArmor, type BlazeRun } from './blazePrototypeEngine';
 import { actOnEnderman, createEndermanRun, type EndermanRun } from './endermanPrototypeEngine';
 import { enableDragonSkills } from './dragonSkillRules';
@@ -22,7 +22,8 @@ function fixture(stage: AdventureLocation): MiningState {
     materials: { ancient_debris: 1, bread: 4, water: 1, shield: 1 } };
 }
 function command(s: MiningState, request: Omit<Extract<AdventureCommand, { kind: 'blaze' }>, 'day' | 'revision' | 'location'> | Omit<Extract<AdventureCommand, { kind: 'enderman' }>, 'day' | 'revision' | 'location'> | { kind: 'enter' | 'next' }, location: AdventureLocation = 'fortress') {
-  const result = transitionAdventure(s, { ...request, revision: s.adventure?.revision ?? -1, day: '2026-10-18', location } as AdventureCommand);
+  let result = transitionAdventure(s, { ...request, revision: s.adventure?.revision ?? -1, day: '2026-10-18', location } as AdventureCommand);
+  if (result.state.adventure?.learning?.pending && request.kind === 'enter') result = transitionAdventure(result.state, { kind: 'lesson', revision: result.state.adventure.revision, day: '2026-10-18', location });
   expect(result.error).toBeUndefined(); expect(() => readAdventure(result.state.adventure)).not.toThrow(); return result;
 }
 function dragonCast(s: DragonCampaign, mode: 'burst' | 'gauge' | 'repel' | 'aim', score = 0) {
@@ -42,9 +43,9 @@ function smallCast<T extends BlazeRun | EndermanRun>(s: T, score: number, mode: 
 }
 
 describe('progressive free-choice ultimates', () => {
-  it.each(['fortress', 'warped_forest', 'the_end'] as const)('unlocks by progress, including when revisiting the fortress: %s', stage => {
+  it.each(['fortress', 'warped_forest', 'the_end'] as const)('does not teach new skills just because a later location is unlocked: %s', stage => {
     const s = command(fixture(stage), { kind: 'enter' }).state;
-    expect(s.adventure!.blaze!.unlockedSkills).toEqual(unlockedBattleSkills(fixture(stage).unlockedGachas));
+    expect(s.adventure!.blaze!.unlockedSkills).toEqual(['repel']);
     expect(normalizeMiningState(JSON.parse(JSON.stringify(s))).adventure).toEqual(s.adventure);
   });
   it('skips the picker only for a single unlocked game, without spending resources', () => {

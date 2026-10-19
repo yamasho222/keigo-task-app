@@ -10,6 +10,7 @@ import { enableBattleSkills } from './battleSkillRules';
 import { stepDragonCampaign, type CampaignAction, type DragonCampaign } from './dragonCampaignEngine';
 import { actOnBlaze, createBlazeRun, type BlazeAction, type BlazeRun } from './blazePrototypeEngine';
 import { actOnEnderman, createEndermanRun, type EndermanAction, type EndermanRun } from './endermanPrototypeEngine';
+import { BattleSpectacle } from './BattleSpectacle';
 
 function dragonFixture(casts = 0) {
   const s = enableDragonCritical(enableDragonSkills(dragonCampaignFixture('ultimate', new Date().toLocaleDateString('sv-SE'), true)));
@@ -20,7 +21,8 @@ function dragonFixture(casts = 0) {
 function criticalSeed() { let seed = 0; while (!nextDragonCritical({ version: 1, seed }).hit) seed++; return { version: 1 as const, seed }; }
 
 export default function BattleEffectsLab() {
-  const [mode, setMode] = useState<'menu' | 'dragon' | 'blaze' | 'enderman'>('menu');
+  const [mode, setMode] = useState<'menu' | 'dragon' | 'blaze' | 'enderman' | 'guard'>('menu');
+  const [shield, setShield] = useState(true), [guardKey, setGuardKey] = useState(0);
   const [dragon, setDragon] = useState<DragonCampaign>(dragonFixture), dragonRef = useRef(dragon);
   const [blaze, setBlaze] = useState<BlazeRun>(() => ({ ...createBlazeRun(), critical: criticalSeed() })), blazeRef = useRef(blaze);
   const [enderman, setEnderman] = useState<EndermanRun>(() => ({ ...createEndermanRun(), intent: 'approach', critical: criticalSeed() })), endermanRef = useRef(enderman);
@@ -32,7 +34,8 @@ export default function BattleEffectsLab() {
     dragonRef.current = s; setDragon(s); setMode('dragon');
   }
   const common = { onClose: () => setMode('menu'), onHelp() {}, seenHelp: true, next: () => setMode('menu'), retry: () => setMode('menu'), endermanDefeats: 0, heldItems: ['none', 'shield', 'water'], breadStock: 8, foodToday: 0 };
-  return mode === 'dragon' ? <DragonCampaignLab production={{ ...common, run: dragon, act: actDragon }} />
+  return mode === 'guard' ? <main className="bp-root"><button onClick={() => setMode('menu')}>試験メニューへ</button><h1>まもる・見た目の確認</h1><p>ダメージ計算やセーブは行いません。</p><div style={{ display: 'flex', gap: 12, marginBottom: 16 }}><button onClick={() => setShield(value => !value)}>{shield ? '盾なしにする' : '盾ありにする'}</button><button onClick={() => setGuardKey(value => value + 1)}>もう一度受け止める</button></div><div className="bp-arena" style={{ height: 360 }}><div className="bp-world" /><BattleSpectacle key={guardKey} kind="guard" phase="impact" shield={shield} /></div></main>
+    : mode === 'dragon' ? <DragonCampaignLab production={{ ...common, run: dragon, act: actDragon }} />
     : mode === 'blaze' ? <BlazePrototype production={{ ...common, breadStock: blaze.bread, foodToday: 2 - blaze.bread, run: blaze, act: actBlaze }} />
       : mode === 'enderman' ? <EndermanPrototype production={{ ...common, breadStock: enderman.bread, foodToday: 2 - enderman.bread, run: enderman, act: actEnderman }} />
         : <main data-app-scroll style={{ height: '100dvh', overflowY: 'auto', padding: 22, background: '#161c30', color: '#f5f1e6' }}>
@@ -43,6 +46,11 @@ export default function BattleEffectsLab() {
             <button style={{ minHeight: 64 }} onClick={() => showDragon(0)}>ベッドを試す</button>
             <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills({ ...createBlazeRun(), critical: criticalSeed() }, ['repel']); blazeRef.current = s; setBlaze(s); setMode('blaze'); }}>ブレイズの会心</button>
             <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills({ ...createEndermanRun(), intent: 'approach' as const, critical: criticalSeed() }, ['repel', 'aim']); endermanRef.current = s; setEnderman(s); setMode('enderman'); }}>エンダーマンの会心</button>
+            <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills(createBlazeRun(), ['repel']); s.enemies[0].hp = 1; blazeRef.current = s; setBlaze(s); setMode('blaze'); }}>ブレイズ撃破直前</button>
+            <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills(createEndermanRun(), ['repel', 'aim']); s.enemyHp = 1; s.intent = 'opening'; endermanRef.current = s; setEnderman(s); setMode('enderman'); }}>エンダーマン撃破直前</button>
+            <button style={{ minHeight: 64 }} onClick={() => { const s = dragonCampaignFixture('victory', new Date().toLocaleDateString('sv-SE'), true); s.rescueSeen = true; s.bodyHp = 1; dragonRef.current = s; setDragon(s); setMode('dragon'); }}>エンドラ撃破直前</button>
+            <button style={{ minHeight: 64 }} onClick={() => setMode('guard')}>守る演出の確認</button>
+            <button style={{ minHeight: 64 }} onClick={() => { const s = enableBattleSkills(createBlazeRun({ item: 'shield' }), ['repel']); s.enemies[0].intent = 'burst'; blazeRef.current = s; setBlaze(s); setMode('blaze'); }}>盾あり・大きな火球</button>
           </div>
           <p>Lv10が3体。通常の追撃は1体ずつ75%で1、20%で2、5%で3。必殺は1体3で合計9。</p>
           <p><a href="?adventure-release=1" style={{ color: '#badeff' }}>段階解放・HP・チケット持ち越しを実際の戦闘管理で確認する</a></p>

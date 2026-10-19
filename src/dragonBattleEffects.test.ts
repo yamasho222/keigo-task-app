@@ -145,6 +145,7 @@ describe('universal 10% criticals and hidden items', () => {
   it('shares persisted critical draws across locations and round-trips through real save normalization', () => {
     let mining = emptyMiningState(); mining.unlockedGachas.push('fortress', 'warped_forest', 'the_end'); mining.tickets = 10;
     mining = transitionAdventure(mining, { kind: 'enter', revision: -1, day: '2026-10-18', location: 'fortress' }).state;
+    mining = transitionAdventure(mining, { kind: 'lesson', revision: mining.adventure!.revision, day: '2026-10-18', location: 'fortress' }).state;
     const result = transitionAdventure(mining, { kind: 'blaze', action: { kind: 'strike', target: { enemyId: 0, part: 'body' } }, revision: mining.adventure!.revision, day: '2026-10-18', location: 'fortress' });
     expect(result.error).toBeUndefined(); mining = normalizeMiningState(JSON.parse(JSON.stringify(result.state)));
     const entered = transitionAdventure(mining, { kind: 'enter', revision: mining.adventure!.revision, day: '2026-10-18', location: 'warped_forest' });
@@ -174,6 +175,7 @@ describe('universal 10% criticals and hidden items', () => {
     const base = emptyMiningState(); base.unlockedGachas.push('the_end'); base.tickets = 10;
     base.materials = { shield: 1, water: 1, spare_bed: 3 }; base.crafted.sword_diamond = true;
     let mining = transitionAdventure(base, { kind: 'enter', revision: -1, day: '2026-10-18', location: 'the_end' }).state;
+    mining = transitionAdventure(mining, { kind: 'lesson', revision: mining.adventure!.revision, day: '2026-10-18', location: 'the_end' }).state;
     const run = (action: Extract<AdventureCommand, { kind: 'dragon' }>['action']) => {
       const result = transitionAdventure(mining, { kind: 'dragon', action, revision: mining.adventure!.revision, day: '2026-10-18', location: 'the_end' });
       expect(result.error).toBeUndefined(); mining = result.state; return result;
@@ -192,6 +194,7 @@ describe('universal 10% criticals and hidden items', () => {
   it('applies light healing to shared HP without eating bread or using the daily recovery allowance', () => {
     const base = emptyMiningState(); base.unlockedGachas.push('the_end'); base.tickets = 10; base.materials.bread = 4;
     let mining = transitionAdventure(base, { kind: 'enter', revision: -1, day: '2026-10-18', location: 'the_end' }).state;
+    mining = transitionAdventure(mining, { kind: 'lesson', revision: mining.adventure!.revision, day: '2026-10-18', location: 'the_end' }).state;
     mining.adventure!.hp = 10; mining.adventure!.gauge = 3; mining.adventure!.dragon!.skills!.casts = 3;
     const start = transitionAdventure(mining, { kind: 'dragon', action: { kind: 'beginSkill' }, revision: mining.adventure!.revision, day: '2026-10-18', location: 'the_end' });
     mining = start.state;

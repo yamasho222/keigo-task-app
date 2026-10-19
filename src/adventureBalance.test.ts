@@ -23,6 +23,7 @@ function simulate(tier: 'mixed' | 'diamond' | 'netherite', rank: 0 | 3, score: n
     });
     if (result.error) throw new Error(`${JSON.stringify(request)}: ${result.error}`);
     mining = result.state; readAdventure(mining.adventure);
+    if (mining.adventure?.learning?.pending && request.kind === 'enter') command({ kind: 'lesson' });
   };
   command({ kind: 'enter' });
   mining.adventure!.attack = { kind: rank ? 'power' : 'none', rank };
