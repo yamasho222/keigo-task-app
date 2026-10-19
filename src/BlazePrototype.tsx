@@ -187,6 +187,7 @@ export default function BlazePrototype({ production }: { production?: BlazePort 
       {playing && !canSpend && !busy && <div className="bp-empty-ticket"><span aria-hidden="true"><BattleIcon kind="ticket" /><b>×</b></span><p>チケットが ないよ</p><button className="bp-large-button" onClick={() => setModal('leave')}><BattleIcon kind="back" />かえる</button></div>}
       {!playing && !busy && <div className={`bp-result bp-result-${run.phase}`}>
         {run.phase === 'won' ? <BattleReward enemy="ブレイズ" item="ブレイズロッド" image="/mining/Blaze_Rod.webp" headingRef={resultHeading} reduced={reduced} /> : <><div className="bp-result-picture" aria-hidden="true"><img src="/mining/Steve.png" alt="" /></div><h2 ref={resultHeading} tabIndex={-1}>{run.phase === 'lost' ? 'また ちょうせん！' : 'ただいま！'}</h2></>}
+        {production && run.phase === 'won' && <button type="button" className="bp-secondary-button" onClick={production.onClose}><BattleIcon kind="back" />かえる</button>}
         <button className="bp-large-button" onClick={() => reset()}><BattleIcon kind="replay" />{production && run.phase === 'lost' ? '1まいで おきあがる（ハート5・4かい）' : 'もういちど'}</button>
       </div>}
     </section>

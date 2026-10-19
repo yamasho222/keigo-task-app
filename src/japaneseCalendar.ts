@@ -2,8 +2,8 @@ import holiday_jp from "@holiday-jp/holiday_jp";
 
 export type PhaseSessionId = "morning" | "daytime" | "home" | "evening";
 
-const ALL_PHASE_SESSIONS: PhaseSessionId[] = ["morning", "daytime", "home", "evening"];
-const WEEKDAY_PHASE_SESSIONS: PhaseSessionId[] = ["morning", "home", "evening"];
+const ALL_PHASE_SESSIONS: PhaseSessionId[] = ["morning", "daytime", "evening"];
+const WEEKDAY_PHASE_SESSIONS: PhaseSessionId[] = ["morning", "evening"];
 
 export function isWeekend(d: Date): boolean {
   const dow = d.getDay();
@@ -19,12 +19,15 @@ export function isDaytimeSessionDay(d = new Date()): boolean {
   return isWeekend(d) || isJapaneseHoliday(d);
 }
 
-export function getActiveSessionIds(d = new Date()): PhaseSessionId[] {
-  return isDaytimeSessionDay(d) ? ALL_PHASE_SESSIONS : WEEKDAY_PHASE_SESSIONS;
+export function getActiveSessionIds(d = new Date(), legacyHome = false): PhaseSessionId[] {
+  const active = [...(isDaytimeSessionDay(d) ? ALL_PHASE_SESSIONS : WEEKDAY_PHASE_SESSIONS)];
+  if (legacyHome) active.splice(active.length - 1, 0, 'home');
+  return active;
 }
 
 export function isSessionActiveOnDate(session: PhaseSessionId, d = new Date()): boolean {
   if (session === "daytime") return isDaytimeSessionDay(d);
+  if (session === "home") return false;
   return true;
 }
 
@@ -34,6 +37,7 @@ export function parseDateKey(key: string): Date {
 }
 
 export interface DayFlags {
+  homeRetired?: boolean;
   morning: boolean;
   daytime: boolean;
   home: boolean;
@@ -42,22 +46,22 @@ export interface DayFlags {
 
 export function completedSessionCount(day: DayFlags | undefined, d: Date): number {
   if (!day) return 0;
-  return getActiveSessionIds(d).filter((sid) => day[sid]).length;
+  return getActiveSessionIds(d, !day.homeRetired).filter((sid) => day[sid]).length;
 }
 
-export function requiredSessionCount(d: Date): number {
-  return getActiveSessionIds(d).length;
+export function requiredSessionCount(d: Date, day?: DayFlags): number {
+  return getActiveSessionIds(d, !!day && !day.homeRetired).length;
 }
 
 export function isFullDayForDate(day: DayFlags | undefined, d: Date): boolean {
   if (!day) return false;
-  return getActiveSessionIds(d).every((sid) => day[sid]);
+  return getActiveSessionIds(d, !day.homeRetired).every((sid) => day[sid]);
 }
 
 /** その日の有効フェーズに体調スキップが1つ以上ある */
 export function dayHasActiveSickSkip(sick: DayFlags | undefined, d: Date = new Date()): boolean {
   if (!sick) return false;
-  return getActiveSessionIds(d).some((sid) => !!sick[sid]);
+  return getActiveSessionIds(d, !sick.homeRetired).some((sid) => !!sick[sid]);
 }
 
 /**
@@ -88,6 +92,6 @@ export function hasNonSickSession(
 ): boolean {
   if (!day) return false;
   return (["morning", "daytime", "home", "evening"] as const).some(
-    (sid) => !!day[sid] && !sick?.[sid],
+    (sid) => (sid !== 'home' || !day.homeRetired) && !!day[sid] && !sick?.[sid],
   );
 }

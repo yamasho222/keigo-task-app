@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import BlazePrototype from './BlazePrototype';
 import EndermanPrototype from './EndermanPrototype';
 import DragonCampaignLab from './DragonCampaignLab';
@@ -12,14 +12,48 @@ import type { actOnBlaze } from './blazePrototypeEngine';
 import type { actOnEnderman } from './endermanPrototypeEngine';
 import './adventureProduction.css';
 import { BattleTutorial } from './BattleTutorial';
+import { isBattleNightLocked } from './miningNightLock';
 
 /** Normal in-app entry. The parent profile owns every resource and save. */
-export function AdventureBattlePanel({ mining, location, dateKey, buddyProgress, onChange, onClose, onPrepare }: { mining: MiningState; location: AdventureLocation; dateKey: string; buddyProgress?: BuddyProgressMap; onChange: (patch: MiningPatch) => void; onClose: () => void; onPrepare?: () => void }) {
-  const { view, send, error } = useAdventureController(mining, location, dateKey, buddyProgress, onChange);
+export function AdventureBattlePanel({ mining, location, dateKey, buddyProgress, onChange, onClose, onPrepare, nightLockEnabled = false, onNightEnd }: { mining: MiningState; location: AdventureLocation; dateKey: string; buddyProgress?: BuddyProgressMap; onChange: (patch: MiningPatch) => void; onClose: () => void; onPrepare?: () => void; nightLockEnabled?: boolean; onNightEnd?: () => void }) {
+  const { view, send, error } = useAdventureController(mining, location, dateKey, buddyProgress, onChange, nightLockEnabled);
   const [notice, setNotice] = useState('');
   const [replaying, setReplaying] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const ready = !!view && !error;
+  const nightEndCallback = useRef<(() => void) | null>(onNightEnd ?? onClose);
+  const nightEnded = useRef(false);
+  const nightLocked = isBattleNightLocked({ enabled: nightLockEnabled });
+  const ready = !!view && !error && !nightLocked;
+  useLayoutEffect(() => {
+    nightEndCallback.current = onNightEnd ?? onClose;
+    return () => { nightEndCallback.current = null; };
+  }, [onNightEnd, onClose]);
+  useEffect(() => {
+    if (!nightLockEnabled) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const checkNight = () => {
+      if (disposed || nightEnded.current) return;
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (isBattleNightLocked({ enabled: nightLockEnabled })) {
+        nightEnded.current = true;
+        // Closing the panel is free: do not flee, pause, retry or settle a skill.
+        nightEndCallback.current?.();
+        return;
+      }
+      // Align with minute boundaries so 20:30 is checked without interval drift.
+      timer = window.setTimeout(checkNight, 60_000 - Date.now() % 60_000);
+    };
+    window.addEventListener('focus', checkNight);
+    document.addEventListener('visibilitychange', checkNight);
+    checkNight();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener('focus', checkNight);
+      document.removeEventListener('visibilitychange', checkNight);
+    };
+  }, [nightLockEnabled]);
   useLayoutEffect(() => {
     const element = dialog.current;
     if (element && !element.open) element.showModal();
@@ -29,6 +63,7 @@ export function AdventureBattlePanel({ mining, location, dateKey, buddyProgress,
     const result = send({ kind }); setNotice(result.error ?? '');
     if (kind === 'retry' && !result.error) send({ kind: 'enter' });
   };
+  if (nightLocked) return <section className="adventure-production" role="alert">きょうの たたかいは おしまい。また あした あそぼう。</section>;
   if (!view || error) return <section className="adventure-production" role="alert">{error || 'たたかいの きろくを よみこんでいます…'}<button type="button" onClick={onClose}>もどる</button></section>;
   const common = { onClose, retry: () => run('retry'), next: () => run('next'), onHelp: () => run('lesson'),
     breadStock: mining.materials.bread ?? 0, foodToday: mining.adventure?.foodToday ?? 0,

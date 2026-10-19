@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { theme } from "./theme";
+import { isBattleNightLocked } from './miningNightLock';
+import { BattleNightEndOverlay } from './MiningNightEndOverlay';
 import "./endJourney.css";
 import { ScrollSafeBackButton } from "./ScrollSafeBackButton";
 import { StickerFrameWithBadge, StickerImg } from "./Rewards";
@@ -177,6 +179,8 @@ import {
 } from "./miningTypes";
 
 interface Props {
+  /** Parent-controlled production lock; isolated DEV hosts default to unlocked. */
+  nightLockEnabled?: boolean;
   mining: MiningState;
   stickerAlbum: string[];
   buddyProgress: BuddyProgressMap;
@@ -1153,11 +1157,13 @@ export function MiningScreen({
   devJump = null,
   onDevJumpConsumed,
   combatV2Test = false,
+  nightLockEnabled = false,
 }: Props) {
   const combatV2Enabled = import.meta.env.DEV && combatV2Test;
   const [tab, setTab] = useState<TabId>("mine");
   const [overlay, setOverlay] = useState<OverlayId>(null);
   const [adventureLocation, setAdventureLocation] = useState<AdventureLocation | null>(null);
+  const [battleNightEnd, setBattleNightEnd] = useState(false);
   const [selectedGacha, setSelectedGacha] = useState<GachaId>(() => {
     const last = mining.lastSelectedGacha;
     if (last && mining.unlockedGachas.includes(last)) return last;
@@ -1610,6 +1616,10 @@ export function MiningScreen({
       return false;
     }
     const requestedLocation = combatLocationForGacha(gacha);
+    if (requestedLocation && isBattleNightLocked({ enabled: nightLockEnabled })) {
+      setBattleNightEnd(true);
+      return false;
+    }
     if (combatV2Enabled && isCombatGacha(gacha)) {
       setSelectedGacha(gacha);
       setDigDestStep("rock");
@@ -4716,7 +4726,8 @@ export function MiningScreen({
         if (combatV2Enabled) setOverlay("digDestination");
       }} onBack={() => { setEndArrival(false); setDigDestStep("place"); setOverlay("digDestination"); }} />}
 
-      {adventureLocation && <Suspense fallback={<div role="status">たたかいの じゅんびちゅう…</div>}><AdventureBattlePanel mining={mining} location={adventureLocation} dateKey={dateKey} buddyProgress={buddyProgress} onChange={onChange} onClose={() => setAdventureLocation(null)} onPrepare={() => { setAdventureLocation(null); setOverlay("equip"); }} /></Suspense>}
+      {adventureLocation && <Suspense fallback={<div role="status">たたかいの じゅんびちゅう…</div>}><AdventureBattlePanel mining={mining} location={adventureLocation} dateKey={dateKey} buddyProgress={buddyProgress} onChange={onChange} nightLockEnabled={nightLockEnabled} onNightEnd={() => { setAdventureLocation(null); setBattleNightEnd(true); }} onClose={() => setAdventureLocation(null)} onPrepare={() => { setAdventureLocation(null); setOverlay("equip"); }} /></Suspense>}
+      {battleNightEnd && <BattleNightEndOverlay onDismiss={() => setBattleNightEnd(false)} />}
 
       {endCinematic && (
         <EndCinematicOverlay
