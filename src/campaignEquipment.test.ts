@@ -113,16 +113,16 @@ describe("campaign damage", () => {
     eq.attack = { kind: "break", rank };
     expect(attackDamage(eq, false, false, false).weapon).toBe(4);
     expect(attackDamage(eq, true, false, false).weapon).toBe(8);
-    expect(attackDamage(eq, false, true, false).weapon).toBe(4 + rank);
-    expect(attackDamage(eq, true, true, false).weapon).toBe(8 + 2 * rank);
-    expect(attackDamage(eq, true, true, true).weapon).toBe((8 + 2 * rank) * 2);
+    expect(attackDamage(eq, false, true, false).weapon).toBe(4 + 2 * rank);
+    expect(attackDamage(eq, true, true, false).weapon).toBe(8 + 4 * rank);
+    expect(attackDamage(eq, true, true, true).weapon).toBe((8 + 4 * rank) * 2);
   });
 
   it.each([
     { kind: "none", part: false, landing: false, expected: 29 },
     { kind: "power", part: false, landing: false, expected: 38 },
     { kind: "ultimate", part: false, landing: false, expected: 41 },
-    { kind: "break", part: true, landing: false, expected: 44 },
+    { kind: "break", part: true, landing: false, expected: 59 },
     { kind: "ultimate", part: false, landing: true, expected: 61 },
   ] as const)("three normal attacks plus a special: $kind, landing=$landing totals $expected", ({ kind, part, landing, expected }) => {
     const eq = defaultEquipment();

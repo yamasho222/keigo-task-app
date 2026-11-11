@@ -26,7 +26,7 @@ const ATTACK_TYPES: { kind: AttackEnchant; label: string; effect: string }[] = [
   { kind: "none", label: "なし", effect: "まほうを えらぼう" },
   { kind: "power", label: "こうげきアップ", effect: "いつもの こうげき +1 / +2 / +3" },
   { kind: "ultimate", label: "ひっさつアップ", effect: "ひっさつの けん +4 / +8 / +12" },
-  { kind: "break", label: "ぶいはかい", effect: "ぶいへの こうげき +1 / +2 / +3、ひっさつは 2ばい" },
+  { kind: "break", label: "ぶいはかい", effect: "ぶいへの こうげき +2 / +4 / +6、ひっさつ +4 / +8 / +12" },
 ];
 const DEFENSE_TYPES: { kind: DefenseEnchant; label: string; effect: string }[] = [
   { kind: "none", label: "なし", effect: "まほうを えらぼう" },
