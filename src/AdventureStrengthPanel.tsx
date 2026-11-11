@@ -1,33 +1,47 @@
 import { useState } from 'react';
 import type { MiningState } from './miningTypes';
 import type { MiningPatch } from './miningCommit';
-import { ensureAdventure, transitionAdventure } from './adventureSession';
+import { adventureEquipment, adventureSupplies, ensureAdventure, transitionAdventure, type AdventureCommand, type AdventureResult } from './adventureSession';
 import { campaignUpgradeCost } from './campaignEquipment';
+import { AttackEnchantWorkshop } from './AttackEnchantWorkshop';
+import type { AttackMagic } from './attackEnchantPresentation';
 import './adventureProduction.css';
+
 export function AdventureStrengthPanel({ mining, dateKey, onChange }: { mining: MiningState; dateKey: string; onChange: (patch: MiningPatch) => void }) {
   const [notice, setNotice] = useState('');
+  const [receipt, setReceipt] = useState<{ revision: number; kind: string; rank: number; category: 'attack' | 'defense'; text: string } | null>(null);
   if (!mining.unlockedGachas.includes('fortress')) return null;
-  const adventure = mining.adventure ?? ensureAdventure(mining, dateKey).adventure!;
-  const location = mining.unlockedGachas.includes('the_end') ? 'the_end' : mining.unlockedGachas.includes('fortress') ? 'fortress' : 'warped_forest';
-  const change = (category: 'attack' | 'defense', value?: string) => {
-    onChange(state => {
-      const result = transitionAdventure(state, { revision: mining.adventure?.revision ?? -1, day: dateKey, location,
-        ...(value ? { kind: 'magic' as const, category, value } : { kind: 'upgrade' as const, category }) });
-      // Errors are also computed before dispatch, below; keep this resource patch pure.
-      return result.state;
-    });
-    const preview = transitionAdventure(mining, { revision: mining.adventure?.revision ?? -1, day: dateKey, location,
-      ...(value ? { kind: 'magic' as const, category, value } : { kind: 'upgrade' as const, category }) });
-    setNotice(preview.error ?? 'まほうを かえた！');
+  const prepared = ensureAdventure(mining, dateKey), adventure = prepared.adventure!;
+  const location = mining.unlockedGachas.includes('the_end') ? 'the_end' : 'fortress';
+  const envelope = { revision: mining.adventure?.revision ?? -1, day: dateKey, location } as const;
+  const attackCommand = (value: AttackMagic): AdventureCommand => ({ ...envelope, kind: 'enchantAttack', value, expectedRank: adventure.attack.rank });
+  const upgradeCommand = (category: 'attack' | 'defense'): AdventureCommand => ({ ...envelope, kind: 'upgrade', category, expectedRank: adventure[category].rank });
+  const dispatch = (command: AdventureCommand, category: 'attack' | 'defense', text: string) => {
+    // App and lab execute the updater once against the latest ref, before rendering.
+    // Report that actual result, including a racing resource/revision change.
+    let result: AdventureResult = { state: mining, error: '更新できなかったよ。もういちど ためそう。' };
+    onChange(state => { result = transitionAdventure(state, command); return result.state; });
+    if (result.error) { setNotice(result.error); setReceipt(null); return; }
+    const expected = result.state.adventure!;
+    setNotice('');
+    setReceipt({ revision: expected.revision, ...expected[category], category, text });
   };
-  return <section className="adventure-strength" aria-label="たたかいのまほう"><h3>⚔️ たたかいの まほう</h3>
-    {(['attack', 'defense'] as const).map(category => { const current = adventure[category], cost = campaignUpgradeCost(current.rank);
-      const kinds = category === 'attack' ? [['power', '⚔️ こうげき'], ['ultimate', '✨ ひっさつ'], ['break', '💎 ぶいはかい']] : [['protection', '🛡️ まもり'], ['health', '♥ ハート'], ['fire', '🔥 ほのおガード']];
-      return <fieldset key={category}><legend>{category === 'attack' ? 'けん' : 'ぼうぐ'} {'★'.repeat(current.rank)}{'☆'.repeat(3 - current.rank)}</legend>
-        {kinds.map(([kind, label]) => <button type="button" key={kind} aria-pressed={current.kind === kind} onClick={() => change(category, kind)}>{label}</button>)}
-        <small>{category === 'attack' ? '通常＋1/2/3 ・ 必殺＋4/8/12 ・ 部位＋1/2/3' : '軽減5/10/20% ・ HP＋2/4/6 ・ 炎軽減20/35/50%'}</small>
-        {cost && <button type="button" disabled={current.kind === 'none'} onClick={() => change(category)}>★をふやす<small>{Object.entries(cost).map(([key, amount]) => `${key === 'lapis_lazuli' ? 'ラピス' : key === 'book' ? '本' : 'クォーツ'}${amount}`).join(' ＋ ')}</small></button>}
-      </fieldset>; })}
-    {notice && <p role="status">{notice}</p>}
-  </section>;
+  const confirmed = receipt && mining.adventure?.revision === receipt.revision
+    && mining.adventure[receipt.category].kind === receipt.kind && mining.adventure[receipt.category].rank === receipt.rank;
+  const current = adventure.defense, cost = campaignUpgradeCost(current.rank);
+  return <div className="adventure-strength-layout">
+    <AttackEnchantWorkshop equipment={adventureEquipment(prepared)} supplies={adventureSupplies(prepared)} endUnlocked={mining.unlockedGachas.includes('the_end')}
+      checkApply={kind => transitionAdventure(mining, attackCommand(kind)).error}
+      upgradeError={transitionAdventure(mining, upgradeCommand('attack')).error}
+      onApply={kind => dispatch(attackCommand(kind), 'attack', adventure.attack.rank === 0 ? '✦ まほうが ついた！' : '✦ まほうを かえた！ ★は そのまま！')}
+      onUpgrade={() => dispatch(upgradeCommand('attack'), 'attack', `★${adventure.attack.rank + 1}に なった！`)} />
+    {(notice || confirmed) && <p className="adventure-strength-notice" role="status">{notice || receipt?.text}</p>}
+    <details className="adventure-strength"><summary>🛡️ ぼうぐの まほう</summary>
+      <fieldset><legend>ぼうぐ {'★'.repeat(current.rank)}{'☆'.repeat(3 - current.rank)}</legend>
+        {[['protection', '🛡️ まもり'], ['health', '♥ ハート'], ['fire', '🔥 ほのおガード']].map(([kind, label]) => <button type="button" key={kind} aria-pressed={current.kind === kind} onClick={() => dispatch({ ...envelope, kind: 'magic', category: 'defense', value: kind }, 'defense', 'まもりの まほうを かえた！')}>{label}</button>)}
+        <small>軽減5/10/20% ・ HP＋2/4/6 ・ 炎軽減20/35/50%</small>
+        {cost && <button type="button" disabled={!!transitionAdventure(mining, upgradeCommand('defense')).error} onClick={() => dispatch(upgradeCommand('defense'), 'defense', 'まもりの ★が ふえた！')}>★をふやす<small>{Object.entries(cost).map(([key, amount]) => `${key === 'lapis_lazuli' ? 'ラピス' : key === 'book' ? '本' : 'クォーツ'}${amount}`).join(' ＋ ')}</small></button>}
+      </fieldset>
+    </details>
+  </div>;
 }

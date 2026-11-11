@@ -22,7 +22,8 @@ export type AdventureCommand = { revision: number; day: string; location: Advent
   | { kind: 'enderman'; action: EndermanAction }
   | { kind: 'dragon'; action: CampaignAction }
   | { kind: 'magic'; category: 'attack' | 'defense'; value: string }
-  | { kind: 'upgrade'; category: 'attack' | 'defense' }
+  | { kind: 'enchantAttack'; value: 'power' | 'ultimate' | 'break'; expectedRank: number }
+  | { kind: 'upgrade'; category: 'attack' | 'defense'; expectedRank?: number }
 );
 export type AdventureResult = { state: MiningState; error?: string; outcome?: ReturnType<typeof actOnBlaze> | ReturnType<typeof actOnEnderman> | CampaignOutcome };
 export function adventureEquipment(mining: MiningState, buddies: BuddyProgressMap = {}): CampaignEquipment {
@@ -140,17 +141,30 @@ export function transitionAdventure(input: MiningState, command: AdventureComman
     if (s.learning) s.learning = { ...s.learning, seen: { ...s.learning.seen, [command.location]: true }, pending: null };
     return save();
   }
-  if (command.kind === 'magic' || command.kind === 'upgrade') {
-    if (!next.crafted.enchanting_table) return reject('まほうのテーブルを つくろう。');
-    if (command.kind === 'magic' && s.dragon && s.dragon.status !== 'won' && !s.dragon.safePreparation) return reject('たたかいの くぎりで かえよう。');
-    if (command.kind === 'magic') {
-      const values = command.category === 'attack' ? ['power', 'ultimate', 'break'] : ['protection', 'health', 'fire'];
+  if (command.kind === 'enchantAttack' || command.kind === 'magic' || command.kind === 'upgrade') {
+    const category = command.kind === 'enchantAttack' ? 'attack' : command.category;
+    if (category !== 'attack' && category !== 'defense') return reject('まほうを えらぼう。');
+    if ((command.kind === 'enchantAttack' || command.kind === 'upgrade' && command.expectedRank !== undefined)
+      && command.expectedRank !== s[category].rank) return reject('まほうの ほしが かわったよ。読み直してね。');
+    if (category === 'attack' && command.kind !== 'magic' && adventureEquipment({ ...next, adventure: s }, buddies).sword === 'none') return reject('さきに けんを つくろう。');
+    if (command.kind !== 'upgrade') {
+      const values = category === 'attack' ? ['power', 'ultimate', 'break'] : ['protection', 'health', 'fire'];
       if (!values.includes(command.value)) return reject('まほうを えらぼう。');
-      if (command.category === 'attack') s.attack.kind = command.value as AdventureState['attack']['kind'];
+      // Existing break saves remain usable; only a new selection needs the End.
+      if (category === 'attack' && command.value === 'break' && s.attack.kind !== 'break' && !next.unlockedGachas.includes('the_end')) return reject('ジ・エンドに いけるように なったら えらべるよ。');
+      if (category === 'attack' && command.value === s.attack.kind && s.attack.rank > 0) return { state: input };
+    }
+    if (!next.crafted.enchanting_table) return reject('まほうのテーブルを つくろう。');
+    if ((command.kind === 'magic' || command.kind === 'enchantAttack' && command.value !== s.attack.kind)
+      && s.dragon && s.dragon.status !== 'won' && !s.dragon.safePreparation) return reject('たたかいの くぎりで かえよう。');
+    if (command.kind !== 'upgrade') {
+      if (category === 'attack') s.attack.kind = command.value as AdventureState['attack']['kind'];
       else s.defense.kind = command.value as AdventureState['defense']['kind'];
       s.hp = Math.min(s.hp, maxHp(adventureEquipment({ ...next, adventure: s }, buddies)));
-    } else {
-      const eq = adventureEquipment({ ...next, adventure: s }, buddies), upgraded = upgradeCampaign(eq, adventureSupplies(next), command.category);
+    }
+    // Selection and the first star commit together; later selections keep all stars for free.
+    if (command.kind === 'upgrade' || command.kind === 'enchantAttack' && s.attack.rank === 0) {
+      const eq = adventureEquipment({ ...next, adventure: s }, buddies), upgraded = upgradeCampaign(eq, adventureSupplies(next), category);
       if (upgraded.error) return reject(upgraded.error);
       s.attack = upgraded.equipment.attack; s.defense = upgraded.equipment.defense;
       next.materials.lapis = upgraded.supplies.materials.lapis_lazuli ?? 0; next.materials.nether_quartz = upgraded.supplies.materials.quartz ?? 0; next.materials.book = upgraded.supplies.materials.book ?? 0;

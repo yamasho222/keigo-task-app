@@ -83,7 +83,7 @@ export function attackDamage(eq: CampaignEquipment, special: boolean, part: bool
   let weapon = SWORD_POWER[eq.sword] * (special ? 2 : 1);
   if (eq.attack.kind === "power" && !special) weapon += rank;
   if (eq.attack.kind === "ultimate" && special) weapon += rank * 4;
-  if (eq.attack.kind === "break" && part) weapon += rank * (special ? 2 : 1);
+  if (eq.attack.kind === "break" && part) weapon += rank * (special ? 4 : 2);
   if (weak) weapon *= 2;
   const companions = special ? eq.buddies.slice(0, 3).reduce((sum, buddy) => {
     const level = Number.isFinite(buddy.level) ? Math.max(1, Math.min(10, Math.floor(buddy.level))) : 1;

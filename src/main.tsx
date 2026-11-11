@@ -42,7 +42,9 @@ const updateSW = registerSW({
 });
 
 const root = createRoot(document.getElementById("root")!);
-if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("water-sling") === "1") {
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("attack-enchant") === "1") {
+  void import("./AttackEnchantLab").then(({ default: AttackEnchantLab }) => root.render(<StrictMode><AttackEnchantLab /></StrictMode>));
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("water-sling") === "1") {
   void import("./WaterSlingLab").then(({ default: WaterSlingLab }) => root.render(<StrictMode><WaterSlingLab /></StrictMode>));
 } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("task-settings") === "1") {
   void import("./TaskSettingsLab").then(({ default: TaskSettingsLab }) => root.render(<StrictMode><TaskSettingsLab /></StrictMode>));
